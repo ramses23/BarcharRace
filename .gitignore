@@ -1,0 +1,15 @@
+# entorno virtual
+.venv/
+
+# cache de Python
+__pycache__/
+*.pyc
+
+# archivos de salida
+output/
+
+# archivos de sistema
+.DS_Store
+
+# vscode (opcional)
+.vscode/
