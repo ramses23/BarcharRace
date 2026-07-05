@@ -1,0 +1,93 @@
+from dataclasses import dataclass, field
+
+from config.theme_config import ThemeConfig
+from config.value_format_config import ValueFormatConfig
+
+
+@dataclass(frozen=True)
+class ChartConfig:
+    width: int = 1920
+    height: int = 1080
+    dpi: int = 150
+
+    left_margin: int = 320
+    right_margin: int = 220
+    top_margin: int = 260
+    bottom_margin: int = 140
+
+    bar_height: int = 54
+    bar_gap: int = 18
+
+    fps: int = 30
+    steps_per_transition: int = 30
+
+    frames_dir: str = "output/frames"
+    output_file: str = "output/video.mp4"
+    frame_filename_template: str = "frame_{frame_id:04d}.png"
+    frame_file_pattern: str = "frame_*.png"
+    ffmpeg_frame_pattern: str = "frame_%04d.png"
+
+    title: str = "Bar Chart Studio"
+    theme: ThemeConfig = field(default_factory=ThemeConfig)
+
+    title_font_size: int = 34
+    subtitle_font_size: int = 20
+    time_label_font_size: int = 120
+    source_font_size: int = 16
+    label_font_size: int = 20
+    value_font_size: int = 20
+
+    title_y: int = 95
+    subtitle_y: int = 165
+    time_label_x: int = 1580
+    time_label_y: int = 910
+    source_x: int = 320
+    source_y: int = 1005
+
+    logos_enabled: bool = True
+    logos_dir: str = "logos"
+    logo_size: int = 48
+    logo_gap: int = 16
+    logo_label_gap: int = 14
+    logo_file_extensions: tuple[str, ...] = (
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+    )
+
+    value_format: ValueFormatConfig = field(default_factory=ValueFormatConfig)
+
+    @property
+    def figure_size(self):
+        return (
+            self.width / self.dpi,
+            self.height / self.dpi,
+        )
+
+    @property
+    def max_bar_width(self):
+        return self.width - self.left_margin - self.right_margin
+
+    @property
+    def background_color(self):
+        return self.theme.background_color
+
+    @property
+    def text_color(self):
+        return self.theme.text_color
+
+    @property
+    def muted_text_color(self):
+        return self.theme.muted_text_color
+
+    @property
+    def font_family(self):
+        return self.theme.font_family
+
+    @property
+    def color_palette(self):
+        return self.theme.bar_palette
+
+    def frame_filename(self, frame_id):
+        return self.frame_filename_template.format(frame_id=frame_id)

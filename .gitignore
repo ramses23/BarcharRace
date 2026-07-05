@@ -8,6 +8,9 @@ __pycache__/
 # archivos de salida
 output/
 
+# bases SQLite generadas
+data/database/*.db
+
 # archivos de sistema
 .DS_Store
 
