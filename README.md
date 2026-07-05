@@ -21,6 +21,7 @@ charts, animated scatter plots, and timeline animations.
 - Export PNG frames to MP4 with FFmpeg.
 - Run project presets from the command line.
 - Override preset render options from the command line.
+- Render external JSON project files.
 - Run a minimal automated test suite with `unittest`.
 
 ## Requirements
@@ -67,6 +68,12 @@ Run a specific preset:
 .venv\Scripts\python.exe src\main.py youtube_1080p
 ```
 
+Run an external project file:
+
+```powershell
+.venv\Scripts\python.exe src\main.py --project projects/sample_project.json
+```
+
 List available themes and value formats:
 
 ```powershell
@@ -98,6 +105,57 @@ Common overrides:
 | `--width` | render width in pixels |
 | `--height` | render height in pixels |
 
+Overrides can also be applied on top of an external project file:
+
+```powershell
+.venv\Scripts\python.exe src\main.py --project projects/sample_project.json --theme midnight_contrast --output output/custom.mp4
+```
+
+## Project Files
+
+External project files are JSON documents. They let you create new videos
+without editing Python source files.
+
+Example:
+
+```json
+{
+  "name": "sample_project",
+  "base_preset": "csv_sample",
+  "chart": {
+    "title": "External Project Demo",
+    "output_file": "output/external_project.mp4",
+    "frames_dir": "output/external_project_frames",
+    "theme": "clean_report",
+    "value_format": "decimal",
+    "fps": 24,
+    "steps_per_transition": 24
+  },
+  "data_source": {
+    "source_type": "csv",
+    "csv_path": "data/datasets/sample_dynamic.csv"
+  },
+  "dataset": {
+    "year_column": "year",
+    "name_column": "country",
+    "value_column": "value"
+  }
+}
+```
+
+Supported top-level keys:
+
+| Key | Meaning |
+|---|---|
+| `name` | display name used by the CLI |
+| `base_preset` | optional preset to extend |
+| `chart` | `ChartConfig` values |
+| `data_source` | `DataSourceConfig` values |
+| `dataset` | `DatasetConfig` values |
+
+Named `theme` and `value_format` values are resolved through the existing
+theme and value-format registries.
+
 ## Presets
 
 | Preset | Data source | Output |
@@ -118,6 +176,13 @@ Each preset combines:
 - `ThemeConfig`
 - `DataSourceConfig`
 - `DatasetConfig`
+
+For reusable video definitions that should not require Python edits, prefer
+external project files in:
+
+```text
+projects/
+```
 
 ## Value Formats
 
@@ -210,6 +275,7 @@ Current test coverage includes:
 - `DataSourceLoader`
 - `RenderJob`
 - CLI preset overrides
+- external project file loader
 - real render integration test with FFmpeg
 
 ## Architecture
@@ -217,7 +283,7 @@ Current test coverage includes:
 Current render pipeline:
 
 ```text
-ProjectPreset
+JSON project file or ProjectPreset
     -> ChartConfig
     -> ThemeConfig
     -> DataSourceConfig
@@ -255,6 +321,7 @@ src/
   validators/
   main.py
 
+projects/
 tests/
 ```
 
@@ -422,4 +489,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add support for external project preset files.
+- Add richer animation controls, such as easing presets and enter/exit effects.

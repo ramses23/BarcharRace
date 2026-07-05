@@ -1,0 +1,22 @@
+{
+  "name": "sample_project",
+  "base_preset": "csv_sample",
+  "chart": {
+    "title": "External Project Demo",
+    "output_file": "output/external_project.mp4",
+    "frames_dir": "output/external_project_frames",
+    "theme": "clean_report",
+    "value_format": "decimal",
+    "fps": 24,
+    "steps_per_transition": 24
+  },
+  "data_source": {
+    "source_type": "csv",
+    "csv_path": "data/datasets/sample_dynamic.csv"
+  },
+  "dataset": {
+    "year_column": "year",
+    "name_column": "country",
+    "value_column": "value"
+  }
+}

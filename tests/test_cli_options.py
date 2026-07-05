@@ -3,7 +3,11 @@ import unittest
 from unittest.mock import patch
 
 import _test_path
-from cli.cli_options import apply_cli_overrides, parse_cli_args
+from cli.cli_options import (
+    apply_cli_overrides,
+    build_preset_from_cli_options,
+    parse_cli_args,
+)
 from config.project_preset import DEFAULT_PRESET_NAME, get_preset
 
 
@@ -18,6 +22,23 @@ class CliOptionsTest(unittest.TestCase):
 
         self.assertTrue(options.list_themes)
         self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
+
+    def test_parses_project_file(self):
+        options = parse_cli_args(["--project", "projects/sample_project.json"])
+
+        self.assertEqual(options.project_file, "projects/sample_project.json")
+        self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
+
+    def test_rejects_project_file_with_preset_name(self):
+        with patch.object(sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                parse_cli_args(
+                    [
+                        "csv_sample",
+                        "--project",
+                        "projects/sample_project.json",
+                    ]
+                )
 
     def test_applies_basic_chart_overrides(self):
         preset = get_preset("csv_sample")
@@ -99,6 +120,15 @@ class CliOptionsTest(unittest.TestCase):
                         "10",
                     ]
                 )
+
+    def test_builds_preset_from_project_file(self):
+        options = parse_cli_args(["--project", "projects/sample_project.json"])
+
+        preset = build_preset_from_cli_options(options)
+
+        self.assertEqual(preset.name, "sample_project")
+        self.assertEqual(preset.chart_config.title, "External Project Demo")
+        self.assertEqual(preset.chart_config.theme.name, "clean_report")
 
 
 if __name__ == "__main__":

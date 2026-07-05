@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import dataclass, replace
 
+from config.project_file_loader import load_project_file
 from config.project_preset import DEFAULT_PRESET_NAME, get_preset
 from config.theme_config import get_theme
 from config.value_format_config import get_value_format
@@ -9,6 +10,7 @@ from config.value_format_config import get_value_format
 @dataclass(frozen=True)
 class CliOptions:
     preset_name: str = DEFAULT_PRESET_NAME
+    project_file: str | None = None
     list_presets: bool = False
     list_themes: bool = False
     list_value_formats: bool = False
@@ -33,8 +35,13 @@ def build_argument_parser():
     parser.add_argument(
         "preset",
         nargs="?",
-        default=DEFAULT_PRESET_NAME,
+        default=None,
         help=f"Preset to render. Default: {DEFAULT_PRESET_NAME}",
+    )
+    parser.add_argument(
+        "--project",
+        dest="project_file",
+        help="Render using an external JSON project file.",
     )
     parser.add_argument(
         "--list-presets",
@@ -114,8 +121,12 @@ def parse_cli_args(argv):
     if namespace.duration is not None and namespace.steps_per_transition is not None:
         parser.error("Use --duration or --steps-per-transition, not both.")
 
+    if namespace.project_file is not None and namespace.preset is not None:
+        parser.error("Use either a preset or --project, not both.")
+
     return CliOptions(
-        preset_name=namespace.preset,
+        preset_name=namespace.preset or DEFAULT_PRESET_NAME,
+        project_file=namespace.project_file,
         list_presets=namespace.list_presets,
         list_themes=namespace.list_themes,
         list_value_formats=namespace.list_value_formats,
@@ -133,7 +144,11 @@ def parse_cli_args(argv):
 
 
 def build_preset_from_cli_options(options):
-    preset = get_preset(options.preset_name)
+    if options.project_file is not None:
+        preset = load_project_file(options.project_file)
+    else:
+        preset = get_preset(options.preset_name)
+
     return apply_cli_overrides(preset, options)
 
 

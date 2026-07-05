@@ -1,4 +1,5 @@
 from cli.cli_options import build_preset_from_cli_options, parse_cli_args
+from config.project_file_loader import ProjectFileError
 from config.project_preset import (
     DEFAULT_PRESET_NAME,
     PresetError,
@@ -50,7 +51,7 @@ def main(argv=None):
 
     try:
         preset = build_preset_from_cli_options(options)
-    except (PresetError, ValueError) as exc:
+    except (PresetError, ProjectFileError, ValueError) as exc:
         print(exc)
         print("Usa --list-presets, --list-themes o --list-value-formats.")
         raise SystemExit(2) from exc
