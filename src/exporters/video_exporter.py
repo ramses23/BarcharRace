@@ -20,6 +20,7 @@ class VideoExporter:
         cmd = [
             "ffmpeg",
             "-y",
+            "-loglevel", "error",
             "-framerate", str(self.fps),
             "-i", str(frames_dir / self.config.ffmpeg_frame_pattern),
             "-c:v", "libx264",

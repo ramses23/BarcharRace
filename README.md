@@ -210,6 +210,7 @@ Current test coverage includes:
 - `DataSourceLoader`
 - `RenderJob`
 - CLI preset overrides
+- real render integration test with FFmpeg
 
 ## Architecture
 
@@ -421,5 +422,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add integration tests that render a tiny real video in a temporary folder.
 - Add support for external project preset files.
