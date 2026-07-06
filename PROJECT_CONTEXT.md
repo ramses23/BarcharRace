@@ -41,6 +41,8 @@ The project is a usable MVP:
 - Logo resolution and rendering.
 - External JSON project files.
 - Top-N bar selection and optional "Other" aggregation.
+- Per-year sprite precomputation to avoid repeated selection and layout work
+  across transitions.
 - CLI presets and CLI overrides.
 - PNG frame rendering with Matplotlib.
 - MP4 export with FFmpeg.
@@ -69,6 +71,7 @@ JSON project file or ProjectPreset
         -> LayoutEngine
         -> AssetResolver
         -> BarSprite
+        -> per-year sprite cache
         -> MotionEngine
         -> Scene
         -> BarRenderer
@@ -243,10 +246,11 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Improve large-dataset performance.
-2. Add richer visual polish: shadows, gradients, typography presets, and
+1. Add visual polish for aggregated `Other` bars.
+2. Continue larger-dataset profiling.
+3. Add richer visual polish: shadows, gradients, typography presets, and
    better title/source layout.
-3. Add more chart types while preserving the same pipeline ideas.
+4. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
 

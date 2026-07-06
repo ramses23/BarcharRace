@@ -24,6 +24,7 @@ charts, animated scatter plots, and timeline animations.
 - Override preset render options from the command line.
 - Render external JSON project files.
 - Limit large frames with configurable top-N selection and optional "Other".
+- Precompute per-year sprites so transitions reuse prepared layout state.
 - Run a minimal automated test suite with `unittest`.
 
 ## Requirements
@@ -377,6 +378,7 @@ Current test coverage includes:
 - `DatasetValidator`
 - `DataSourceLoader`
 - `RenderJob`
+- per-year sprite precomputation
 - CLI preset overrides
 - external project file loader
 - real render integration test with FFmpeg
@@ -401,6 +403,7 @@ JSON project file or ProjectPreset
         -> LayoutEngine
         -> AssetResolver
         -> BarSprite
+        -> per-year sprite cache
         -> MotionEngine
         -> Scene
         -> BarRenderer
@@ -598,4 +601,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Improve large-dataset performance and add visual polish for aggregated bars.
+- Add visual polish for aggregated bars and continue larger-dataset profiling.

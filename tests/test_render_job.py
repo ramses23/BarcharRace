@@ -8,6 +8,7 @@ from config.bar_selection_config import BarSelectionConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from models.bar_sprite import BarSprite
 from pipeline.render_job import RenderJob
 
 
@@ -128,6 +129,73 @@ class RenderJobTest(unittest.TestCase):
 
             self.assertEqual(first_frame_names, ["USA", "Other"])
             self.assertEqual(first_frame_values["Other"], 140)
+
+    def test_precomputes_sprites_once_per_year(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            csv_path = temp_path / "sample.csv"
+            frames_dir = temp_path / "frames"
+            output_file = temp_path / "video.mp4"
+
+            csv_path.write_text(
+                "\n".join(
+                    [
+                        "year,country,value",
+                        "2000,USA,100",
+                        "2001,USA,110",
+                        "2002,USA,120",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            chart_config = ChartConfig(
+                frames_dir=str(frames_dir),
+                output_file=str(output_file),
+                steps_per_transition=2,
+            )
+            data_source_config = DataSourceConfig(
+                source_type="csv",
+                csv_path=str(csv_path),
+            )
+
+            def build_sprites(bars):
+                return [
+                    BarSprite(
+                        name=bar.name,
+                        value=bar.value,
+                        color="#123456",
+                        x=100,
+                        y=index * 20,
+                        width=bar.value,
+                        height=10,
+                        rank=index + 1,
+                    )
+                    for index, bar in enumerate(bars)
+                ]
+
+            with patch("pipeline.render_job.BarSelector") as selector_class:
+                with patch("pipeline.render_job.LayoutEngine") as layout_class:
+                    with patch("pipeline.render_job.BarRenderer") as renderer_class:
+                        with patch("pipeline.render_job.VideoExporter"):
+                            with patch("builtins.print"):
+                                selector = selector_class.return_value
+                                selector.select.side_effect = lambda bars: bars
+
+                                layout = layout_class.return_value
+                                layout.build.side_effect = build_sprites
+
+                                renderer = renderer_class.return_value
+
+                                RenderJob(
+                                    config=chart_config,
+                                    data_source_config=data_source_config,
+                                    dataset_config=DatasetConfig(),
+                                ).run()
+
+            self.assertEqual(selector.select.call_count, 3)
+            self.assertEqual(layout.build.call_count, 3)
+            self.assertEqual(renderer.render.call_count, 4)
 
 
 if __name__ == "__main__":

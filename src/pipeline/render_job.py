@@ -48,6 +48,13 @@ class RenderJob:
         )
         print(f"Frames anteriores eliminados: {removed_frames}")
 
+        sprites_by_year = self._build_sprites_by_year(
+            timeline=timeline,
+            years=years,
+            selector=selector,
+            layout=layout,
+        )
+
         frame_id = 0
         transitions_rendered = 0
 
@@ -57,11 +64,8 @@ class RenderJob:
 
             print(f"Transicion {year_a} -> {year_b}")
 
-            start_bars = selector.select(timeline.get_frame(year_a))
-            end_bars = selector.select(timeline.get_frame(year_b))
-
-            start_sprites = layout.build(start_bars)
-            end_sprites = layout.build(end_bars)
+            start_sprites = sprites_by_year[year_a]
+            end_sprites = sprites_by_year[year_b]
 
             frames = motion.interpolate_sprites(
                 start_sprites,
@@ -102,6 +106,15 @@ class RenderJob:
         dataframe = DataSourceLoader(self.data_source_config).load()
         dataframe = DatasetValidator(config=self.dataset_config).validate(dataframe)
         return Timeline(dataframe, config=self.dataset_config)
+
+    def _build_sprites_by_year(self, timeline, years, selector, layout):
+        sprites_by_year = {}
+
+        for year in years:
+            bars = selector.select(timeline.get_frame(year))
+            sprites_by_year[year] = layout.build(bars)
+
+        return sprites_by_year
 
     def _build_scene(self, year_a, year_b, step_index, total_steps, bars):
         progress = step_index / (total_steps - 1) if total_steps > 1 else 1
