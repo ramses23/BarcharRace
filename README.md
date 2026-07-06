@@ -18,6 +18,7 @@ charts, animated scatter plots, and timeline animations.
 - Render full scenes with title, subtitle, source label, bars, values, and
   a large time label.
 - Render rank labels for each bar.
+- Render configurable soft shadows behind bars.
 - Resolve and render optional logos for bars.
 - Export PNG frames to MP4 with FFmpeg.
 - Run project presets from the command line.
@@ -143,7 +144,11 @@ Example:
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
     "label_min_x": 40,
-    "value_label_gap": 16
+    "value_label_gap": 16,
+    "bar_shadow_enabled": true,
+    "bar_shadow_alpha": 0.12,
+    "bar_shadow_offset_x": 5,
+    "bar_shadow_offset_y": 4
   },
   "animation": {
     "easing": "ease_out_cubic",
@@ -246,6 +251,21 @@ rank_label_gap
 ```
 
 The default label format is `#1`, `#2`, `#3`.
+
+## Visual Polish
+
+Bars can render a subtle configurable shadow behind the main rectangle. This is
+controlled in `ChartConfig` or in external project files:
+
+```text
+bar_shadow_enabled
+bar_shadow_color
+bar_shadow_alpha
+bar_shadow_offset_x
+bar_shadow_offset_y
+```
+
+Shadows follow bar opacity, so entering and exiting bars fade consistently.
 
 ## Text Fitting
 
@@ -380,6 +400,7 @@ Current test coverage includes:
 - `ColorPalette`
 - `BarSelector`
 - `LayoutEngine` rank assignment
+- bar shadow rendering
 - text fitting and value-label layout
 - `DatasetValidator`
 - `DataSourceLoader`

@@ -19,6 +19,11 @@ class ChartConfig:
 
     bar_height: int = 54
     bar_gap: int = 18
+    bar_shadow_enabled: bool = True
+    bar_shadow_color: str = "#000000"
+    bar_shadow_alpha: float = 0.12
+    bar_shadow_offset_x: int = 5
+    bar_shadow_offset_y: int = 4
 
     fps: int = 30
     steps_per_transition: int = 30

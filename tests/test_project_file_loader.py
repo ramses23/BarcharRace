@@ -27,6 +27,11 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "rank_label_prefix": "No.",
                             "label_min_x": 56,
                             "value_label_gap": 20,
+                            "bar_shadow_enabled": True,
+                            "bar_shadow_color": "#222222",
+                            "bar_shadow_alpha": 0.2,
+                            "bar_shadow_offset_x": 8,
+                            "bar_shadow_offset_y": 5,
                         },
                         "animation": {
                             "easing": "ease_out_cubic",
@@ -68,6 +73,11 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.rank_label_prefix, "No.")
         self.assertEqual(preset.chart_config.label_min_x, 56)
         self.assertEqual(preset.chart_config.value_label_gap, 20)
+        self.assertTrue(preset.chart_config.bar_shadow_enabled)
+        self.assertEqual(preset.chart_config.bar_shadow_color, "#222222")
+        self.assertEqual(preset.chart_config.bar_shadow_alpha, 0.2)
+        self.assertEqual(preset.chart_config.bar_shadow_offset_x, 8)
+        self.assertEqual(preset.chart_config.bar_shadow_offset_y, 5)
         self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
         self.assertFalse(preset.chart_config.animation.enter_exit)
         self.assertFalse(preset.chart_config.animation.value_smoothing)

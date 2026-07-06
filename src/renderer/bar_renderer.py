@@ -87,6 +87,8 @@ class BarRenderer:
             alpha = min(1.0, max(0.25, sprite.width / self.config.max_bar_width))
             rgba = mcolors.to_rgba(sprite.color, alpha * opacity)
 
+            self._draw_bar_shadow(ax, sprite, opacity)
+
             ax.barh(
                 sprite.y,
                 sprite.width,
@@ -94,6 +96,7 @@ class BarRenderer:
                 left=sprite.x,
                 color=rgba,
                 edgecolor="none",
+                zorder=2,
             )
 
             self._draw_rank_label(ax, sprite, opacity)
@@ -128,6 +131,28 @@ class BarRenderer:
                 color=value_layout["color"],
                 alpha=opacity,
             )
+
+    def _draw_bar_shadow(self, ax, sprite, opacity):
+        if not self.config.bar_shadow_enabled:
+            return
+
+        shadow_alpha = max(0.0, min(1.0, self.config.bar_shadow_alpha))
+
+        if shadow_alpha <= 0:
+            return
+
+        ax.barh(
+            sprite.y + self.config.bar_shadow_offset_y,
+            sprite.width,
+            height=sprite.height,
+            left=sprite.x + self.config.bar_shadow_offset_x,
+            color=mcolors.to_rgba(
+                self.config.bar_shadow_color,
+                shadow_alpha * opacity,
+            ),
+            edgecolor="none",
+            zorder=1,
+        )
 
     def _draw_rank_label(self, ax, sprite, opacity):
         if not self.config.rank_labels_enabled:

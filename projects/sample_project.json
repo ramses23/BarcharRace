@@ -12,7 +12,11 @@
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
     "label_min_x": 40,
-    "value_label_gap": 16
+    "value_label_gap": 16,
+    "bar_shadow_enabled": true,
+    "bar_shadow_alpha": 0.12,
+    "bar_shadow_offset_x": 5,
+    "bar_shadow_offset_y": 4
   },
   "animation": {
     "easing": "ease_out_cubic",
