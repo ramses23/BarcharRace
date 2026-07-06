@@ -20,6 +20,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "output_file": "output/custom.mp4",
                             "theme": "midnight_contrast",
                             "value_format": "compact",
+                            "typography_preset": "compact",
                             "fps": 24,
                             "steps_per_transition": 12,
                             "logo_file_extensions": [".png", ".webp"],
@@ -75,6 +76,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.output_file, "output/custom.mp4")
         self.assertEqual(preset.chart_config.theme.name, "midnight_contrast")
         self.assertTrue(preset.chart_config.value_format.compact)
+        self.assertEqual(preset.chart_config.typography_preset, "compact")
         self.assertEqual(preset.chart_config.fps, 24)
         self.assertEqual(preset.chart_config.steps_per_transition, 12)
         self.assertEqual(preset.chart_config.logo_file_extensions, (".png", ".webp"))
@@ -86,6 +88,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.subtitle_font_weight, "light")
         self.assertEqual(preset.chart_config.time_label_font_weight, "bold")
         self.assertEqual(preset.chart_config.source_font_weight, "normal")
+        self.assertEqual(preset.chart_config.subtitle_font_size, 18)
         self.assertEqual(preset.chart_config.title_max_width, 900)
         self.assertEqual(preset.chart_config.subtitle_max_width, 800)
         self.assertEqual(preset.chart_config.source_max_width, 700)
@@ -212,6 +215,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"animation": {"easing": "unknown"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_unknown_typography_preset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"chart": {"typography_preset": "unknown"}}),
                 encoding="utf-8",
             )
 

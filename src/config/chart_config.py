@@ -40,6 +40,7 @@ class ChartConfig:
 
     title: str = "Bar Chart Studio"
     theme: ThemeConfig = field(default_factory=ThemeConfig)
+    typography_preset: str = "studio"
 
     title_font_size: int = 34
     subtitle_font_size: int = 20

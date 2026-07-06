@@ -20,6 +20,7 @@ charts, animated scatter plots, and timeline animations.
 - Render rank labels for each bar.
 - Apply configurable font weights and max widths to title, subtitle, time
   label, and source label.
+- Apply reusable typography presets.
 - Render configurable soft shadows behind bars.
 - Render configurable horizontal gradients on bars.
 - Resolve and render optional logos for bars.
@@ -87,10 +88,11 @@ seconds spent loading data, validating data, building the timeline,
 precomputing sprites, rendering frames, exporting video, and running the full
 job.
 
-List available themes, value formats, and easing presets:
+List available themes, typography presets, value formats, and easing presets:
 
 ```powershell
 .venv\Scripts\python.exe src\main.py --list-themes
+.venv\Scripts\python.exe src\main.py --list-typographies
 .venv\Scripts\python.exe src\main.py --list-value-formats
 .venv\Scripts\python.exe src\main.py --list-easings
 ```
@@ -100,6 +102,7 @@ Override preset options from the command line:
 ```powershell
 .venv\Scripts\python.exe src\main.py csv_sample --output output/custom.mp4
 .venv\Scripts\python.exe src\main.py csv_sample --theme midnight_contrast
+.venv\Scripts\python.exe src\main.py csv_sample --typography editorial
 .venv\Scripts\python.exe src\main.py csv_sample --title "Custom Race"
 .venv\Scripts\python.exe src\main.py csv_sample --fps 60 --duration 2
 ```
@@ -112,6 +115,7 @@ Common overrides:
 | `--frames-dir` | temporary PNG frames directory |
 | `--title` | chart title |
 | `--theme` | named visual theme |
+| `--typography` | named typography preset |
 | `--value-format` | named value formatter |
 | `--fps` | video frames per second |
 | `--steps` | frames generated per transition |
@@ -122,7 +126,7 @@ Common overrides:
 Overrides can also be applied on top of an external project file:
 
 ```powershell
-.venv\Scripts\python.exe src\main.py --project projects/sample_project.json --theme midnight_contrast --output output/custom.mp4
+.venv\Scripts\python.exe src\main.py --project projects/sample_project.json --typography compact --output output/custom.mp4
 ```
 
 ## Project Files
@@ -142,19 +146,13 @@ Example:
     "frames_dir": "output/external_project_frames",
     "theme": "clean_report",
     "value_format": "decimal",
+    "typography_preset": "editorial",
     "fps": 24,
     "steps_per_transition": 24,
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
     "label_min_x": 40,
     "value_label_gap": 16,
-    "title_font_weight": "bold",
-    "subtitle_font_weight": "normal",
-    "time_label_font_weight": "bold",
-    "source_font_weight": "normal",
-    "title_max_width": 1200,
-    "subtitle_max_width": 980,
-    "source_max_width": 820,
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
@@ -292,6 +290,7 @@ Title, subtitle, time label, and source label typography can be tuned from
 `ChartConfig` or a project file:
 
 ```text
+typography_preset
 title_font_weight
 subtitle_font_weight
 time_label_font_weight
@@ -303,6 +302,14 @@ source_max_width
 
 The title, subtitle, and source label are truncated with `...` when they exceed
 their configured widths.
+
+Available typography presets:
+
+| Preset | Notes |
+|---|---|
+| `studio` | Default balanced text scale |
+| `editorial` | Larger title/subtitle scale for polished 1080p videos |
+| `compact` | Smaller text scale for denser charts |
 
 ## Text Fitting
 
@@ -437,6 +444,7 @@ Current test coverage includes:
 - `ValueFormatConfig`
 - `AnimationConfig`
 - `ThemeConfig`
+- typography presets
 - `ColorPalette`
 - `BarSelector`
 - `LayoutEngine` rank assignment
@@ -670,4 +678,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue larger-dataset profiling and add reusable typography presets.
+- Continue larger-dataset profiling and add richer layout presets for common
+  video formats.

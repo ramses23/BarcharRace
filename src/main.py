@@ -8,6 +8,7 @@ from config.project_preset import (
     list_presets,
 )
 from config.theme_config import list_themes
+from config.typography_config import list_typography_presets
 from config.value_format_config import list_value_formats
 from pipeline.render_job import RenderJob
 
@@ -50,6 +51,10 @@ def main(argv=None):
         _print_items("Formatos disponibles:", list_value_formats())
         return
 
+    if options.list_typographies:
+        _print_items("Tipografias disponibles:", list_typography_presets())
+        return
+
     if options.list_easings:
         _print_items("Easings disponibles:", list_easings())
         return
@@ -58,7 +63,10 @@ def main(argv=None):
         preset = build_preset_from_cli_options(options)
     except (PresetError, ProjectFileError, ValueError) as exc:
         print(exc)
-        print("Usa --list-presets, --list-themes o --list-value-formats.")
+        print(
+            "Usa --list-presets, --list-themes, --list-value-formats "
+            "o --list-typographies."
+        )
         raise SystemExit(2) from exc
 
     run_project_preset(preset)

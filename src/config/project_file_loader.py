@@ -8,6 +8,7 @@ from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.project_preset import ProjectPreset, get_preset
 from config.theme_config import get_theme
+from config.typography_config import apply_typography_preset, get_typography_preset
 from config.value_format_config import get_value_format
 
 
@@ -38,9 +39,10 @@ def load_project_file(path):
 
     base_preset = _base_preset(data, project_path)
     project_name = _project_name(data, project_path)
+    chart_data = data.get("chart", {})
     chart_config = _build_config(
-        base_preset.chart_config,
-        data.get("chart", {}),
+        _chart_base_config(base_preset.chart_config, chart_data),
+        chart_data,
         "chart",
         _convert_chart_value,
     )
@@ -159,6 +161,29 @@ def _build_config(base_config, section_data, section_name, convert_value=None):
         ) from exc
 
 
+def _chart_base_config(base_config, chart_data):
+    if chart_data is None:
+        return base_config
+
+    if not isinstance(chart_data, dict):
+        raise ProjectFileError("Project section 'chart' must be an object.")
+
+    preset_name = chart_data.get("typography_preset")
+
+    if preset_name is None:
+        return base_config
+
+    if not isinstance(preset_name, str):
+        raise ProjectFileError(
+            "Chart field 'typography_preset' must be a named typography preset."
+        )
+
+    try:
+        return apply_typography_preset(base_config, preset_name)
+    except ValueError as exc:
+        raise ProjectFileError(str(exc)) from exc
+
+
 def _convert_chart_value(key, value):
     if key == "animation":
         raise ProjectFileError(
@@ -183,6 +208,19 @@ def _convert_chart_value(key, value):
             )
 
         return get_value_format(value)
+
+    if key == "typography_preset":
+        if not isinstance(value, str):
+            raise ProjectFileError(
+                "Chart field 'typography_preset' must be a named typography preset."
+            )
+
+        try:
+            get_typography_preset(value)
+        except ValueError as exc:
+            raise ProjectFileError(str(exc)) from exc
+
+        return value
 
     if key == "logo_file_extensions":
         if not isinstance(value, list) or not all(

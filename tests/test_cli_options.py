@@ -29,6 +29,12 @@ class CliOptionsTest(unittest.TestCase):
         self.assertTrue(options.list_easings)
         self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
 
+    def test_parses_list_typographies_action(self):
+        options = parse_cli_args(["--list-typographies"])
+
+        self.assertTrue(options.list_typographies)
+        self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
+
     def test_parses_project_file(self):
         options = parse_cli_args(["--project", "projects/sample_project.json"])
 
@@ -96,6 +102,16 @@ class CliOptionsTest(unittest.TestCase):
 
         self.assertEqual(updated.chart_config.theme.name, "midnight_contrast")
         self.assertTrue(updated.chart_config.value_format.compact)
+
+    def test_applies_typography_override(self):
+        preset = get_preset("csv_sample")
+        options = parse_cli_args(["csv_sample", "--typography", "compact"])
+
+        updated = apply_cli_overrides(preset, options)
+
+        self.assertEqual(updated.chart_config.typography_preset, "compact")
+        self.assertEqual(updated.chart_config.title_font_size, 30)
+        self.assertEqual(updated.chart_config.source_max_width, 760)
 
     def test_duration_uses_effective_fps(self):
         preset = get_preset("csv_sample")
