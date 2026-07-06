@@ -19,6 +19,8 @@ charts, animated scatter plots, and timeline animations.
   a large time label.
 - Render rank labels for each bar.
 - Keep bar labels separated from rank-label columns in compact layouts.
+- Keep very large value labels inside a safe data-area width.
+- Draw the large time label as a background watermark behind chart content.
 - Auto-fit visible bars to the available vertical layout space.
 - Apply reusable layout presets for common video formats.
 - Apply configurable font weights and max widths to title, subtitle, time
@@ -184,6 +186,7 @@ Example:
     "rank_label_label_gap": 18,
     "label_min_x": 40,
     "value_label_gap": 16,
+    "value_label_min_x": null,
     "auto_fit_bar_count": true,
     "max_visible_bars": null,
     "bar_shadow_enabled": true,
@@ -399,7 +402,12 @@ Bar labels and value labels include basic collision handling.
 Long bar names are truncated with `...` so they stay inside the available
 label column. Value labels are drawn outside the bar when they fit, moved
 inside the bar when the right edge would overflow, or clamped to a safe
-right edge when the bar is too small.
+right edge when the bar is too small. Very large value labels are truncated
+inside the safe value-label area instead of stretching into the left label
+column.
+
+The large time label is rendered as a low-opacity background watermark behind
+bars and source text, which keeps dense layouts readable.
 
 Text width estimates use the configured render `dpi`, so Matplotlib point-size
 fonts are fitted against pixel-based layout coordinates.
@@ -416,9 +424,13 @@ rank_label_label_gap
 text_average_char_width
 value_label_gap
 value_label_edge_padding
+value_label_min_x
 value_label_inside_padding
 value_label_inside_color
 ```
+
+When `value_label_min_x` is `null`, the renderer uses the data area's left
+margin when it fits inside the canvas, otherwise it falls back to `label_min_x`.
 
 ## Bar Selection
 
@@ -541,6 +553,7 @@ Current test coverage includes:
 - text fitting for title, subtitle, source, rank-aware bar labels, and
   value-label layout
 - full-canvas Matplotlib renderer setup
+- background time-label layering
 - `DatasetValidator`
 - `DataSourceLoader`
 - `RenderJob`
@@ -794,5 +807,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue stability work for edge cases: very large values and dense
-  footer/time-label layouts.
+- Continue visual polish with dataset-specific presets and real-world sample
+  project files.

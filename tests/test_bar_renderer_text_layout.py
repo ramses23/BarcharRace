@@ -188,6 +188,78 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(layout["ha"], "right")
         self.assertEqual(layout["color"], renderer.config.muted_text_color)
 
+    def test_value_label_max_width_uses_data_area_left_edge(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=500,
+                left_margin=120,
+                value_label_edge_padding=20,
+            )
+        )
+
+        self.assertEqual(renderer._value_label_min_x(), 120)
+        self.assertEqual(renderer._value_label_max_width(), 360)
+
+    def test_value_label_max_width_uses_configured_left_edge(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=500,
+                left_margin=120,
+                value_label_min_x=180,
+                value_label_edge_padding=20,
+            )
+        )
+
+        self.assertEqual(renderer._value_label_min_x(), 180)
+        self.assertEqual(renderer._value_label_max_width(), 300)
+
+    def test_value_label_max_width_falls_back_for_tiny_canvas(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=220,
+                left_margin=320,
+                label_min_x=40,
+                value_label_edge_padding=20,
+            )
+        )
+
+        self.assertEqual(renderer._value_label_min_x(), 40)
+        self.assertEqual(renderer._value_label_max_width(), 160)
+
+    def test_truncates_very_large_value_to_safe_value_area(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                width=300,
+                left_margin=100,
+                value_label_min_x=120,
+                value_font_size=10,
+                text_average_char_width=0.5,
+                value_label_gap=10,
+                value_label_edge_padding=20,
+                value_label_inside_padding=10,
+            )
+        )
+        sprite = BarSprite(
+            name="USA",
+            value=100,
+            color="#123456",
+            x=260,
+            y=0,
+            width=5,
+            height=40,
+        )
+
+        layout = renderer._value_label_layout(sprite, "1234567890" * 5)
+
+        self.assertEqual(layout["x"], 280)
+        self.assertEqual(layout["ha"], "right")
+        self.assertTrue(layout["text"].endswith("..."))
+        self.assertLessEqual(
+            renderer._value_label_text_width(layout["text"]),
+            renderer._value_label_max_width(),
+        )
+
     def test_draws_bar_shadow_with_configured_offset(self):
         renderer = BarRenderer(
             config=ChartConfig(
@@ -397,8 +469,10 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertEqual(axis.text_calls[0]["text"], "2000")
         self.assertEqual(axis.text_calls[0]["fontweight"], "heavy")
+        self.assertEqual(axis.text_calls[0]["zorder"], 0)
         self.assertEqual(axis.text_calls[1]["text"], "Source:...")
         self.assertEqual(axis.text_calls[1]["fontweight"], "medium")
+        self.assertEqual(axis.text_calls[1]["zorder"], 5)
 
 
 class FakeAxis:

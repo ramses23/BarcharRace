@@ -83,6 +83,7 @@ class ChartConfig:
 
     value_label_gap: int = 16
     value_label_edge_padding: int = 24
+    value_label_min_x: int | None = None
     value_label_inside_padding: int = 18
     value_label_inside_color: str | None = None
 

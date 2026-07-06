@@ -31,6 +31,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "rank_label_label_gap": 12,
                             "label_min_x": 56,
                             "value_label_gap": 20,
+                            "value_label_min_x": 72,
                             "auto_fit_bar_count": False,
                             "max_visible_bars": 7,
                             "title_font_weight": "heavy",
@@ -100,6 +101,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.rank_label_label_gap, 12)
         self.assertEqual(preset.chart_config.label_min_x, 56)
         self.assertEqual(preset.chart_config.value_label_gap, 20)
+        self.assertEqual(preset.chart_config.value_label_min_x, 72)
         self.assertFalse(preset.chart_config.auto_fit_bar_count)
         self.assertEqual(preset.chart_config.max_visible_bars, 7)
         self.assertEqual(preset.chart_config.title_font_weight, "heavy")
@@ -304,6 +306,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"chart": {"rank_label_label_gap": -1}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_invalid_value_label_min_x(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"chart": {"value_label_min_x": -1}}),
                 encoding="utf-8",
             )
 

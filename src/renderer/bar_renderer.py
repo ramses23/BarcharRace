@@ -28,9 +28,10 @@ class BarRenderer:
         )
 
         self._setup_canvas(fig, ax)
+        self._draw_time_label(ax, scene)
         self._draw_header(ax, scene)
         self._draw_bars(ax, scene.bars)
-        self._draw_footer(ax, scene)
+        self._draw_source_label(ax, scene)
 
         path = os.path.join(self.output_dir, filename)
         plt.savefig(
@@ -66,6 +67,7 @@ class BarRenderer:
             fontfamily=self.config.font_family,
             fontweight=self.config.title_font_weight,
             color=self.config.text_color,
+            zorder=5,
         )
 
         if scene.subtitle:
@@ -79,6 +81,7 @@ class BarRenderer:
                 fontfamily=self.config.font_family,
                 fontweight=self.config.subtitle_font_weight,
                 color=self.config.muted_text_color,
+                zorder=5,
             )
 
     def _fit_title(self, title):
@@ -128,6 +131,7 @@ class BarRenderer:
                 fontfamily=self.config.font_family,
                 color=self.config.text_color,
                 alpha=opacity,
+                zorder=4,
             )
 
             value_text = format_value(
@@ -146,6 +150,7 @@ class BarRenderer:
                 fontfamily=self.config.font_family,
                 color=value_layout["color"],
                 alpha=opacity,
+                zorder=4,
             )
 
     def _draw_bar(self, ax, sprite, rgba):
@@ -225,6 +230,7 @@ class BarRenderer:
             fontweight="bold",
             color=self.config.muted_text_color,
             alpha=opacity,
+            zorder=4,
         )
 
     def _rank_label_x(self):
@@ -261,15 +267,11 @@ class BarRenderer:
     def _value_label_layout(self, sprite, value_text):
         text = fit_text_to_width(
             value_text,
-            max_width=self.config.width - (self.config.label_min_x * 2),
+            max_width=self._value_label_max_width(),
             font_size=self._font_pixel_size(self.config.value_font_size),
             average_char_width=self.config.text_average_char_width,
         )
-        text_width = estimate_text_width(
-            text,
-            self._font_pixel_size(self.config.value_font_size),
-            self.config.text_average_char_width,
-        )
+        text_width = self._value_label_text_width(text)
         max_right = self.config.width - self.config.value_label_edge_padding
         outside_x = sprite.x + sprite.width + self.config.value_label_gap
 
@@ -298,6 +300,28 @@ class BarRenderer:
             "ha": "right",
             "color": self.config.muted_text_color,
         }
+
+    def _value_label_max_width(self):
+        max_right = self.config.width - self.config.value_label_edge_padding
+        return max(0, max_right - self._value_label_min_x())
+
+    def _value_label_text_width(self, text):
+        return estimate_text_width(
+            text,
+            self._font_pixel_size(self.config.value_font_size),
+            self.config.text_average_char_width,
+        )
+
+    def _value_label_min_x(self):
+        if self.config.value_label_min_x is not None:
+            return self.config.value_label_min_x
+
+        max_right = self.config.width - self.config.value_label_edge_padding
+
+        if self.config.left_margin < max_right:
+            return self.config.left_margin
+
+        return self.config.label_min_x
 
     def _value_label_inside_color(self):
         return self.config.value_label_inside_color or self.config.background_color
@@ -351,6 +375,10 @@ class BarRenderer:
         return min(1.0, max(0.0, sprite.opacity))
 
     def _draw_footer(self, ax, scene):
+        self._draw_time_label(ax, scene)
+        self._draw_source_label(ax, scene)
+
+    def _draw_time_label(self, ax, scene):
         if scene.time_label:
             ax.text(
                 self.config.time_label_x,
@@ -363,8 +391,10 @@ class BarRenderer:
                 fontweight=self.config.time_label_font_weight,
                 color=self.config.muted_text_color,
                 alpha=0.22,
+                zorder=0,
             )
 
+    def _draw_source_label(self, ax, scene):
         if scene.source_label:
             ax.text(
                 self.config.source_x,
@@ -376,6 +406,7 @@ class BarRenderer:
                 fontfamily=self.config.font_family,
                 fontweight=self.config.source_font_weight,
                 color=self.config.muted_text_color,
+                zorder=5,
             )
 
     def _fit_source_label(self, source_label):

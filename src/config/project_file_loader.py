@@ -294,6 +294,17 @@ def _convert_chart_value(key, value):
 
         return value
 
+    if key == "value_label_min_x":
+        if value is None:
+            return None
+
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError(
+                "Chart field 'value_label_min_x' must be null or >= 0."
+            )
+
+        return value
+
     if key == "logo_file_extensions":
         if not isinstance(value, list) or not all(
             isinstance(item, str) for item in value

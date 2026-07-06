@@ -37,6 +37,7 @@ The project is a usable MVP:
 - Rank labels.
 - Text fitting for long labels and value labels.
 - Rank-aware bar label fitting so names do not invade the rank-label column.
+- Value labels are constrained to a safe data-area width for very large values.
 - Title, subtitle, and source labels fit to both configured max widths and
   remaining canvas width.
 - Themes.
@@ -61,6 +62,8 @@ The project is a usable MVP:
   directly to the output frame.
 - Text fitting converts Matplotlib point-size fonts to pixel estimates with
   the configured DPI before truncating labels.
+- The large time label is rendered as a background watermark behind bars and
+  source text.
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
   format.
 - Unit tests and a real FFmpeg integration test.
@@ -272,8 +275,7 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Improve stability for remaining edge cases: very large values and dense
-   footer/time-label layouts.
+1. Add dataset-specific presets and real-world sample project files.
 2. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

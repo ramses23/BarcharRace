@@ -17,6 +17,7 @@
     "rank_label_label_gap": 18,
     "label_min_x": 40,
     "value_label_gap": 16,
+    "value_label_min_x": null,
     "auto_fit_bar_count": true,
     "max_visible_bars": null,
     "bar_shadow_enabled": true,
