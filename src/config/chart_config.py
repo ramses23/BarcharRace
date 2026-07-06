@@ -37,6 +37,11 @@ class ChartConfig:
     frame_filename_template: str = "frame_{frame_id:04d}.png"
     frame_file_pattern: str = "frame_*.png"
     ffmpeg_frame_pattern: str = "frame_%04d.png"
+    video_codec: str = "libx264"
+    video_pixel_format: str = "yuv420p"
+    video_crf: int | None = 18
+    video_bitrate: str | None = None
+    ffmpeg_preset: str | None = None
 
     title: str = "Bar Chart Studio"
     layout_preset: str = "youtube_1080p"

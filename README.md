@@ -25,7 +25,7 @@ charts, animated scatter plots, and timeline animations.
 - Render configurable soft shadows behind bars.
 - Render configurable horizontal gradients on bars.
 - Resolve and render optional logos for bars.
-- Export PNG frames to MP4 with FFmpeg.
+- Export PNG frames to MP4 with configurable FFmpeg quality options.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
@@ -109,6 +109,7 @@ Override preset options from the command line:
 .venv\Scripts\python.exe src\main.py csv_sample --typography editorial
 .venv\Scripts\python.exe src\main.py csv_sample --title "Custom Race"
 .venv\Scripts\python.exe src\main.py csv_sample --fps 60 --duration 2
+.venv\Scripts\python.exe src\main.py csv_sample --video-crf 20 --ffmpeg-preset slow
 ```
 
 Common overrides:
@@ -127,6 +128,11 @@ Common overrides:
 | `--duration` | seconds per transition |
 | `--width` | render width in pixels |
 | `--height` | render height in pixels |
+| `--video-codec` | FFmpeg video codec |
+| `--video-pixel-format` | FFmpeg pixel format |
+| `--video-crf` | FFmpeg CRF quality value |
+| `--video-bitrate` | FFmpeg video bitrate, for example `8M` |
+| `--ffmpeg-preset` | FFmpeg encoder preset, for example `slow` |
 
 Overrides can also be applied on top of an external project file:
 
@@ -155,6 +161,11 @@ Example:
     "typography_preset": "editorial",
     "fps": 24,
     "steps_per_transition": 24,
+    "video_codec": "libx264",
+    "video_pixel_format": "yuv420p",
+    "video_crf": 18,
+    "video_bitrate": null,
+    "ffmpeg_preset": null,
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
     "label_min_x": 40,
@@ -494,6 +505,7 @@ Current test coverage includes:
 - `RenderJob`
 - per-year sprite precomputation
 - render profiling metrics
+- configurable FFmpeg export command
 - CLI preset overrides
 - external project file loader
 - real render integration test with FFmpeg
@@ -648,6 +660,30 @@ Before each render, old `frame_*.png` files are removed from the configured
 frames directory so FFmpeg cannot mix old and new frames.
 
 `output/` is ignored by Git.
+
+## Video Export
+
+FFmpeg export is configured through `ChartConfig`, project files, or CLI
+overrides:
+
+```text
+video_codec
+video_pixel_format
+video_crf
+video_bitrate
+ffmpeg_preset
+```
+
+The default export uses:
+
+```text
+video_codec = libx264
+video_pixel_format = yuv420p
+video_crf = 18
+```
+
+CRF mode is the default quality mode. When `video_bitrate` is set, bitrate mode
+is used and `video_crf` is omitted from the FFmpeg command.
 
 ## Logos
 

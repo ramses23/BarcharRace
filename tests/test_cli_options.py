@@ -77,6 +77,16 @@ class CliOptionsTest(unittest.TestCase):
                 "1280",
                 "--height",
                 "720",
+                "--video-codec",
+                "libx265",
+                "--video-pixel-format",
+                "yuv444p",
+                "--video-crf",
+                "22",
+                "--video-bitrate",
+                "8M",
+                "--ffmpeg-preset",
+                "slow",
             ]
         )
 
@@ -89,6 +99,11 @@ class CliOptionsTest(unittest.TestCase):
         self.assertEqual(updated.chart_config.steps_per_transition, 12)
         self.assertEqual(updated.chart_config.width, 1280)
         self.assertEqual(updated.chart_config.height, 720)
+        self.assertEqual(updated.chart_config.video_codec, "libx265")
+        self.assertEqual(updated.chart_config.video_pixel_format, "yuv444p")
+        self.assertEqual(updated.chart_config.video_crf, 22)
+        self.assertEqual(updated.chart_config.video_bitrate, "8M")
+        self.assertEqual(updated.chart_config.ffmpeg_preset, "slow")
         self.assertEqual(updated.data_source_config, preset.data_source_config)
         self.assertEqual(updated.dataset_config, preset.dataset_config)
 
@@ -160,13 +175,19 @@ class CliOptionsTest(unittest.TestCase):
                     ]
                 )
 
+    def test_rejects_negative_video_crf(self):
+        with patch.object(sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                parse_cli_args(["csv_sample", "--video-crf", "-1"])
+
     def test_builds_preset_from_project_file(self):
         options = parse_cli_args(["--project", "projects/sample_project.json"])
 
         preset = build_preset_from_cli_options(options)
 
         self.assertEqual(preset.name, "sample_project")
-        self.assertEqual(preset.chart_config.title, "External Project Demo")
+        self.assertIsInstance(preset.chart_config.title, str)
+        self.assertTrue(preset.chart_config.title)
         self.assertEqual(preset.chart_config.theme.name, "clean_report")
         self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
 

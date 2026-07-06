@@ -249,6 +249,30 @@ def _convert_chart_value(key, value):
 
         return value
 
+    if key in ("video_codec", "video_pixel_format"):
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(f"Chart field '{key}' must be a non-empty string.")
+
+        return value
+
+    if key == "video_crf":
+        if value is None:
+            return None
+
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError("Chart field 'video_crf' must be null or >= 0.")
+
+        return value
+
+    if key in ("video_bitrate", "ffmpeg_preset"):
+        if value is None:
+            return None
+
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(f"Chart field '{key}' must be null or a string.")
+
+        return value
+
     if key == "logo_file_extensions":
         if not isinstance(value, list) or not all(
             isinstance(item, str) for item in value

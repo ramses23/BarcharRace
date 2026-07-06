@@ -52,7 +52,8 @@ The project is a usable MVP:
 - Basic per-stage render profiling for larger-dataset tuning.
 - CLI presets and CLI overrides.
 - PNG frame rendering with Matplotlib.
-- MP4 export with FFmpeg.
+- MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
+  format.
 - Unit tests and a real FFmpeg integration test.
 
 The latest technical direction is to make the engine robust for larger real
@@ -150,7 +151,7 @@ Current configuration layers:
 - External reusable project files live in `projects/*.json`.
 - CLI overrides can adjust output path, frames directory, title, theme, layout
   preset, value format, typography preset, fps, duration, size, and related
-  options.
+  FFmpeg export options.
 
 External project files are the preferred way to define reusable videos.
 
@@ -256,8 +257,9 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Continue larger-dataset profiling.
-2. Add richer FFmpeg export controls: CRF, codec, bitrate, and preset.
+1. Continue larger-dataset profiling with a real or synthetic larger dataset.
+2. Improve stability for edge cases: long names, large values, many bars, and
+   narrow layouts.
 3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

@@ -31,6 +31,11 @@ class CliOptions:
     duration: float | None = None
     width: int | None = None
     height: int | None = None
+    video_codec: str | None = None
+    video_pixel_format: str | None = None
+    video_crf: int | None = None
+    video_bitrate: str | None = None
+    ffmpeg_preset: str | None = None
 
 
 def build_argument_parser():
@@ -142,6 +147,27 @@ def build_argument_parser():
         type=_positive_int,
         help="Override render height in pixels.",
     )
+    parser.add_argument(
+        "--video-codec",
+        help="Override FFmpeg video codec.",
+    )
+    parser.add_argument(
+        "--video-pixel-format",
+        help="Override FFmpeg pixel format.",
+    )
+    parser.add_argument(
+        "--video-crf",
+        type=_non_negative_int,
+        help="Override FFmpeg CRF quality value.",
+    )
+    parser.add_argument(
+        "--video-bitrate",
+        help="Override FFmpeg video bitrate, for example 8M.",
+    )
+    parser.add_argument(
+        "--ffmpeg-preset",
+        help="Override FFmpeg encoder preset, for example slow.",
+    )
 
     return parser
 
@@ -177,6 +203,11 @@ def parse_cli_args(argv):
         duration=namespace.duration,
         width=namespace.width,
         height=namespace.height,
+        video_codec=namespace.video_codec,
+        video_pixel_format=namespace.video_pixel_format,
+        video_crf=namespace.video_crf,
+        video_bitrate=namespace.video_bitrate,
+        ffmpeg_preset=namespace.ffmpeg_preset,
     )
 
 
@@ -243,6 +274,21 @@ def apply_cli_overrides(preset, options):
     if options.height is not None:
         chart_updates["height"] = options.height
 
+    if options.video_codec is not None:
+        chart_updates["video_codec"] = options.video_codec
+
+    if options.video_pixel_format is not None:
+        chart_updates["video_pixel_format"] = options.video_pixel_format
+
+    if options.video_crf is not None:
+        chart_updates["video_crf"] = options.video_crf
+
+    if options.video_bitrate is not None:
+        chart_updates["video_bitrate"] = options.video_bitrate
+
+    if options.ffmpeg_preset is not None:
+        chart_updates["ffmpeg_preset"] = options.ffmpeg_preset
+
     if chart_updates:
         chart_config = replace(chart_config, **chart_updates)
 
@@ -275,5 +321,17 @@ def _positive_float(value):
 
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
+
+    return parsed
+
+
+def _non_negative_int(value):
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be at least 0")
 
     return parsed
