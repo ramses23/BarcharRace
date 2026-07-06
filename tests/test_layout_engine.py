@@ -9,6 +9,23 @@ from models.bar_data import BarData
 
 
 class LayoutEngineTest(unittest.TestCase):
+    def test_assigns_rank_by_value(self):
+        config = ChartConfig(logos_enabled=False)
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name="Mexico", value=80),
+                BarData(name="USA", value=100),
+                BarData(name="Canada", value=60),
+            ]
+        )
+
+        ranks = {sprite.name: sprite.rank for sprite in sprites}
+
+        self.assertEqual(ranks["USA"], 1)
+        self.assertEqual(ranks["Mexico"], 2)
+        self.assertEqual(ranks["Canada"], 3)
+
     def test_adds_logo_path_when_asset_exists(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "USA.png"

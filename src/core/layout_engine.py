@@ -43,6 +43,7 @@ class LayoutEngine:
                     y=y_position,
                     width=width,
                     height=self.config.bar_height,
+                    rank=i + 1,
                     logo_path=self._resolve_logo(bar.name),
                 )
             )

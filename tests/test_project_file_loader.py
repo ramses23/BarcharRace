@@ -23,6 +23,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "fps": 24,
                             "steps_per_transition": 12,
                             "logo_file_extensions": [".png", ".webp"],
+                            "rank_labels_enabled": False,
+                            "rank_label_prefix": "No.",
                         },
                         "animation": {
                             "easing": "ease_out_cubic",
@@ -54,6 +56,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.fps, 24)
         self.assertEqual(preset.chart_config.steps_per_transition, 12)
         self.assertEqual(preset.chart_config.logo_file_extensions, (".png", ".webp"))
+        self.assertFalse(preset.chart_config.rank_labels_enabled)
+        self.assertEqual(preset.chart_config.rank_label_prefix, "No.")
         self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
         self.assertFalse(preset.chart_config.animation.enter_exit)
         self.assertFalse(preset.chart_config.animation.value_smoothing)

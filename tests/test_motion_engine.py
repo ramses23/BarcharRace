@@ -7,6 +7,118 @@ from models.bar_sprite import BarSprite
 
 
 class MotionEngineTest(unittest.TestCase):
+    def test_interpolates_rank(self):
+        start = [
+            BarSprite(
+                name="USA",
+                value=100,
+                color="#123456",
+                x=0,
+                y=0,
+                width=100,
+                height=40,
+                rank=1,
+            )
+        ]
+        end = [
+            BarSprite(
+                name="USA",
+                value=100,
+                color="#123456",
+                x=0,
+                y=100,
+                width=100,
+                height=40,
+                rank=3,
+            )
+        ]
+
+        frames = MotionEngine().interpolate_sprites(start, end, steps=3)
+
+        self.assertAlmostEqual(frames[0][0].rank, 1)
+        self.assertAlmostEqual(frames[1][0].rank, 2)
+        self.assertAlmostEqual(frames[2][0].rank, 3)
+
+    def test_keeps_missing_rank_as_none(self):
+        start = [
+            BarSprite(
+                name="USA",
+                value=100,
+                color="#123456",
+                x=0,
+                y=0,
+                width=100,
+                height=40,
+            )
+        ]
+        end = [
+            BarSprite(
+                name="USA",
+                value=100,
+                color="#123456",
+                x=0,
+                y=100,
+                width=100,
+                height=40,
+            )
+        ]
+
+        frames = MotionEngine().interpolate_sprites(start, end, steps=2)
+
+        self.assertIsNone(frames[0][0].rank)
+        self.assertIsNone(frames[1][0].rank)
+
+    def test_sorts_frames_by_current_y_position(self):
+        start = [
+            BarSprite(
+                name="A",
+                value=100,
+                color="#123456",
+                x=0,
+                y=100,
+                width=100,
+                height=40,
+                rank=2,
+            ),
+            BarSprite(
+                name="B",
+                value=90,
+                color="#654321",
+                x=0,
+                y=0,
+                width=90,
+                height=40,
+                rank=1,
+            ),
+        ]
+        end = [
+            BarSprite(
+                name="A",
+                value=100,
+                color="#123456",
+                x=0,
+                y=0,
+                width=100,
+                height=40,
+                rank=1,
+            ),
+            BarSprite(
+                name="B",
+                value=90,
+                color="#654321",
+                x=0,
+                y=100,
+                width=90,
+                height=40,
+                rank=2,
+            ),
+        ]
+
+        frames = MotionEngine().interpolate_sprites(start, end, steps=2)
+
+        self.assertEqual([sprite.name for sprite in frames[0]], ["B", "A"])
+        self.assertEqual([sprite.name for sprite in frames[1]], ["A", "B"])
+
     def test_uses_configured_easing_for_motion(self):
         start = [
             BarSprite(

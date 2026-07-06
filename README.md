@@ -17,6 +17,7 @@ charts, animated scatter plots, and timeline animations.
 - Interpolate bar movement and values between periods.
 - Render full scenes with title, subtitle, source label, bars, values, and
   a large time label.
+- Render rank labels for each bar.
 - Resolve and render optional logos for bars.
 - Export PNG frames to MP4 with FFmpeg.
 - Run project presets from the command line.
@@ -130,7 +131,9 @@ Example:
     "theme": "clean_report",
     "value_format": "decimal",
     "fps": 24,
-    "steps_per_transition": 24
+    "steps_per_transition": 24,
+    "rank_labels_enabled": true,
+    "rank_label_prefix": "#"
   },
   "animation": {
     "easing": "ease_out_cubic",
@@ -209,6 +212,23 @@ Animation fields:
 
 Bar opacity is part of `BarSprite`, so the renderer can fade bars, labels,
 values, and logos consistently.
+
+## Rank Labels
+
+`LayoutEngine` assigns a visual rank to each `BarSprite` based on sorted
+values. `MotionEngine` interpolates that rank while bars move, and
+`BarRenderer` draws the current rank beside the bar.
+
+Rank labels are configured in `ChartConfig`:
+
+```text
+rank_labels_enabled
+rank_label_prefix
+rank_label_font_size
+rank_label_gap
+```
+
+The default label format is `#1`, `#2`, `#3`.
 
 For reusable video definitions that should not require Python edits, prefer
 external project files in:
@@ -305,6 +325,7 @@ Current test coverage includes:
 - `AnimationConfig`
 - `ThemeConfig`
 - `ColorPalette`
+- `LayoutEngine` rank assignment
 - `DatasetValidator`
 - `DataSourceLoader`
 - `RenderJob`
@@ -380,6 +401,7 @@ Visual state for a bar.
 name
 value
 color
+rank
 x
 y
 width
@@ -525,4 +547,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add rank labels and improved ranking transitions.
+- Add value-label collision handling and safer text fitting for long names.

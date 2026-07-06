@@ -44,8 +44,14 @@ class MotionEngine:
                 start_height = a.height if a else (b.height if b else 40)
                 end_height = b.height if b else (a.height if a else 40)
                 logo_path = a.logo_path if a else (b.logo_path if b else None)
+                start_rank, end_rank = self._rank_bounds(a, b)
                 start_opacity = self._sprite_opacity(a, fallback=0.0 if b else 1.0)
                 end_opacity = self._sprite_opacity(b, fallback=0.0 if a else 1.0)
+                rank = (
+                    lerp(start_rank, end_rank, t)
+                    if start_rank is not None and end_rank is not None
+                    else None
+                )
 
                 frame.append(
                     BarSprite(
@@ -56,14 +62,37 @@ class MotionEngine:
                         y=lerp(start_y, end_y, t),
                         width=lerp(start_width, end_width, t),
                         height=lerp(start_height, end_height, t),
+                        rank=rank,
                         logo_path=logo_path,
                         opacity=lerp(start_opacity, end_opacity, t),
                     )
                 )
 
+            frame.sort(key=lambda sprite: (sprite.y, sprite.name))
             frames.append(frame)
 
         return frames
+
+    def _rank_bounds(self, start_sprite, end_sprite):
+        start_rank = self._sprite_rank(start_sprite)
+        end_rank = self._sprite_rank(end_sprite)
+
+        if start_rank is None and end_rank is None:
+            return None, None
+
+        if start_rank is None:
+            start_rank = end_rank
+
+        if end_rank is None:
+            end_rank = start_rank
+
+        return start_rank, end_rank
+
+    def _sprite_rank(self, sprite):
+        if sprite is None:
+            return None
+
+        return sprite.rank
 
     def _sprite_opacity(self, sprite, fallback):
         if sprite is not None:

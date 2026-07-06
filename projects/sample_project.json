@@ -8,7 +8,9 @@
     "theme": "clean_report",
     "value_format": "decimal",
     "fps": 24,
-    "steps_per_transition": 24
+    "steps_per_transition": 24,
+    "rank_labels_enabled": true,
+    "rank_label_prefix": "#"
   },
   "animation": {
     "easing": "ease_out_cubic",

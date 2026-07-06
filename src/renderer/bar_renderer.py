@@ -95,6 +95,7 @@ class BarRenderer:
                 edgecolor="none",
             )
 
+            self._draw_rank_label(ax, sprite, opacity)
             self._draw_logo(ax, sprite, opacity)
 
             ax.text(
@@ -123,6 +124,33 @@ class BarRenderer:
                 color=self.config.muted_text_color,
                 alpha=opacity,
             )
+
+    def _draw_rank_label(self, ax, sprite, opacity):
+        if not self.config.rank_labels_enabled:
+            return
+
+        if sprite.rank is None:
+            return
+
+        ax.text(
+            self._rank_label_x(),
+            sprite.y,
+            self._format_rank(sprite.rank),
+            ha="right",
+            va="center",
+            fontsize=self.config.rank_label_font_size,
+            fontfamily=self.config.font_family,
+            fontweight="bold",
+            color=self.config.muted_text_color,
+            alpha=opacity,
+        )
+
+    def _rank_label_x(self):
+        return max(16, self.config.left_margin - self.config.rank_label_gap)
+
+    def _format_rank(self, rank):
+        rounded_rank = max(1, round(rank))
+        return f"{self.config.rank_label_prefix}{rounded_rank}"
 
     def _draw_logo(self, ax, sprite, opacity):
         if not sprite.logo_path:

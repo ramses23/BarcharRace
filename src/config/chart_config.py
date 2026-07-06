@@ -46,6 +46,11 @@ class ChartConfig:
     source_x: int = 320
     source_y: int = 1005
 
+    rank_labels_enabled: bool = True
+    rank_label_prefix: str = "#"
+    rank_label_font_size: int = 18
+    rank_label_gap: int = 320
+
     logos_enabled: bool = True
     logos_dir: str = "logos"
     logo_size: int = 48
