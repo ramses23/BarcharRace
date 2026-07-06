@@ -558,6 +558,8 @@ logos/Canada.png
 
 ## Development Notes
 
+- `PROJECT_CONTEXT.md` contains the continuity guide for future Codex sessions.
+  Read it before making architecture or roadmap decisions.
 - `main.py` should stay thin. It is only the CLI entry point.
 - Render workflow logic belongs in `src/pipeline/render_job.py`.
 - Visual configuration belongs in `ChartConfig`.
