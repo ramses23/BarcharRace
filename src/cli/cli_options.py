@@ -14,6 +14,7 @@ class CliOptions:
     list_presets: bool = False
     list_themes: bool = False
     list_value_formats: bool = False
+    list_easings: bool = False
     output_file: str | None = None
     frames_dir: str | None = None
     title: str | None = None
@@ -58,6 +59,11 @@ def build_argument_parser():
         "--list-value-formats",
         action="store_true",
         help="List available numeric value formats.",
+    )
+    parser.add_argument(
+        "--list-easings",
+        action="store_true",
+        help="List available animation easing presets.",
     )
     parser.add_argument(
         "--output",
@@ -130,6 +136,7 @@ def parse_cli_args(argv):
         list_presets=namespace.list_presets,
         list_themes=namespace.list_themes,
         list_value_formats=namespace.list_value_formats,
+        list_easings=namespace.list_easings,
         output_file=namespace.output_file,
         frames_dir=namespace.frames_dir,
         title=namespace.title,

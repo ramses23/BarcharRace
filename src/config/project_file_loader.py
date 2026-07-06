@@ -2,6 +2,7 @@ import json
 from dataclasses import fields, replace
 from pathlib import Path
 
+from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
@@ -17,6 +18,7 @@ class ProjectFileError(ValueError):
 PROJECT_FILE_SECTIONS = {
     "name",
     "base_preset",
+    "animation",
     "chart",
     "data_source",
     "dataset",
@@ -35,15 +37,25 @@ def load_project_file(path):
 
     base_preset = _base_preset(data, project_path)
     project_name = _project_name(data, project_path)
+    chart_config = _build_config(
+        base_preset.chart_config,
+        data.get("chart", {}),
+        "chart",
+        _convert_chart_value,
+    )
+    chart_config = replace(
+        chart_config,
+        animation=_build_config(
+            chart_config.animation,
+            data.get("animation", {}),
+            "animation",
+            _convert_animation_value,
+        ),
+    )
 
     return ProjectPreset(
         name=project_name,
-        chart_config=_build_config(
-            base_preset.chart_config,
-            data.get("chart", {}),
-            "chart",
-            _convert_chart_value,
-        ),
+        chart_config=chart_config,
         data_source_config=_build_config(
             base_preset.data_source_config,
             data.get("data_source", {}),
@@ -141,6 +153,11 @@ def _build_config(base_config, section_data, section_name, convert_value=None):
 
 
 def _convert_chart_value(key, value):
+    if key == "animation":
+        raise ProjectFileError(
+            "Use the top-level 'animation' section instead of 'chart.animation'."
+        )
+
     if key == "theme":
         if not isinstance(value, str):
             raise ProjectFileError("Chart field 'theme' must be a named theme.")
@@ -164,6 +181,27 @@ def _convert_chart_value(key, value):
             )
 
         return tuple(value)
+
+    return value
+
+
+def _convert_animation_value(key, value):
+    if key == "easing":
+        if not isinstance(value, str):
+            raise ProjectFileError("Animation field 'easing' must be a string.")
+
+        try:
+            AnimationConfig(easing=value).easing_function()
+        except ValueError as exc:
+            raise ProjectFileError(str(exc)) from exc
+
+        return value
+
+    if key in ("enter_exit", "value_smoothing"):
+        if not isinstance(value, bool):
+            raise ProjectFileError(f"Animation field '{key}' must be a boolean.")
+
+        return value
 
     return value
 

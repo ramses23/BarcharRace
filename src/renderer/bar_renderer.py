@@ -78,8 +78,13 @@ class BarRenderer:
 
     def _draw_bars(self, ax, sprites):
         for sprite in sprites:
+            opacity = self._opacity(sprite)
+
+            if opacity <= 0:
+                continue
+
             alpha = min(1.0, max(0.25, sprite.width / self.config.max_bar_width))
-            rgba = mcolors.to_rgba(sprite.color, alpha)
+            rgba = mcolors.to_rgba(sprite.color, alpha * opacity)
 
             ax.barh(
                 sprite.y,
@@ -90,7 +95,7 @@ class BarRenderer:
                 edgecolor="none",
             )
 
-            self._draw_logo(ax, sprite)
+            self._draw_logo(ax, sprite, opacity)
 
             ax.text(
                 self._label_x(sprite),
@@ -101,6 +106,7 @@ class BarRenderer:
                 fontsize=self.config.label_font_size,
                 fontfamily=self.config.font_family,
                 color=self.config.text_color,
+                alpha=opacity,
             )
 
             ax.text(
@@ -115,9 +121,10 @@ class BarRenderer:
                 fontsize=self.config.value_font_size,
                 fontfamily=self.config.font_family,
                 color=self.config.muted_text_color,
+                alpha=opacity,
             )
 
-    def _draw_logo(self, ax, sprite):
+    def _draw_logo(self, ax, sprite, opacity):
         if not sprite.logo_path:
             return
 
@@ -139,6 +146,7 @@ class BarRenderer:
                 sprite.y - half_size,
             ),
             zorder=3,
+            alpha=opacity,
         )
 
     def _label_x(self, sprite):
@@ -160,6 +168,9 @@ class BarRenderer:
                 self.logo_cache[logo_path] = None
 
         return self.logo_cache[logo_path]
+
+    def _opacity(self, sprite):
+        return min(1.0, max(0.0, sprite.opacity))
 
     def _draw_footer(self, ax, scene):
         if scene.time_label:

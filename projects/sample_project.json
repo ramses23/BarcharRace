@@ -10,6 +10,11 @@
     "fps": 24,
     "steps_per_transition": 24
   },
+  "animation": {
+    "easing": "ease_out_cubic",
+    "enter_exit": true,
+    "value_smoothing": true
+  },
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/sample_dynamic.csv"

@@ -23,6 +23,12 @@ class CliOptionsTest(unittest.TestCase):
         self.assertTrue(options.list_themes)
         self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
 
+    def test_parses_list_easings_action(self):
+        options = parse_cli_args(["--list-easings"])
+
+        self.assertTrue(options.list_easings)
+        self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
+
     def test_parses_project_file(self):
         options = parse_cli_args(["--project", "projects/sample_project.json"])
 
@@ -129,6 +135,7 @@ class CliOptionsTest(unittest.TestCase):
         self.assertEqual(preset.name, "sample_project")
         self.assertEqual(preset.chart_config.title, "External Project Demo")
         self.assertEqual(preset.chart_config.theme.name, "clean_report")
+        self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
 
 
 if __name__ == "__main__":

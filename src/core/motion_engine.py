@@ -1,13 +1,17 @@
-from utils.easing import ease_in_out
+from config.animation_config import AnimationConfig
 from utils.interpolation import lerp
 from models.bar_sprite import BarSprite
 
 
 class MotionEngine:
 
+    def __init__(self, animation_config=None):
+        self.animation_config = animation_config or AnimationConfig()
+
     def interpolate_sprites(self, start_sprites, end_sprites, steps=30):
         start_map = {sprite.name: sprite for sprite in start_sprites}
         end_map = {sprite.name: sprite for sprite in end_sprites}
+        easing = self.animation_config.easing_function()
 
         names = sorted(set(start_map) | set(end_map))
 
@@ -15,7 +19,8 @@ class MotionEngine:
 
         for step in range(steps):
             raw_t = step / (steps - 1) if steps > 1 else 1
-            t = ease_in_out(raw_t)
+            t = easing(raw_t)
+            value_t = t if self.animation_config.value_smoothing else raw_t
 
             frame = []
 
@@ -39,20 +44,32 @@ class MotionEngine:
                 start_height = a.height if a else (b.height if b else 40)
                 end_height = b.height if b else (a.height if a else 40)
                 logo_path = a.logo_path if a else (b.logo_path if b else None)
+                start_opacity = self._sprite_opacity(a, fallback=0.0 if b else 1.0)
+                end_opacity = self._sprite_opacity(b, fallback=0.0 if a else 1.0)
 
                 frame.append(
                     BarSprite(
                         name=name,
-                        value=lerp(start_val, end_val, t),
+                        value=lerp(start_val, end_val, value_t),
                         color=color,
                         x=lerp(start_x, end_x, t),
                         y=lerp(start_y, end_y, t),
                         width=lerp(start_width, end_width, t),
                         height=lerp(start_height, end_height, t),
                         logo_path=logo_path,
+                        opacity=lerp(start_opacity, end_opacity, t),
                     )
                 )
 
             frames.append(frame)
 
         return frames
+
+    def _sprite_opacity(self, sprite, fallback):
+        if sprite is not None:
+            return sprite.opacity
+
+        if self.animation_config.enter_exit:
+            return fallback
+
+        return 1.0

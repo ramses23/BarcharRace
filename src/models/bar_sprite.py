@@ -18,3 +18,4 @@ class BarSprite:
     height: float
 
     logo_path: str | None = None
+    opacity: float = 1.0

@@ -74,11 +74,12 @@ Run an external project file:
 .venv\Scripts\python.exe src\main.py --project projects/sample_project.json
 ```
 
-List available themes and value formats:
+List available themes, value formats, and easing presets:
 
 ```powershell
 .venv\Scripts\python.exe src\main.py --list-themes
 .venv\Scripts\python.exe src\main.py --list-value-formats
+.venv\Scripts\python.exe src\main.py --list-easings
 ```
 
 Override preset options from the command line:
@@ -131,6 +132,11 @@ Example:
     "fps": 24,
     "steps_per_transition": 24
   },
+  "animation": {
+    "easing": "ease_out_cubic",
+    "enter_exit": true,
+    "value_smoothing": true
+  },
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/sample_dynamic.csv"
@@ -150,6 +156,7 @@ Supported top-level keys:
 | `name` | display name used by the CLI |
 | `base_preset` | optional preset to extend |
 | `chart` | `ChartConfig` values |
+| `animation` | `AnimationConfig` values |
 | `data_source` | `DataSourceConfig` values |
 | `dataset` | `DatasetConfig` values |
 
@@ -176,6 +183,32 @@ Each preset combines:
 - `ThemeConfig`
 - `DataSourceConfig`
 - `DatasetConfig`
+
+## Animation
+
+Motion behavior is configured with `AnimationConfig`.
+
+Available easing presets:
+
+| Easing | Notes |
+|---|---|
+| `linear` | constant interpolation |
+| `smoothstep` | default smooth in/out |
+| `ease_in_out` | compatibility alias for `smoothstep` |
+| `ease_in_cubic` | slow start |
+| `ease_out_cubic` | fast start, soft landing |
+| `ease_in_out_cubic` | stronger cubic in/out |
+
+Animation fields:
+
+| Field | Meaning |
+|---|---|
+| `easing` | easing preset used for position, width, height, and optionally values |
+| `enter_exit` | fades bars in and out when they appear or disappear |
+| `value_smoothing` | uses easing for numeric values when true, linear values when false |
+
+Bar opacity is part of `BarSprite`, so the renderer can fade bars, labels,
+values, and logos consistently.
 
 For reusable video definitions that should not require Python edits, prefer
 external project files in:
@@ -269,6 +302,7 @@ Current test coverage includes:
 
 - `value_formatter`
 - `ValueFormatConfig`
+- `AnimationConfig`
 - `ThemeConfig`
 - `ColorPalette`
 - `DatasetValidator`
@@ -285,6 +319,7 @@ Current render pipeline:
 ```text
 JSON project file or ProjectPreset
     -> ChartConfig
+    -> AnimationConfig
     -> ThemeConfig
     -> DataSourceConfig
     -> DatasetConfig
@@ -350,6 +385,7 @@ y
 width
 height
 optional logo_path
+opacity
 ```
 
 ### Scene
@@ -489,4 +525,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add richer animation controls, such as easing presets and enter/exit effects.
+- Add rank labels and improved ranking transitions.

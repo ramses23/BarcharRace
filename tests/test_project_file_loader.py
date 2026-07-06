@@ -24,6 +24,11 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "steps_per_transition": 12,
                             "logo_file_extensions": [".png", ".webp"],
                         },
+                        "animation": {
+                            "easing": "ease_out_cubic",
+                            "enter_exit": False,
+                            "value_smoothing": False,
+                        },
                         "data_source": {
                             "source_type": "csv",
                             "csv_path": "data/custom.csv",
@@ -49,6 +54,9 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.fps, 24)
         self.assertEqual(preset.chart_config.steps_per_transition, 12)
         self.assertEqual(preset.chart_config.logo_file_extensions, (".png", ".webp"))
+        self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
+        self.assertFalse(preset.chart_config.animation.enter_exit)
+        self.assertFalse(preset.chart_config.animation.value_smoothing)
         self.assertEqual(preset.data_source_config.csv_path, "data/custom.csv")
         self.assertEqual(preset.dataset_config.year_column, "date")
         self.assertEqual(preset.dataset_config.name_column, "name")
@@ -103,6 +111,28 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"chart": {"unknown": "value"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_unknown_animation_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"animation": {"unknown": "value"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_unknown_easing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"animation": {"easing": "unknown"}}),
                 encoding="utf-8",
             )
 

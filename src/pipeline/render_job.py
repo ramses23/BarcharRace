@@ -36,7 +36,7 @@ class RenderJob:
             raise ValueError("RenderJob requires at least two time periods.")
 
         layout = LayoutEngine(config=self.config)
-        motion = MotionEngine()
+        motion = MotionEngine(animation_config=self.config.animation)
         renderer = BarRenderer(output_dir=self.config.frames_dir, config=self.config)
         exporter = VideoExporter(config=self.config)
 

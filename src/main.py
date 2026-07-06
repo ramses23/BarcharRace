@@ -1,4 +1,5 @@
 from cli.cli_options import build_preset_from_cli_options, parse_cli_args
+from config.animation_config import list_easings
 from config.project_file_loader import ProjectFileError
 from config.project_preset import (
     DEFAULT_PRESET_NAME,
@@ -47,6 +48,10 @@ def main(argv=None):
 
     if options.list_value_formats:
         _print_items("Formatos disponibles:", list_value_formats())
+        return
+
+    if options.list_easings:
+        _print_items("Easings disponibles:", list_easings())
         return
 
     try:
