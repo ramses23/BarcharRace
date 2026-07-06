@@ -38,6 +38,7 @@ The project is a usable MVP:
 - Text fitting for long labels and value labels.
 - Themes.
 - Reusable layout presets.
+- Auto-fit visible bars to the vertical capacity of the active layout.
 - Configurable typography weights and max widths for title, subtitle, time
   label, and source label.
 - Reusable typography presets.
@@ -264,7 +265,7 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Improve stability for edge cases: long names, large values, many bars, and
+1. Improve stability for remaining edge cases: long names, large values, and
    narrow layouts.
 2. Add more chart types while preserving the same pipeline ideas.
 

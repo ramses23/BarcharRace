@@ -21,17 +21,21 @@ class LayoutEngine:
 
         # ordenar SOLO para asignar ranking
         sorted_bars = sorted(bars, key=self._sort_key)
+        visible_bars = self._visible_bars(sorted_bars)
 
-        max_value = max(b.value for b in sorted_bars)
+        if not visible_bars:
+            return []
+
+        max_value = max(b.value for b in visible_bars)
 
         sprites = []
 
-        for i, bar in enumerate(sorted_bars):
+        for i, bar in enumerate(visible_bars):
 
             y_position = self.config.top_margin + i * (
                 self.config.bar_height + self.config.bar_gap
             )
-            width = (bar.value / max_value) * self.config.max_bar_width
+            width = self._bar_width(bar.value, max_value)
 
             sprites.append(
                 BarSprite(
@@ -49,6 +53,23 @@ class LayoutEngine:
             )
 
         return sprites
+
+    def _visible_bars(self, sorted_bars):
+        limit = len(sorted_bars)
+
+        if self.config.max_visible_bars is not None:
+            limit = min(limit, max(0, self.config.max_visible_bars))
+
+        if self.config.auto_fit_bar_count:
+            limit = min(limit, self.config.bar_capacity)
+
+        return sorted_bars[:limit]
+
+    def _bar_width(self, value, max_value):
+        if max_value <= 0:
+            return 0
+
+        return (value / max_value) * self.config.max_bar_width
 
     def _resolve_logo(self, name):
         if not self.config.logos_enabled:

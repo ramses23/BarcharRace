@@ -18,6 +18,7 @@ charts, animated scatter plots, and timeline animations.
 - Render full scenes with title, subtitle, source label, bars, values, and
   a large time label.
 - Render rank labels for each bar.
+- Auto-fit visible bars to the available vertical layout space.
 - Apply reusable layout presets for common video formats.
 - Apply configurable font weights and max widths to title, subtitle, time
   label, and source label.
@@ -180,6 +181,8 @@ Example:
     "rank_label_prefix": "#",
     "label_min_x": 40,
     "value_label_gap": 16,
+    "auto_fit_bar_count": true,
+    "max_visible_bars": null,
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
@@ -321,6 +324,17 @@ Available layout presets:
 | `square_social` | 1080x1080 social layout |
 | `vertical_shorts` | 1080x1920 vertical layout |
 | `compact_dashboard` | 1280x720 denser dashboard-style layout |
+
+`LayoutEngine` can automatically limit visible bars to the vertical space
+available in the current layout:
+
+```text
+auto_fit_bar_count
+max_visible_bars
+```
+
+`auto_fit_bar_count` is enabled by default. `max_visible_bars` can apply an
+additional manual cap, or stay `null` to use only the layout capacity.
 
 Bars can render a subtle configurable shadow behind the main rectangle. This is
 controlled in `ChartConfig` or in external project files:
@@ -507,6 +521,7 @@ Current test coverage includes:
 - `ColorPalette`
 - `BarSelector`
 - `LayoutEngine` rank assignment
+- layout auto-fit bar capacity
 - bar shadow rendering
 - bar gradient rendering
 - text fitting for title, subtitle, source, and value-label layout
@@ -763,5 +778,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Improve stability for edge cases: long names, large values, many bars, and
-  narrow layouts.
+- Continue stability work for edge cases: long names, large values, and narrow
+  layouts.

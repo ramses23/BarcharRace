@@ -84,6 +84,80 @@ class LayoutEngineTest(unittest.TestCase):
 
             self.assertIsNone(sprites[0].logo_path)
 
+    def test_auto_limits_bars_to_vertical_capacity(self):
+        config = ChartConfig(
+            height=160,
+            top_margin=40,
+            bottom_margin=20,
+            bar_height=20,
+            bar_gap=10,
+            logos_enabled=False,
+        )
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name=f"Item {index}", value=100 - index)
+                for index in range(6)
+            ]
+        )
+
+        self.assertEqual(config.bar_capacity, 4)
+        self.assertEqual(len(sprites), 4)
+        self.assertEqual([sprite.rank for sprite in sprites], [1, 2, 3, 4])
+        self.assertLessEqual(
+            sprites[-1].y + (sprites[-1].height / 2),
+            config.height - config.bottom_margin,
+        )
+
+    def test_can_disable_auto_fit_bar_count(self):
+        config = ChartConfig(
+            height=160,
+            top_margin=40,
+            bottom_margin=20,
+            bar_height=20,
+            bar_gap=10,
+            auto_fit_bar_count=False,
+            logos_enabled=False,
+        )
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name=f"Item {index}", value=100 - index)
+                for index in range(6)
+            ]
+        )
+
+        self.assertEqual(len(sprites), 6)
+
+    def test_max_visible_bars_limits_layout(self):
+        config = ChartConfig(
+            max_visible_bars=2,
+            auto_fit_bar_count=False,
+            logos_enabled=False,
+        )
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name="A", value=100),
+                BarData(name="B", value=80),
+                BarData(name="C", value=60),
+            ]
+        )
+
+        self.assertEqual([sprite.name for sprite in sprites], ["A", "B"])
+
+    def test_zero_values_do_not_divide_by_zero(self):
+        config = ChartConfig(logos_enabled=False)
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name="A", value=0),
+                BarData(name="B", value=0),
+            ]
+        )
+
+        self.assertEqual([sprite.width for sprite in sprites], [0, 0])
+
 
 if __name__ == "__main__":
     unittest.main()

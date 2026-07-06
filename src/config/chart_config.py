@@ -19,6 +19,8 @@ class ChartConfig:
 
     bar_height: int = 54
     bar_gap: int = 18
+    auto_fit_bar_count: bool = True
+    max_visible_bars: int | None = None
     bar_shadow_enabled: bool = True
     bar_shadow_color: str = "#000000"
     bar_shadow_alpha: float = 0.12
@@ -106,6 +108,20 @@ class ChartConfig:
     @property
     def max_bar_width(self):
         return self.width - self.left_margin - self.right_margin
+
+    @property
+    def bar_capacity(self):
+        step = self.bar_height + self.bar_gap
+
+        if self.bar_height <= 0 or step <= 0:
+            return 0
+
+        last_safe_center_y = self.height - self.bottom_margin - (self.bar_height / 2)
+
+        if last_safe_center_y < self.top_margin:
+            return 0
+
+        return int((last_safe_center_y - self.top_margin) // step) + 1
 
     @property
     def background_color(self):

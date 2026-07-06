@@ -273,6 +273,21 @@ def _convert_chart_value(key, value):
 
         return value
 
+    if key == "auto_fit_bar_count":
+        if not isinstance(value, bool):
+            raise ProjectFileError("Chart field 'auto_fit_bar_count' must be boolean.")
+
+        return value
+
+    if key == "max_visible_bars":
+        if value is None:
+            return None
+
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError("Chart field 'max_visible_bars' must be null or >= 0.")
+
+        return value
+
     if key == "logo_file_extensions":
         if not isinstance(value, list) or not all(
             isinstance(item, str) for item in value

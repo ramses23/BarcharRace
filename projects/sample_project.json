@@ -2,7 +2,7 @@
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
-    "title": "External Project Demo",
+    "title": "Ramses Proyect",
     "output_file": "output/external_project.mp4",
     "frames_dir": "output/external_project_frames",
     "layout_preset": "youtube_1080p",
@@ -15,6 +15,8 @@
     "rank_label_prefix": "#",
     "label_min_x": 40,
     "value_label_gap": 16,
+    "auto_fit_bar_count": true,
+    "max_visible_bars": null,
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
