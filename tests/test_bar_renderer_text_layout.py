@@ -235,6 +235,48 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             "Source:...",
         )
 
+    def test_fits_main_text_to_available_canvas_width(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=220,
+                left_margin=100,
+                source_x=120,
+                value_label_edge_padding=20,
+                title_font_size=10,
+                source_font_size=10,
+                text_average_char_width=0.5,
+                title_max_width=500,
+                source_max_width=500,
+            )
+        )
+
+        self.assertEqual(
+            renderer._available_text_width(100, 500),
+            100,
+        )
+        self.assertEqual(
+            renderer._available_text_width(120, 500),
+            80,
+        )
+        self.assertEqual(
+            renderer._fit_title("A Very Long Narrow Canvas Title"),
+            "A Very Long Narro...",
+        )
+        self.assertEqual(
+            renderer._fit_source_label("Source: extremely/long/path.csv"),
+            "Source: extre...",
+        )
+
+    def test_available_text_width_never_goes_negative(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=200,
+                value_label_edge_padding=30,
+            )
+        )
+
+        self.assertEqual(renderer._available_text_width(250, 500), 0)
+
     def test_header_uses_configured_font_weights(self):
         renderer = BarRenderer(
             config=ChartConfig(

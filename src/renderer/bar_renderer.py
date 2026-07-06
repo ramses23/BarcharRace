@@ -82,14 +82,20 @@ class BarRenderer:
     def _fit_title(self, title):
         return self._fit_text(
             title,
-            max_width=self.config.title_max_width,
+            max_width=self._available_text_width(
+                self.config.left_margin,
+                self.config.title_max_width,
+            ),
             font_size=self.config.title_font_size,
         )
 
     def _fit_subtitle(self, subtitle):
         return self._fit_text(
             subtitle,
-            max_width=self.config.subtitle_max_width,
+            max_width=self._available_text_width(
+                self.config.left_margin,
+                self.config.subtitle_max_width,
+            ),
             font_size=self.config.subtitle_font_size,
         )
 
@@ -359,9 +365,18 @@ class BarRenderer:
     def _fit_source_label(self, source_label):
         return self._fit_text(
             source_label,
-            max_width=self.config.source_max_width,
+            max_width=self._available_text_width(
+                self.config.source_x,
+                self.config.source_max_width,
+            ),
             font_size=self.config.source_font_size,
         )
+
+    def _available_text_width(self, x, configured_max_width):
+        right_edge = self.config.width - self.config.value_label_edge_padding
+        available_width = right_edge - x
+
+        return max(0, min(configured_max_width, available_width))
 
     def _fit_text(self, text, max_width, font_size):
         return fit_text_to_width(

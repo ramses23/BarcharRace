@@ -36,6 +36,8 @@ The project is a usable MVP:
 - Enter/exit opacity for bars.
 - Rank labels.
 - Text fitting for long labels and value labels.
+- Title, subtitle, and source labels fit to both configured max widths and
+  remaining canvas width.
 - Themes.
 - Reusable layout presets.
 - Auto-fit visible bars to the vertical capacity of the active layout.
@@ -265,8 +267,7 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Improve stability for remaining edge cases: long names, large values, and
-   narrow layouts.
+1. Improve stability for remaining edge cases: long names and large values.
 2. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

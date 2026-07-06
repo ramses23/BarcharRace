@@ -373,7 +373,7 @@ source_max_width
 ```
 
 The title, subtitle, and source label are truncated with `...` when they exceed
-their configured widths.
+their configured widths or the remaining canvas width.
 
 Available typography presets:
 
@@ -778,5 +778,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue stability work for edge cases: long names, large values, and narrow
-  layouts.
+- Continue stability work for edge cases: long names and large values.
