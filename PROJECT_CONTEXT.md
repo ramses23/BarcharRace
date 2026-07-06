@@ -50,6 +50,7 @@ The project is a usable MVP:
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
 - Basic per-stage render profiling for larger-dataset tuning.
+- Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
 - PNG frame rendering with Matplotlib.
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
@@ -209,6 +210,12 @@ Useful CLI discovery commands:
 .venv\Scripts\python.exe src\main.py --list-easings
 ```
 
+Larger-dataset profiling command:
+
+```powershell
+.venv\Scripts\python.exe src\tools\profile_large_dataset.py --years 30 --categories 200 --top-n 20 --steps 4 --fps 6
+```
+
 ## Collaboration Style Requested By The User
 
 The user wants professional, concrete change proposals. Before editing a
@@ -257,10 +264,9 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Continue larger-dataset profiling with a real or synthetic larger dataset.
-2. Improve stability for edge cases: long names, large values, many bars, and
+1. Improve stability for edge cases: long names, large values, many bars, and
    narrow layouts.
-3. Add more chart types while preserving the same pipeline ideas.
+2. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
 

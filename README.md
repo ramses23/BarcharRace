@@ -89,6 +89,16 @@ seconds spent loading data, validating data, building the timeline,
 precomputing sprites, rendering frames, exporting video, and running the full
 job.
 
+Run a synthetic larger-dataset profiling render:
+
+```powershell
+.venv\Scripts\python.exe src\tools\profile_large_dataset.py --years 30 --categories 200 --top-n 20 --steps 4 --fps 6
+```
+
+The profiling tool generates a temporary CSV by default, renders a real video,
+and prints the normal `RenderProfile` timings. Use `--csv-output` if you want
+to keep the generated dataset for inspection.
+
 List available themes, layout presets, typography presets, value formats, and
 easing presets:
 
@@ -505,6 +515,7 @@ Current test coverage includes:
 - `RenderJob`
 - per-year sprite precomputation
 - render profiling metrics
+- synthetic larger-dataset profiling tool
 - configurable FFmpeg export command
 - CLI preset overrides
 - external project file loader
@@ -752,5 +763,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue larger-dataset profiling and add richer layout presets for common
-  video formats.
+- Improve stability for edge cases: long names, large values, many bars, and
+  narrow layouts.
