@@ -33,6 +33,8 @@ class LayoutConfigTest(unittest.TestCase):
         self.assertEqual(chart_config.top_margin, 165)
         self.assertEqual(chart_config.bar_height, 36)
         self.assertEqual(chart_config.source_y, 675)
+        self.assertEqual(chart_config.rank_label_min_x, 72)
+        self.assertEqual(chart_config.rank_label_label_gap, 14)
 
     def test_rejects_unknown_layout_preset(self):
         with self.assertRaises(ValueError):

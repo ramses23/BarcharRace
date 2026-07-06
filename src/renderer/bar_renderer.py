@@ -45,6 +45,8 @@ class BarRenderer:
         return path
 
     def _setup_canvas(self, fig, ax):
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        ax.set_position((0, 0, 1, 1))
         fig.patch.set_facecolor(self.config.background_color)
         ax.set_facecolor(self.config.background_color)
         ax.clear()
@@ -226,32 +228,46 @@ class BarRenderer:
         )
 
     def _rank_label_x(self):
-        return max(16, self.config.left_margin - self.config.rank_label_gap)
+        return max(
+            self.config.rank_label_min_x,
+            self.config.left_margin - self.config.rank_label_gap,
+        )
 
     def _format_rank(self, rank):
         rounded_rank = max(1, round(rank))
         return f"{self.config.rank_label_prefix}{rounded_rank}"
 
     def _fit_bar_label(self, sprite):
-        max_width = self._label_x(sprite) - self.config.label_min_x
+        max_width = self._label_x(sprite) - self._bar_label_min_x(sprite)
 
         return fit_text_to_width(
             sprite.name,
             max_width=max_width,
-            font_size=self.config.label_font_size,
+            font_size=self._font_pixel_size(self.config.label_font_size),
             average_char_width=self.config.text_average_char_width,
         )
+
+    def _bar_label_min_x(self, sprite):
+        min_x = self.config.label_min_x
+
+        if self.config.rank_labels_enabled and sprite.rank is not None:
+            min_x = max(
+                min_x,
+                self._rank_label_x() + self.config.rank_label_label_gap,
+            )
+
+        return min_x
 
     def _value_label_layout(self, sprite, value_text):
         text = fit_text_to_width(
             value_text,
             max_width=self.config.width - (self.config.label_min_x * 2),
-            font_size=self.config.value_font_size,
+            font_size=self._font_pixel_size(self.config.value_font_size),
             average_char_width=self.config.text_average_char_width,
         )
         text_width = estimate_text_width(
             text,
-            self.config.value_font_size,
+            self._font_pixel_size(self.config.value_font_size),
             self.config.text_average_char_width,
         )
         max_right = self.config.width - self.config.value_label_edge_padding
@@ -382,6 +398,9 @@ class BarRenderer:
         return fit_text_to_width(
             text,
             max_width=max_width,
-            font_size=font_size,
+            font_size=self._font_pixel_size(font_size),
             average_char_width=self.config.text_average_char_width,
         )
+
+    def _font_pixel_size(self, font_size):
+        return font_size * (self.config.dpi / 72)

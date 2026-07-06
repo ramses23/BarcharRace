@@ -19,6 +19,8 @@ class LayoutPreset:
     source_x: int = 320
     source_y: int = 1005
     rank_label_gap: int = 320
+    rank_label_min_x: int = 96
+    rank_label_label_gap: int = 18
     label_min_x: int = 40
     value_label_edge_padding: int = 24
 
@@ -39,6 +41,8 @@ class LayoutPreset:
             "source_x": self.source_x,
             "source_y": self.source_y,
             "rank_label_gap": self.rank_label_gap,
+            "rank_label_min_x": self.rank_label_min_x,
+            "rank_label_label_gap": self.rank_label_label_gap,
             "label_min_x": self.label_min_x,
             "value_label_edge_padding": self.value_label_edge_padding,
         }
@@ -63,6 +67,8 @@ LAYOUT_PRESETS = {
         source_x=640,
         source_y=2010,
         rank_label_gap=640,
+        rank_label_min_x=192,
+        rank_label_label_gap=36,
         label_min_x=80,
         value_label_edge_padding=48,
     ),
@@ -83,6 +89,8 @@ LAYOUT_PRESETS = {
         source_x=260,
         source_y=1010,
         rank_label_gap=250,
+        rank_label_min_x=84,
+        rank_label_label_gap=16,
         label_min_x=36,
         value_label_edge_padding=20,
     ),
@@ -103,6 +111,8 @@ LAYOUT_PRESETS = {
         source_x=260,
         source_y=1800,
         rank_label_gap=250,
+        rank_label_min_x=84,
+        rank_label_label_gap=16,
         label_min_x=36,
         value_label_edge_padding=20,
     ),
@@ -123,6 +133,8 @@ LAYOUT_PRESETS = {
         source_x=240,
         source_y=675,
         rank_label_gap=240,
+        rank_label_min_x=72,
+        rank_label_label_gap=14,
         label_min_x=30,
         value_label_edge_padding=18,
     ),

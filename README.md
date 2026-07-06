@@ -18,6 +18,7 @@ charts, animated scatter plots, and timeline animations.
 - Render full scenes with title, subtitle, source label, bars, values, and
   a large time label.
 - Render rank labels for each bar.
+- Keep bar labels separated from rank-label columns in compact layouts.
 - Auto-fit visible bars to the available vertical layout space.
 - Apply reusable layout presets for common video formats.
 - Apply configurable font weights and max widths to title, subtitle, time
@@ -179,6 +180,8 @@ Example:
     "ffmpeg_preset": null,
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
+    "rank_label_min_x": 96,
+    "rank_label_label_gap": 18,
     "label_min_x": 40,
     "value_label_gap": 16,
     "auto_fit_bar_count": true,
@@ -288,9 +291,13 @@ rank_labels_enabled
 rank_label_prefix
 rank_label_font_size
 rank_label_gap
+rank_label_min_x
+rank_label_label_gap
 ```
 
 The default label format is `#1`, `#2`, `#3`.
+`rank_label_min_x` keeps the rank column away from the canvas edge, and
+`rank_label_label_gap` reserves space between the rank and the bar name.
 
 ## Visual Polish
 
@@ -313,6 +320,8 @@ time_label_y
 source_x
 source_y
 rank_label_gap
+rank_label_min_x
+rank_label_label_gap
 ```
 
 Available layout presets:
@@ -392,6 +401,9 @@ label column. Value labels are drawn outside the bar when they fit, moved
 inside the bar when the right edge would overflow, or clamped to a safe
 right edge when the bar is too small.
 
+Text width estimates use the configured render `dpi`, so Matplotlib point-size
+fonts are fitted against pixel-based layout coordinates.
+
 Text fitting is configured in `ChartConfig`:
 
 ```text
@@ -399,6 +411,8 @@ title_max_width
 subtitle_max_width
 source_max_width
 label_min_x
+rank_label_min_x
+rank_label_label_gap
 text_average_char_width
 value_label_gap
 value_label_edge_padding
@@ -524,7 +538,9 @@ Current test coverage includes:
 - layout auto-fit bar capacity
 - bar shadow rendering
 - bar gradient rendering
-- text fitting for title, subtitle, source, and value-label layout
+- text fitting for title, subtitle, source, rank-aware bar labels, and
+  value-label layout
+- full-canvas Matplotlib renderer setup
 - `DatasetValidator`
 - `DataSourceLoader`
 - `RenderJob`
@@ -778,4 +794,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue stability work for edge cases: long names and large values.
+- Continue stability work for edge cases: very large values and dense
+  footer/time-label layouts.

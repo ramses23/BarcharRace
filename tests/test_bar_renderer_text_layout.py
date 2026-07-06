@@ -1,6 +1,7 @@
 import unittest
 
 import _test_path
+import matplotlib.pyplot as plt
 from config.chart_config import ChartConfig
 from models.bar_sprite import BarSprite
 from models.scene import Scene
@@ -11,6 +12,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
     def test_fits_long_bar_label(self):
         renderer = BarRenderer(
             config=ChartConfig(
+                dpi=72,
                 label_font_size=20,
                 label_min_x=40,
                 text_average_char_width=0.5,
@@ -28,6 +30,83 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         )
 
         self.assertEqual(renderer._fit_bar_label(sprite), "United Stat...")
+
+    def test_canvas_axis_fills_entire_figure(self):
+        renderer = BarRenderer(config=ChartConfig())
+        fig, ax = plt.subplots()
+
+        try:
+            renderer._setup_canvas(fig, ax)
+
+            self.assertEqual(
+                tuple(round(value, 6) for value in ax.get_position().bounds),
+                (0, 0, 1, 1),
+            )
+        finally:
+            plt.close(fig)
+
+    def test_font_pixel_size_uses_configured_dpi(self):
+        renderer = BarRenderer(config=ChartConfig(dpi=144))
+
+        self.assertEqual(renderer._font_pixel_size(12), 24)
+
+    def test_bar_label_reserves_space_after_rank_label(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                left_margin=100,
+                rank_label_gap=50,
+                rank_label_min_x=20,
+                rank_label_label_gap=20,
+                label_font_size=10,
+                label_min_x=10,
+                text_average_char_width=0.5,
+                logos_enabled=False,
+            )
+        )
+        sprite = BarSprite(
+            name="Very Long Label",
+            value=100,
+            color="#123456",
+            x=120,
+            y=0,
+            width=100,
+            height=40,
+            rank=1,
+        )
+
+        self.assertEqual(renderer._rank_label_x(), 50)
+        self.assertEqual(renderer._bar_label_min_x(sprite), 70)
+        self.assertEqual(renderer._fit_bar_label(sprite), "Ver...")
+
+    def test_bar_label_uses_label_min_x_when_rank_labels_are_disabled(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                left_margin=100,
+                rank_labels_enabled=False,
+                rank_label_gap=50,
+                rank_label_min_x=20,
+                rank_label_label_gap=80,
+                label_font_size=10,
+                label_min_x=10,
+                text_average_char_width=0.5,
+                logos_enabled=False,
+            )
+        )
+        sprite = BarSprite(
+            name="Very Long Label",
+            value=100,
+            color="#123456",
+            x=120,
+            y=0,
+            width=100,
+            height=40,
+            rank=1,
+        )
+
+        self.assertEqual(renderer._bar_label_min_x(sprite), 10)
+        self.assertEqual(renderer._fit_bar_label(sprite), "Very Long Label")
 
     def test_places_value_outside_when_it_fits(self):
         renderer = BarRenderer(
@@ -212,6 +291,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
     def test_fits_title_subtitle_and_source_labels(self):
         renderer = BarRenderer(
             config=ChartConfig(
+                dpi=72,
                 title_font_size=10,
                 subtitle_font_size=10,
                 source_font_size=10,
@@ -238,6 +318,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
     def test_fits_main_text_to_available_canvas_width(self):
         renderer = BarRenderer(
             config=ChartConfig(
+                dpi=72,
                 width=220,
                 left_margin=100,
                 source_x=120,
@@ -297,6 +378,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
     def test_footer_uses_configured_font_weights_and_fits_source(self):
         renderer = BarRenderer(
             config=ChartConfig(
+                dpi=72,
                 time_label_font_weight="heavy",
                 source_font_weight="medium",
                 source_font_size=10,

@@ -36,6 +36,7 @@ The project is a usable MVP:
 - Enter/exit opacity for bars.
 - Rank labels.
 - Text fitting for long labels and value labels.
+- Rank-aware bar label fitting so names do not invade the rank-label column.
 - Title, subtitle, and source labels fit to both configured max widths and
   remaining canvas width.
 - Themes.
@@ -56,6 +57,10 @@ The project is a usable MVP:
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
 - PNG frame rendering with Matplotlib.
+- Matplotlib axes are forced to fill the full figure so layout coordinates map
+  directly to the output frame.
+- Text fitting converts Matplotlib point-size fonts to pixel estimates with
+  the configured DPI before truncating labels.
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
   format.
 - Unit tests and a real FFmpeg integration test.
@@ -267,7 +272,8 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Improve stability for remaining edge cases: long names and large values.
+1. Improve stability for remaining edge cases: very large values and dense
+   footer/time-label layouts.
 2. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

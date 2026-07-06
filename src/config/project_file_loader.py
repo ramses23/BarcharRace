@@ -288,6 +288,12 @@ def _convert_chart_value(key, value):
 
         return value
 
+    if key in ("rank_label_min_x", "rank_label_label_gap"):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError(f"Chart field '{key}' must be >= 0.")
+
+        return value
+
     if key == "logo_file_extensions":
         if not isinstance(value, list) or not all(
             isinstance(item, str) for item in value

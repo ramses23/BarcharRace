@@ -13,6 +13,8 @@
     "steps_per_transition": 24,
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
+    "rank_label_min_x": 96,
+    "rank_label_label_gap": 18,
     "label_min_x": 40,
     "value_label_gap": 16,
     "auto_fit_bar_count": true,

@@ -75,6 +75,8 @@ class ChartConfig:
     rank_label_prefix: str = "#"
     rank_label_font_size: int = 18
     rank_label_gap: int = 320
+    rank_label_min_x: int = 96
+    rank_label_label_gap: int = 18
 
     label_min_x: int = 40
     text_average_char_width: float = 0.56
