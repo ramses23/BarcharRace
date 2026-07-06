@@ -38,6 +38,7 @@ The project is a usable MVP:
 - Text fitting for long labels and value labels.
 - Themes.
 - Configurable bar shadows.
+- Configurable bar gradients.
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
@@ -249,8 +250,7 @@ The project has been using a pattern of:
 Recommended next steps:
 
 1. Continue larger-dataset profiling.
-2. Add richer visual polish: gradients, typography presets, and better
-   title/source layout.
+2. Add richer visual polish: typography presets and better title/source layout.
 3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

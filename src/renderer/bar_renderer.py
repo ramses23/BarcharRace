@@ -6,6 +6,7 @@ matplotlib.use("Agg")
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+import numpy as np
 
 from config.chart_config import ChartConfig
 from utils.text_fit import estimate_text_width, fit_text_to_width
@@ -89,15 +90,7 @@ class BarRenderer:
 
             self._draw_bar_shadow(ax, sprite, opacity)
 
-            ax.barh(
-                sprite.y,
-                sprite.width,
-                height=sprite.height,
-                left=sprite.x,
-                color=rgba,
-                edgecolor="none",
-                zorder=2,
-            )
+            self._draw_bar(ax, sprite, rgba)
 
             self._draw_rank_label(ax, sprite, opacity)
             self._draw_logo(ax, sprite, opacity)
@@ -131,6 +124,43 @@ class BarRenderer:
                 color=value_layout["color"],
                 alpha=opacity,
             )
+
+    def _draw_bar(self, ax, sprite, rgba):
+        if not self.config.bar_gradient_enabled:
+            self._draw_solid_bar(ax, sprite, rgba)
+            return
+
+        ax.imshow(
+            self._bar_gradient(rgba),
+            extent=(
+                sprite.x,
+                sprite.x + sprite.width,
+                sprite.y + (sprite.height / 2),
+                sprite.y - (sprite.height / 2),
+            ),
+            aspect="auto",
+            interpolation="bicubic",
+            zorder=2,
+        )
+
+    def _draw_solid_bar(self, ax, sprite, rgba):
+        ax.barh(
+            sprite.y,
+            sprite.width,
+            height=sprite.height,
+            left=sprite.x,
+            color=rgba,
+            edgecolor="none",
+            zorder=2,
+        )
+
+    def _bar_gradient(self, rgba):
+        lighten = max(0.0, min(1.0, self.config.bar_gradient_lighten))
+        start = np.array(rgba)
+        end = start.copy()
+        end[:3] = start[:3] + ((1.0 - start[:3]) * lighten)
+
+        return np.linspace(start, end, 64).reshape(1, 64, 4)
 
     def _draw_bar_shadow(self, ax, sprite, opacity):
         if not self.config.bar_shadow_enabled:

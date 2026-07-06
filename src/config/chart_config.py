@@ -24,6 +24,8 @@ class ChartConfig:
     bar_shadow_alpha: float = 0.12
     bar_shadow_offset_x: int = 5
     bar_shadow_offset_y: int = 4
+    bar_gradient_enabled: bool = True
+    bar_gradient_lighten: float = 0.22
 
     fps: int = 30
     steps_per_transition: int = 30

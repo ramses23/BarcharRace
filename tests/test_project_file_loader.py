@@ -32,6 +32,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "bar_shadow_alpha": 0.2,
                             "bar_shadow_offset_x": 8,
                             "bar_shadow_offset_y": 5,
+                            "bar_gradient_enabled": True,
+                            "bar_gradient_lighten": 0.3,
                         },
                         "animation": {
                             "easing": "ease_out_cubic",
@@ -78,6 +80,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.bar_shadow_alpha, 0.2)
         self.assertEqual(preset.chart_config.bar_shadow_offset_x, 8)
         self.assertEqual(preset.chart_config.bar_shadow_offset_y, 5)
+        self.assertTrue(preset.chart_config.bar_gradient_enabled)
+        self.assertEqual(preset.chart_config.bar_gradient_lighten, 0.3)
         self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
         self.assertFalse(preset.chart_config.animation.enter_exit)
         self.assertFalse(preset.chart_config.animation.value_smoothing)

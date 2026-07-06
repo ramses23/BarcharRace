@@ -19,6 +19,7 @@ charts, animated scatter plots, and timeline animations.
   a large time label.
 - Render rank labels for each bar.
 - Render configurable soft shadows behind bars.
+- Render configurable horizontal gradients on bars.
 - Resolve and render optional logos for bars.
 - Export PNG frames to MP4 with FFmpeg.
 - Run project presets from the command line.
@@ -148,7 +149,9 @@ Example:
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
-    "bar_shadow_offset_y": 4
+    "bar_shadow_offset_y": 4,
+    "bar_gradient_enabled": true,
+    "bar_gradient_lighten": 0.22
   },
   "animation": {
     "easing": "ease_out_cubic",
@@ -266,6 +269,15 @@ bar_shadow_offset_y
 ```
 
 Shadows follow bar opacity, so entering and exiting bars fade consistently.
+
+Bars can also render a horizontal gradient based on each bar's own color:
+
+```text
+bar_gradient_enabled
+bar_gradient_lighten
+```
+
+When disabled, bars fall back to the original solid rectangle rendering.
 
 ## Text Fitting
 
@@ -401,6 +413,7 @@ Current test coverage includes:
 - `BarSelector`
 - `LayoutEngine` rank assignment
 - bar shadow rendering
+- bar gradient rendering
 - text fitting and value-label layout
 - `DatasetValidator`
 - `DataSourceLoader`
@@ -629,5 +642,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue larger-dataset profiling and add richer visual polish to the core
-  renderer.
+- Continue larger-dataset profiling and improve typography/layout for titles,
+  subtitles, and source labels.

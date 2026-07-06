@@ -16,7 +16,9 @@
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
-    "bar_shadow_offset_y": 4
+    "bar_shadow_offset_y": 4,
+    "bar_gradient_enabled": true,
+    "bar_gradient_lighten": 0.22
   },
   "animation": {
     "easing": "ease_out_cubic",

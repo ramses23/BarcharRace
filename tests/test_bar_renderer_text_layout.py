@@ -155,10 +155,64 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertEqual(axis.barh_calls, [])
 
+    def test_draws_gradient_bar_when_enabled(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                bar_gradient_enabled=True,
+                bar_gradient_lighten=0.25,
+            )
+        )
+        axis = FakeAxis()
+        sprite = BarSprite(
+            name="USA",
+            value=100,
+            color="#123456",
+            x=100,
+            y=40,
+            width=200,
+            height=30,
+        )
+
+        renderer._draw_bar(axis, sprite, rgba=(0.1, 0.2, 0.3, 0.8))
+
+        self.assertEqual(axis.barh_calls, [])
+        self.assertEqual(len(axis.imshow_calls), 1)
+        self.assertEqual(axis.imshow_calls[0]["extent"], (100, 300, 55.0, 25.0))
+        self.assertEqual(axis.imshow_calls[0]["zorder"], 2)
+        self.assertEqual(axis.imshow_calls[0]["image"].shape, (1, 64, 4))
+        self.assertAlmostEqual(axis.imshow_calls[0]["image"][0, 0, 0], 0.1)
+        self.assertAlmostEqual(axis.imshow_calls[0]["image"][0, -1, 0], 0.325)
+        self.assertAlmostEqual(axis.imshow_calls[0]["image"][0, -1, 3], 0.8)
+
+    def test_draws_solid_bar_when_gradient_is_disabled(self):
+        renderer = BarRenderer(config=ChartConfig(bar_gradient_enabled=False))
+        axis = FakeAxis()
+        sprite = BarSprite(
+            name="USA",
+            value=100,
+            color="#123456",
+            x=100,
+            y=40,
+            width=200,
+            height=30,
+        )
+
+        renderer._draw_bar(axis, sprite, rgba=(0.1, 0.2, 0.3, 0.8))
+
+        self.assertEqual(axis.imshow_calls, [])
+        self.assertEqual(len(axis.barh_calls), 1)
+        self.assertEqual(axis.barh_calls[0]["y"], 40)
+        self.assertEqual(axis.barh_calls[0]["width"], 200)
+        self.assertEqual(axis.barh_calls[0]["height"], 30)
+        self.assertEqual(axis.barh_calls[0]["left"], 100)
+        self.assertEqual(axis.barh_calls[0]["color"], (0.1, 0.2, 0.3, 0.8))
+        self.assertEqual(axis.barh_calls[0]["zorder"], 2)
+
 
 class FakeAxis:
     def __init__(self):
         self.barh_calls = []
+        self.imshow_calls = []
 
     def barh(self, y, width, height, left, color, edgecolor, zorder):
         self.barh_calls.append(
@@ -169,6 +223,17 @@ class FakeAxis:
                 "left": left,
                 "color": color,
                 "edgecolor": edgecolor,
+                "zorder": zorder,
+            }
+        )
+
+    def imshow(self, image, extent, aspect, interpolation, zorder):
+        self.imshow_calls.append(
+            {
+                "image": image,
+                "extent": extent,
+                "aspect": aspect,
+                "interpolation": interpolation,
                 "zorder": zorder,
             }
         )
