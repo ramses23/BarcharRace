@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from config.animation_config import AnimationConfig
+from config.bar_selection_config import BarSelectionConfig
 from config.theme_config import ThemeConfig
 from config.value_format_config import ValueFormatConfig
 
@@ -22,6 +23,7 @@ class ChartConfig:
     fps: int = 30
     steps_per_transition: int = 30
     animation: AnimationConfig = field(default_factory=AnimationConfig)
+    selection: BarSelectionConfig = field(default_factory=BarSelectionConfig)
 
     frames_dir: str = "output/frames"
     output_file: str = "output/video.mp4"

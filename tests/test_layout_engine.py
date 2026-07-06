@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import _test_path
+from config.bar_selection_config import BarSelectionConfig
 from config.chart_config import ChartConfig
 from core.layout_engine import LayoutEngine
 from models.bar_data import BarData
@@ -25,6 +26,26 @@ class LayoutEngineTest(unittest.TestCase):
         self.assertEqual(ranks["USA"], 1)
         self.assertEqual(ranks["Mexico"], 2)
         self.assertEqual(ranks["Canada"], 3)
+
+    def test_keeps_aggregated_other_trailing(self):
+        config = ChartConfig(
+            logos_enabled=False,
+            selection=BarSelectionConfig(
+                top_n=2,
+                aggregate_other=True,
+                other_label="Other",
+            ),
+        )
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name="USA", value=100),
+                BarData(name="Other", value=500),
+            ]
+        )
+
+        self.assertEqual([sprite.name for sprite in sprites], ["USA", "Other"])
+        self.assertEqual([sprite.rank for sprite in sprites], [1, 2])
 
     def test_adds_logo_path_when_asset_exists(self):
         with tempfile.TemporaryDirectory() as temp_dir:

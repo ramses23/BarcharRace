@@ -23,6 +23,7 @@ charts, animated scatter plots, and timeline animations.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
+- Limit large frames with configurable top-N selection and optional "Other".
 - Run a minimal automated test suite with `unittest`.
 
 ## Requirements
@@ -142,6 +143,12 @@ Example:
     "enter_exit": true,
     "value_smoothing": true
   },
+  "selection": {
+    "top_n": 3,
+    "aggregate_other": false,
+    "other_label": "Other",
+    "other_color": "#A0A0A0"
+  },
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/sample_dynamic.csv"
@@ -162,6 +169,7 @@ Supported top-level keys:
 | `base_preset` | optional preset to extend |
 | `chart` | `ChartConfig` values |
 | `animation` | `AnimationConfig` values |
+| `selection` | `BarSelectionConfig` values |
 | `data_source` | `DataSourceConfig` values |
 | `dataset` | `DatasetConfig` values |
 
@@ -251,6 +259,22 @@ value_label_edge_padding
 value_label_inside_padding
 value_label_inside_color
 ```
+
+## Bar Selection
+
+Large datasets can be limited before layout with `BarSelectionConfig`.
+
+Selection fields:
+
+| Field | Meaning |
+|---|---|
+| `top_n` | number of leading bars to keep, or `null` for all bars |
+| `aggregate_other` | when true, hidden bars are summed into a trailing bar |
+| `other_label` | display name for the aggregated trailing bar |
+| `other_color` | optional color for the aggregated trailing bar |
+
+When `top_n` is `10` and `aggregate_other` is true, the renderer shows the top
+10 real bars plus one aggregated `Other` bar.
 
 For reusable video definitions that should not require Python edits, prefer
 external project files in:
@@ -347,6 +371,7 @@ Current test coverage includes:
 - `AnimationConfig`
 - `ThemeConfig`
 - `ColorPalette`
+- `BarSelector`
 - `LayoutEngine` rank assignment
 - text fitting and value-label layout
 - `DatasetValidator`
@@ -372,6 +397,7 @@ JSON project file or ProjectPreset
         -> DatasetValidator
         -> Timeline
         -> BarData
+        -> BarSelector
         -> LayoutEngine
         -> AssetResolver
         -> BarSprite
@@ -572,4 +598,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add configurable top-N filtering and trailing "other" handling for larger datasets.
+- Improve large-dataset performance and add visual polish for aggregated bars.

@@ -40,6 +40,7 @@ The project is a usable MVP:
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
+- Top-N bar selection and optional "Other" aggregation.
 - CLI presets and CLI overrides.
 - PNG frame rendering with Matplotlib.
 - MP4 export with FFmpeg.
@@ -64,6 +65,7 @@ JSON project file or ProjectPreset
         -> DatasetValidator
         -> Timeline
         -> BarData
+        -> BarSelector
         -> LayoutEngine
         -> AssetResolver
         -> BarSprite
@@ -83,6 +85,7 @@ Important boundaries:
 - Validators validate data only. They should not know about rendering.
 - `Timeline` exposes frame data by period.
 - `LayoutEngine` converts business data into visual bar sprites.
+- `BarSelector` limits or aggregates business data before layout.
 - `MotionEngine` interpolates visual state between sprites.
 - `Scene` is the renderer input.
 - `BarRenderer` receives a `Scene`; it should not fetch data or build timeline
@@ -240,12 +243,10 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Add configurable top-N filtering for larger datasets.
-2. Add optional "Other" aggregation for hidden bars.
-3. Improve large-dataset performance.
-4. Add richer visual polish: shadows, gradients, typography presets, and
+1. Improve large-dataset performance.
+2. Add richer visual polish: shadows, gradients, typography presets, and
    better title/source layout.
-5. Add more chart types while preserving the same pipeline ideas.
+3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
 

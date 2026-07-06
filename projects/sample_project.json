@@ -19,6 +19,12 @@
     "enter_exit": true,
     "value_smoothing": true
   },
+  "selection": {
+    "top_n": 3,
+    "aggregate_other": false,
+    "other_label": "Other",
+    "other_color": "#A0A0A0"
+  },
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/sample_dynamic.csv"

@@ -33,6 +33,12 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "enter_exit": False,
                             "value_smoothing": False,
                         },
+                        "selection": {
+                            "top_n": 5,
+                            "aggregate_other": True,
+                            "other_label": "Rest",
+                            "other_color": "#999999",
+                        },
                         "data_source": {
                             "source_type": "csv",
                             "csv_path": "data/custom.csv",
@@ -65,6 +71,10 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
         self.assertFalse(preset.chart_config.animation.enter_exit)
         self.assertFalse(preset.chart_config.animation.value_smoothing)
+        self.assertEqual(preset.chart_config.selection.top_n, 5)
+        self.assertTrue(preset.chart_config.selection.aggregate_other)
+        self.assertEqual(preset.chart_config.selection.other_label, "Rest")
+        self.assertEqual(preset.chart_config.selection.other_color, "#999999")
         self.assertEqual(preset.data_source_config.csv_path, "data/custom.csv")
         self.assertEqual(preset.dataset_config.year_column, "date")
         self.assertEqual(preset.dataset_config.name_column, "name")
@@ -130,6 +140,39 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"animation": {"unknown": "value"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_unknown_selection_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"selection": {"unknown": "value"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_invalid_top_n(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"selection": {"top_n": 0}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_boolean_top_n(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"selection": {"top_n": True}}),
                 encoding="utf-8",
             )
 

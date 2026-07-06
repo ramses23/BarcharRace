@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
@@ -35,6 +36,7 @@ class RenderJob:
         if len(years) < 2:
             raise ValueError("RenderJob requires at least two time periods.")
 
+        selector = BarSelector(config=self.config.selection)
         layout = LayoutEngine(config=self.config)
         motion = MotionEngine(animation_config=self.config.animation)
         renderer = BarRenderer(output_dir=self.config.frames_dir, config=self.config)
@@ -55,8 +57,11 @@ class RenderJob:
 
             print(f"Transicion {year_a} -> {year_b}")
 
-            start_sprites = layout.build(timeline.get_frame(year_a))
-            end_sprites = layout.build(timeline.get_frame(year_b))
+            start_bars = selector.select(timeline.get_frame(year_a))
+            end_bars = selector.select(timeline.get_frame(year_b))
+
+            start_sprites = layout.build(start_bars)
+            end_sprites = layout.build(end_bars)
 
             frames = motion.interpolate_sprites(
                 start_sprites,

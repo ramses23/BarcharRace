@@ -20,7 +20,7 @@ class LayoutEngine:
             return []
 
         # ordenar SOLO para asignar ranking
-        sorted_bars = sorted(bars, key=lambda b: b.value, reverse=True)
+        sorted_bars = sorted(bars, key=self._sort_key)
 
         max_value = max(b.value for b in sorted_bars)
 
@@ -55,3 +55,12 @@ class LayoutEngine:
             return None
 
         return self.logo_resolver.resolve(name)
+
+    def _sort_key(self, bar):
+        if (
+            self.config.selection.aggregate_other
+            and bar.name == self.config.selection.other_label
+        ):
+            return (1, 0)
+
+        return (0, -bar.value)

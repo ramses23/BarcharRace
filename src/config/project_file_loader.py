@@ -19,6 +19,7 @@ PROJECT_FILE_SECTIONS = {
     "name",
     "base_preset",
     "animation",
+    "selection",
     "chart",
     "data_source",
     "dataset",
@@ -50,6 +51,12 @@ def load_project_file(path):
             data.get("animation", {}),
             "animation",
             _convert_animation_value,
+        ),
+        selection=_build_config(
+            chart_config.selection,
+            data.get("selection", {}),
+            "selection",
+            _convert_selection_value,
         ),
     )
 
@@ -158,6 +165,11 @@ def _convert_chart_value(key, value):
             "Use the top-level 'animation' section instead of 'chart.animation'."
         )
 
+    if key == "selection":
+        raise ProjectFileError(
+            "Use the top-level 'selection' section instead of 'chart.selection'."
+        )
+
     if key == "theme":
         if not isinstance(value, str):
             raise ProjectFileError("Chart field 'theme' must be a named theme.")
@@ -206,6 +218,42 @@ def _convert_animation_value(key, value):
     return value
 
 
+def _convert_selection_value(key, value):
+    if key == "top_n":
+        if value is None:
+            return None
+
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ProjectFileError("Selection field 'top_n' must be null or >= 1.")
+
+        return value
+
+    if key == "aggregate_other":
+        if not isinstance(value, bool):
+            raise ProjectFileError("Selection field 'aggregate_other' must be boolean.")
+
+        return value
+
+    if key == "other_label":
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                "Selection field 'other_label' must be a non-empty string."
+            )
+
+        return value
+
+    if key == "other_color":
+        if value is None:
+            return None
+
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                "Selection field 'other_color' must be null or a string."
+            )
+
+        return value
+
+    return value
 def _reject_unknown_keys(data, allowed_keys, location):
     unknown_keys = sorted(set(data) - set(allowed_keys))
 
