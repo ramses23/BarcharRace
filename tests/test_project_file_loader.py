@@ -27,6 +27,13 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "rank_label_prefix": "No.",
                             "label_min_x": 56,
                             "value_label_gap": 20,
+                            "title_font_weight": "heavy",
+                            "subtitle_font_weight": "light",
+                            "time_label_font_weight": "bold",
+                            "source_font_weight": "normal",
+                            "title_max_width": 900,
+                            "subtitle_max_width": 800,
+                            "source_max_width": 700,
                             "bar_shadow_enabled": True,
                             "bar_shadow_color": "#222222",
                             "bar_shadow_alpha": 0.2,
@@ -75,6 +82,13 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.rank_label_prefix, "No.")
         self.assertEqual(preset.chart_config.label_min_x, 56)
         self.assertEqual(preset.chart_config.value_label_gap, 20)
+        self.assertEqual(preset.chart_config.title_font_weight, "heavy")
+        self.assertEqual(preset.chart_config.subtitle_font_weight, "light")
+        self.assertEqual(preset.chart_config.time_label_font_weight, "bold")
+        self.assertEqual(preset.chart_config.source_font_weight, "normal")
+        self.assertEqual(preset.chart_config.title_max_width, 900)
+        self.assertEqual(preset.chart_config.subtitle_max_width, 800)
+        self.assertEqual(preset.chart_config.source_max_width, 700)
         self.assertTrue(preset.chart_config.bar_shadow_enabled)
         self.assertEqual(preset.chart_config.bar_shadow_color, "#222222")
         self.assertEqual(preset.chart_config.bar_shadow_alpha, 0.2)

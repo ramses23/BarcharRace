@@ -57,12 +57,12 @@ class BarRenderer:
         ax.text(
             self.config.left_margin,
             self.config.title_y,
-            scene.title,
+            self._fit_title(scene.title),
             ha="left",
             va="center",
             fontsize=self.config.title_font_size,
             fontfamily=self.config.font_family,
-            fontweight="bold",
+            fontweight=self.config.title_font_weight,
             color=self.config.text_color,
         )
 
@@ -70,13 +70,28 @@ class BarRenderer:
             ax.text(
                 self.config.left_margin,
                 self.config.subtitle_y,
-                scene.subtitle,
+                self._fit_subtitle(scene.subtitle),
                 ha="left",
                 va="center",
                 fontsize=self.config.subtitle_font_size,
                 fontfamily=self.config.font_family,
+                fontweight=self.config.subtitle_font_weight,
                 color=self.config.muted_text_color,
             )
+
+    def _fit_title(self, title):
+        return self._fit_text(
+            title,
+            max_width=self.config.title_max_width,
+            font_size=self.config.title_font_size,
+        )
+
+    def _fit_subtitle(self, subtitle):
+        return self._fit_text(
+            subtitle,
+            max_width=self.config.subtitle_max_width,
+            font_size=self.config.subtitle_font_size,
+        )
 
     def _draw_bars(self, ax, sprites):
         for sprite in sprites:
@@ -323,7 +338,7 @@ class BarRenderer:
                 va="center",
                 fontsize=self.config.time_label_font_size,
                 fontfamily=self.config.font_family,
-                fontweight="bold",
+                fontweight=self.config.time_label_font_weight,
                 color=self.config.muted_text_color,
                 alpha=0.22,
             )
@@ -332,10 +347,26 @@ class BarRenderer:
             ax.text(
                 self.config.source_x,
                 self.config.source_y,
-                scene.source_label,
+                self._fit_source_label(scene.source_label),
                 ha="left",
                 va="center",
                 fontsize=self.config.source_font_size,
                 fontfamily=self.config.font_family,
+                fontweight=self.config.source_font_weight,
                 color=self.config.muted_text_color,
             )
+
+    def _fit_source_label(self, source_label):
+        return self._fit_text(
+            source_label,
+            max_width=self.config.source_max_width,
+            font_size=self.config.source_font_size,
+        )
+
+    def _fit_text(self, text, max_width, font_size):
+        return fit_text_to_width(
+            text,
+            max_width=max_width,
+            font_size=font_size,
+            average_char_width=self.config.text_average_char_width,
+        )

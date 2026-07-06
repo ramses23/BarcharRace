@@ -3,6 +3,7 @@ import unittest
 import _test_path
 from config.chart_config import ChartConfig
 from models.bar_sprite import BarSprite
+from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
 
 
@@ -208,11 +209,79 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(axis.barh_calls[0]["color"], (0.1, 0.2, 0.3, 0.8))
         self.assertEqual(axis.barh_calls[0]["zorder"], 2)
 
+    def test_fits_title_subtitle_and_source_labels(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                title_font_size=10,
+                subtitle_font_size=10,
+                source_font_size=10,
+                text_average_char_width=0.5,
+                title_max_width=60,
+                subtitle_max_width=40,
+                source_max_width=50,
+            )
+        )
+
+        self.assertEqual(
+            renderer._fit_title("Professional Bar Chart Race"),
+            "Professio...",
+        )
+        self.assertEqual(
+            renderer._fit_subtitle("Subtitle that is too long"),
+            "Subti...",
+        )
+        self.assertEqual(
+            renderer._fit_source_label("Source: very/long/path/to/source.csv"),
+            "Source:...",
+        )
+
+    def test_header_uses_configured_font_weights(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                title_font_weight="heavy",
+                subtitle_font_weight="light",
+            )
+        )
+        axis = FakeAxis()
+        scene = Scene(title="Title", subtitle="Subtitle")
+
+        renderer._draw_header(axis, scene)
+
+        self.assertEqual(axis.text_calls[0]["text"], "Title")
+        self.assertEqual(axis.text_calls[0]["fontweight"], "heavy")
+        self.assertEqual(axis.text_calls[1]["text"], "Subtitle")
+        self.assertEqual(axis.text_calls[1]["fontweight"], "light")
+
+    def test_footer_uses_configured_font_weights_and_fits_source(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                time_label_font_weight="heavy",
+                source_font_weight="medium",
+                source_font_size=10,
+                source_max_width=50,
+                text_average_char_width=0.5,
+            )
+        )
+        axis = FakeAxis()
+        scene = Scene(
+            title="Title",
+            time_label="2000",
+            source_label="Source: very/long/path/to/source.csv",
+        )
+
+        renderer._draw_footer(axis, scene)
+
+        self.assertEqual(axis.text_calls[0]["text"], "2000")
+        self.assertEqual(axis.text_calls[0]["fontweight"], "heavy")
+        self.assertEqual(axis.text_calls[1]["text"], "Source:...")
+        self.assertEqual(axis.text_calls[1]["fontweight"], "medium")
+
 
 class FakeAxis:
     def __init__(self):
         self.barh_calls = []
         self.imshow_calls = []
+        self.text_calls = []
 
     def barh(self, y, width, height, left, color, edgecolor, zorder):
         self.barh_calls.append(
@@ -237,6 +306,11 @@ class FakeAxis:
                 "zorder": zorder,
             }
         )
+
+    def text(self, x, y, text, **kwargs):
+        text_call = {"x": x, "y": y, "text": text}
+        text_call.update(kwargs)
+        self.text_calls.append(text_call)
 
 
 if __name__ == "__main__":

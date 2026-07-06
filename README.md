@@ -18,6 +18,8 @@ charts, animated scatter plots, and timeline animations.
 - Render full scenes with title, subtitle, source label, bars, values, and
   a large time label.
 - Render rank labels for each bar.
+- Apply configurable font weights and max widths to title, subtitle, time
+  label, and source label.
 - Render configurable soft shadows behind bars.
 - Render configurable horizontal gradients on bars.
 - Resolve and render optional logos for bars.
@@ -146,6 +148,13 @@ Example:
     "rank_label_prefix": "#",
     "label_min_x": 40,
     "value_label_gap": 16,
+    "title_font_weight": "bold",
+    "subtitle_font_weight": "normal",
+    "time_label_font_weight": "bold",
+    "source_font_weight": "normal",
+    "title_max_width": 1200,
+    "subtitle_max_width": 980,
+    "source_max_width": 820,
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
@@ -279,6 +288,22 @@ bar_gradient_lighten
 
 When disabled, bars fall back to the original solid rectangle rendering.
 
+Title, subtitle, time label, and source label typography can be tuned from
+`ChartConfig` or a project file:
+
+```text
+title_font_weight
+subtitle_font_weight
+time_label_font_weight
+source_font_weight
+title_max_width
+subtitle_max_width
+source_max_width
+```
+
+The title, subtitle, and source label are truncated with `...` when they exceed
+their configured widths.
+
 ## Text Fitting
 
 Bar labels and value labels include basic collision handling.
@@ -291,6 +316,9 @@ right edge when the bar is too small.
 Text fitting is configured in `ChartConfig`:
 
 ```text
+title_max_width
+subtitle_max_width
+source_max_width
 label_min_x
 text_average_char_width
 value_label_gap
@@ -414,7 +442,7 @@ Current test coverage includes:
 - `LayoutEngine` rank assignment
 - bar shadow rendering
 - bar gradient rendering
-- text fitting and value-label layout
+- text fitting for title, subtitle, source, and value-label layout
 - `DatasetValidator`
 - `DataSourceLoader`
 - `RenderJob`
@@ -642,5 +670,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue larger-dataset profiling and improve typography/layout for titles,
-  subtitles, and source labels.
+- Continue larger-dataset profiling and add reusable typography presets.

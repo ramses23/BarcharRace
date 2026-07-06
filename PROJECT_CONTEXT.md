@@ -37,6 +37,8 @@ The project is a usable MVP:
 - Rank labels.
 - Text fitting for long labels and value labels.
 - Themes.
+- Configurable typography weights and max widths for title, subtitle, time
+  label, and source label.
 - Configurable bar shadows.
 - Configurable bar gradients.
 - Value format presets.
@@ -250,7 +252,7 @@ The project has been using a pattern of:
 Recommended next steps:
 
 1. Continue larger-dataset profiling.
-2. Add richer visual polish: typography presets and better title/source layout.
+2. Add richer visual polish: reusable typography presets.
 3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

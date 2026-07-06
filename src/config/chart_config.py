@@ -47,6 +47,13 @@ class ChartConfig:
     source_font_size: int = 16
     label_font_size: int = 20
     value_font_size: int = 20
+    title_font_weight: str = "bold"
+    subtitle_font_weight: str = "normal"
+    time_label_font_weight: str = "bold"
+    source_font_weight: str = "normal"
+    title_max_width: int = 1280
+    subtitle_max_width: int = 1280
+    source_max_width: int = 980
 
     title_y: int = 95
     subtitle_y: int = 165
