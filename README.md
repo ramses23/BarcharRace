@@ -25,6 +25,7 @@ charts, animated scatter plots, and timeline animations.
 - Render external JSON project files.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
+- Report per-stage render profiling timings for larger-dataset tuning.
 - Run a minimal automated test suite with `unittest`.
 
 ## Requirements
@@ -76,6 +77,11 @@ Run an external project file:
 ```powershell
 .venv\Scripts\python.exe src\main.py --project projects/sample_project.json
 ```
+
+At the end of a render, the CLI prints a compact profiling line with the
+seconds spent loading data, validating data, building the timeline,
+precomputing sprites, rendering frames, exporting video, and running the full
+job.
 
 List available themes, value formats, and easing presets:
 
@@ -379,6 +385,7 @@ Current test coverage includes:
 - `DataSourceLoader`
 - `RenderJob`
 - per-year sprite precomputation
+- render profiling metrics
 - CLI preset overrides
 - external project file loader
 - real render integration test with FFmpeg
@@ -601,4 +608,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add visual polish for aggregated bars and continue larger-dataset profiling.
+- Continue larger-dataset profiling and add richer visual polish to the core
+  renderer.

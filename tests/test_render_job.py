@@ -62,6 +62,14 @@ class RenderJobTest(unittest.TestCase):
             self.assertEqual(result.transitions_rendered, 1)
             self.assertEqual(result.removed_frames, 1)
             self.assertEqual(result.output_file, str(output_file))
+            self.assertGreaterEqual(result.profile.load_data_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.validate_data_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.build_timeline_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.cleanup_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.precompute_sprites_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.render_frames_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.export_video_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.total_seconds, 0.0)
 
             self.assertEqual(renderer.render.call_count, 2)
             self.assertEqual(

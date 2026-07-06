@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from time import perf_counter
 
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
@@ -16,11 +17,24 @@ from validators.dataset_validator import DatasetValidator
 
 
 @dataclass(frozen=True)
+class RenderProfile:
+    load_data_seconds: float = 0.0
+    validate_data_seconds: float = 0.0
+    build_timeline_seconds: float = 0.0
+    cleanup_seconds: float = 0.0
+    precompute_sprites_seconds: float = 0.0
+    render_frames_seconds: float = 0.0
+    export_video_seconds: float = 0.0
+    total_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
 class RenderResult:
     frames_rendered: int
     transitions_rendered: int
     removed_frames: int
     output_file: str
+    profile: RenderProfile
 
 
 class RenderJob:
@@ -30,7 +44,24 @@ class RenderJob:
         self.dataset_config = dataset_config or DatasetConfig()
 
     def run(self):
-        timeline = self._build_timeline()
+        total_started_at = perf_counter()
+        timings = {}
+
+        dataframe = self._measure_stage(
+            timings,
+            "load_data",
+            lambda: DataSourceLoader(self.data_source_config).load(),
+        )
+        dataframe = self._measure_stage(
+            timings,
+            "validate_data",
+            lambda: DatasetValidator(config=self.dataset_config).validate(dataframe),
+        )
+        timeline = self._measure_stage(
+            timings,
+            "build_timeline",
+            lambda: Timeline(dataframe, config=self.dataset_config),
+        )
         years = timeline.get_years()
 
         if len(years) < 2:
@@ -42,22 +73,31 @@ class RenderJob:
         renderer = BarRenderer(output_dir=self.config.frames_dir, config=self.config)
         exporter = VideoExporter(config=self.config)
 
-        removed_frames = clean_frame_directory(
-            self.config.frames_dir,
-            pattern=self.config.frame_file_pattern,
+        removed_frames = self._measure_stage(
+            timings,
+            "cleanup",
+            lambda: clean_frame_directory(
+                self.config.frames_dir,
+                pattern=self.config.frame_file_pattern,
+            ),
         )
         print(f"Frames anteriores eliminados: {removed_frames}")
 
-        sprites_by_year = self._build_sprites_by_year(
-            timeline=timeline,
-            years=years,
-            selector=selector,
-            layout=layout,
+        sprites_by_year = self._measure_stage(
+            timings,
+            "precompute_sprites",
+            lambda: self._build_sprites_by_year(
+                timeline=timeline,
+                years=years,
+                selector=selector,
+                layout=layout,
+            ),
         )
 
         frame_id = 0
         transitions_rendered = 0
 
+        render_started_at = perf_counter()
         for i in range(len(years) - 1):
             year_a = years[i]
             year_b = years[i + 1]
@@ -91,21 +131,56 @@ class RenderJob:
 
             transitions_rendered += 1
 
-        exporter.export()
+        timings["render_frames"] = perf_counter() - render_started_at
+
+        self._measure_stage(timings, "export_video", exporter.export)
+
+        profile = self._build_profile(
+            timings=timings,
+            total_seconds=perf_counter() - total_started_at,
+        )
 
         print("Video generado correctamente.")
+        self._print_profile(profile)
 
         return RenderResult(
             frames_rendered=frame_id,
             transitions_rendered=transitions_rendered,
             removed_frames=removed_frames,
             output_file=self.config.output_file,
+            profile=profile,
         )
 
-    def _build_timeline(self):
-        dataframe = DataSourceLoader(self.data_source_config).load()
-        dataframe = DatasetValidator(config=self.dataset_config).validate(dataframe)
-        return Timeline(dataframe, config=self.dataset_config)
+    def _measure_stage(self, timings, name, callback):
+        started_at = perf_counter()
+        result = callback()
+        timings[name] = perf_counter() - started_at
+        return result
+
+    def _build_profile(self, timings, total_seconds):
+        return RenderProfile(
+            load_data_seconds=timings.get("load_data", 0.0),
+            validate_data_seconds=timings.get("validate_data", 0.0),
+            build_timeline_seconds=timings.get("build_timeline", 0.0),
+            cleanup_seconds=timings.get("cleanup", 0.0),
+            precompute_sprites_seconds=timings.get("precompute_sprites", 0.0),
+            render_frames_seconds=timings.get("render_frames", 0.0),
+            export_video_seconds=timings.get("export_video", 0.0),
+            total_seconds=total_seconds,
+        )
+
+    def _print_profile(self, profile):
+        print(
+            "Perfil de render: "
+            f"load={profile.load_data_seconds:.3f}s, "
+            f"validate={profile.validate_data_seconds:.3f}s, "
+            f"timeline={profile.build_timeline_seconds:.3f}s, "
+            f"cleanup={profile.cleanup_seconds:.3f}s, "
+            f"precompute={profile.precompute_sprites_seconds:.3f}s, "
+            f"render={profile.render_frames_seconds:.3f}s, "
+            f"export={profile.export_video_seconds:.3f}s, "
+            f"total={profile.total_seconds:.3f}s"
+        )
 
     def _build_sprites_by_year(self, timeline, years, selector, layout):
         sprites_by_year = {}

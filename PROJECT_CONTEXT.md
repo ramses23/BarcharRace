@@ -43,6 +43,7 @@ The project is a usable MVP:
 - Top-N bar selection and optional "Other" aggregation.
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
+- Basic per-stage render profiling for larger-dataset tuning.
 - CLI presets and CLI overrides.
 - PNG frame rendering with Matplotlib.
 - MP4 export with FFmpeg.
@@ -246,11 +247,10 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Add visual polish for aggregated `Other` bars.
-2. Continue larger-dataset profiling.
-3. Add richer visual polish: shadows, gradients, typography presets, and
+1. Continue larger-dataset profiling.
+2. Add richer visual polish: shadows, gradients, typography presets, and
    better title/source layout.
-4. Add more chart types while preserving the same pipeline ideas.
+3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
 
@@ -259,3 +259,5 @@ Recommended next steps:
 - Do not add a GUI before the CLI and JSON project workflow are robust.
 - Do not replace the custom engine with a high-level chart-race package.
 - Do not mix business data models with visual state models.
+- Do not prioritize additional visual polish for aggregated `Other` bars unless
+  the user asks for it explicitly.
