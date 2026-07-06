@@ -18,6 +18,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                         "chart": {
                             "title": "Custom Project",
                             "output_file": "output/custom.mp4",
+                            "layout_preset": "compact_dashboard",
                             "theme": "midnight_contrast",
                             "value_format": "compact",
                             "typography_preset": "compact",
@@ -74,6 +75,10 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.name, "custom_project")
         self.assertEqual(preset.chart_config.title, "Custom Project")
         self.assertEqual(preset.chart_config.output_file, "output/custom.mp4")
+        self.assertEqual(preset.chart_config.layout_preset, "compact_dashboard")
+        self.assertEqual(preset.chart_config.width, 1280)
+        self.assertEqual(preset.chart_config.height, 720)
+        self.assertEqual(preset.chart_config.top_margin, 165)
         self.assertEqual(preset.chart_config.theme.name, "midnight_contrast")
         self.assertTrue(preset.chart_config.value_format.compact)
         self.assertEqual(preset.chart_config.typography_preset, "compact")
@@ -226,6 +231,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"chart": {"typography_preset": "unknown"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_unknown_layout_preset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"chart": {"layout_preset": "unknown"}}),
                 encoding="utf-8",
             )
 

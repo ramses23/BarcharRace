@@ -23,6 +23,12 @@ class CliOptionsTest(unittest.TestCase):
         self.assertTrue(options.list_themes)
         self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
 
+    def test_parses_list_layouts_action(self):
+        options = parse_cli_args(["--list-layouts"])
+
+        self.assertTrue(options.list_layouts)
+        self.assertEqual(options.preset_name, DEFAULT_PRESET_NAME)
+
     def test_parses_list_easings_action(self):
         options = parse_cli_args(["--list-easings"])
 
@@ -112,6 +118,17 @@ class CliOptionsTest(unittest.TestCase):
         self.assertEqual(updated.chart_config.typography_preset, "compact")
         self.assertEqual(updated.chart_config.title_font_size, 30)
         self.assertEqual(updated.chart_config.source_max_width, 760)
+
+    def test_applies_layout_override(self):
+        preset = get_preset("csv_sample")
+        options = parse_cli_args(["csv_sample", "--layout", "square_social"])
+
+        updated = apply_cli_overrides(preset, options)
+
+        self.assertEqual(updated.chart_config.layout_preset, "square_social")
+        self.assertEqual(updated.chart_config.width, 1080)
+        self.assertEqual(updated.chart_config.height, 1080)
+        self.assertEqual(updated.chart_config.left_margin, 260)
 
     def test_duration_uses_effective_fps(self):
         preset = get_preset("csv_sample")

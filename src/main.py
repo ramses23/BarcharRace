@@ -1,5 +1,6 @@
 from cli.cli_options import build_preset_from_cli_options, parse_cli_args
 from config.animation_config import list_easings
+from config.layout_config import list_layout_presets
 from config.project_file_loader import ProjectFileError
 from config.project_preset import (
     DEFAULT_PRESET_NAME,
@@ -47,6 +48,10 @@ def main(argv=None):
         _print_items("Temas disponibles:", list_themes())
         return
 
+    if options.list_layouts:
+        _print_items("Layouts disponibles:", list_layout_presets())
+        return
+
     if options.list_value_formats:
         _print_items("Formatos disponibles:", list_value_formats())
         return
@@ -64,8 +69,8 @@ def main(argv=None):
     except (PresetError, ProjectFileError, ValueError) as exc:
         print(exc)
         print(
-            "Usa --list-presets, --list-themes, --list-value-formats "
-            "o --list-typographies."
+            "Usa --list-presets, --list-themes, --list-layouts, "
+            "--list-value-formats o --list-typographies."
         )
         raise SystemExit(2) from exc
 

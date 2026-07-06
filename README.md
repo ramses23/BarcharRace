@@ -18,6 +18,7 @@ charts, animated scatter plots, and timeline animations.
 - Render full scenes with title, subtitle, source label, bars, values, and
   a large time label.
 - Render rank labels for each bar.
+- Apply reusable layout presets for common video formats.
 - Apply configurable font weights and max widths to title, subtitle, time
   label, and source label.
 - Apply reusable typography presets.
@@ -88,10 +89,12 @@ seconds spent loading data, validating data, building the timeline,
 precomputing sprites, rendering frames, exporting video, and running the full
 job.
 
-List available themes, typography presets, value formats, and easing presets:
+List available themes, layout presets, typography presets, value formats, and
+easing presets:
 
 ```powershell
 .venv\Scripts\python.exe src\main.py --list-themes
+.venv\Scripts\python.exe src\main.py --list-layouts
 .venv\Scripts\python.exe src\main.py --list-typographies
 .venv\Scripts\python.exe src\main.py --list-value-formats
 .venv\Scripts\python.exe src\main.py --list-easings
@@ -102,6 +105,7 @@ Override preset options from the command line:
 ```powershell
 .venv\Scripts\python.exe src\main.py csv_sample --output output/custom.mp4
 .venv\Scripts\python.exe src\main.py csv_sample --theme midnight_contrast
+.venv\Scripts\python.exe src\main.py csv_sample --layout vertical_shorts
 .venv\Scripts\python.exe src\main.py csv_sample --typography editorial
 .venv\Scripts\python.exe src\main.py csv_sample --title "Custom Race"
 .venv\Scripts\python.exe src\main.py csv_sample --fps 60 --duration 2
@@ -115,6 +119,7 @@ Common overrides:
 | `--frames-dir` | temporary PNG frames directory |
 | `--title` | chart title |
 | `--theme` | named visual theme |
+| `--layout` | named layout preset |
 | `--typography` | named typography preset |
 | `--value-format` | named value formatter |
 | `--fps` | video frames per second |
@@ -126,7 +131,7 @@ Common overrides:
 Overrides can also be applied on top of an external project file:
 
 ```powershell
-.venv\Scripts\python.exe src\main.py --project projects/sample_project.json --typography compact --output output/custom.mp4
+.venv\Scripts\python.exe src\main.py --project projects/sample_project.json --layout square_social --typography compact --output output/custom.mp4
 ```
 
 ## Project Files
@@ -144,6 +149,7 @@ Example:
     "title": "External Project Demo",
     "output_file": "output/external_project.mp4",
     "frames_dir": "output/external_project_frames",
+    "layout_preset": "youtube_1080p",
     "theme": "clean_report",
     "value_format": "decimal",
     "typography_preset": "editorial",
@@ -195,8 +201,8 @@ Supported top-level keys:
 | `data_source` | `DataSourceConfig` values |
 | `dataset` | `DatasetConfig` values |
 
-Named `theme` and `value_format` values are resolved through the existing
-theme and value-format registries.
+Named `theme`, `layout_preset`, `typography_preset`, and `value_format` values
+are resolved through their registries.
 
 ## Presets
 
@@ -263,6 +269,37 @@ rank_label_gap
 The default label format is `#1`, `#2`, `#3`.
 
 ## Visual Polish
+
+Layout presets control canvas geometry and common positional fields:
+
+```text
+layout_preset
+width
+height
+left_margin
+right_margin
+top_margin
+bottom_margin
+bar_height
+bar_gap
+title_y
+subtitle_y
+time_label_x
+time_label_y
+source_x
+source_y
+rank_label_gap
+```
+
+Available layout presets:
+
+| Preset | Notes |
+|---|---|
+| `youtube_1080p` | Default 16:9 1920x1080 video layout |
+| `youtube_4k` | 16:9 3840x2160 layout with doubled geometry |
+| `square_social` | 1080x1080 social layout |
+| `vertical_shorts` | 1080x1920 vertical layout |
+| `compact_dashboard` | 1280x720 denser dashboard-style layout |
 
 Bars can render a subtle configurable shadow behind the main rectangle. This is
 controlled in `ChartConfig` or in external project files:
@@ -444,6 +481,7 @@ Current test coverage includes:
 - `ValueFormatConfig`
 - `AnimationConfig`
 - `ThemeConfig`
+- layout presets
 - typography presets
 - `ColorPalette`
 - `BarSelector`

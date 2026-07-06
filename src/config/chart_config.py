@@ -39,6 +39,7 @@ class ChartConfig:
     ffmpeg_frame_pattern: str = "frame_%04d.png"
 
     title: str = "Bar Chart Studio"
+    layout_preset: str = "youtube_1080p"
     theme: ThemeConfig = field(default_factory=ThemeConfig)
     typography_preset: str = "studio"
 

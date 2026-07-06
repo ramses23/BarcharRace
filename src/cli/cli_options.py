@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import dataclass, replace
 
+from config.layout_config import apply_layout_preset
 from config.project_file_loader import load_project_file
 from config.project_preset import DEFAULT_PRESET_NAME, get_preset
 from config.theme_config import get_theme
@@ -14,12 +15,14 @@ class CliOptions:
     project_file: str | None = None
     list_presets: bool = False
     list_themes: bool = False
+    list_layouts: bool = False
     list_value_formats: bool = False
     list_typographies: bool = False
     list_easings: bool = False
     output_file: str | None = None
     frames_dir: str | None = None
     title: str | None = None
+    layout_preset_name: str | None = None
     theme_name: str | None = None
     value_format_name: str | None = None
     typography_preset_name: str | None = None
@@ -59,6 +62,11 @@ def build_argument_parser():
         help="List available visual themes.",
     )
     parser.add_argument(
+        "--list-layouts",
+        action="store_true",
+        help="List available layout presets.",
+    )
+    parser.add_argument(
         "--list-value-formats",
         action="store_true",
         help="List available numeric value formats.",
@@ -91,6 +99,11 @@ def build_argument_parser():
         "--theme",
         dest="theme_name",
         help="Override the preset visual theme.",
+    )
+    parser.add_argument(
+        "--layout",
+        dest="layout_preset_name",
+        help="Override the layout preset.",
     )
     parser.add_argument(
         "--value-format",
@@ -148,12 +161,14 @@ def parse_cli_args(argv):
         project_file=namespace.project_file,
         list_presets=namespace.list_presets,
         list_themes=namespace.list_themes,
+        list_layouts=namespace.list_layouts,
         list_value_formats=namespace.list_value_formats,
         list_typographies=namespace.list_typographies,
         list_easings=namespace.list_easings,
         output_file=namespace.output_file,
         frames_dir=namespace.frames_dir,
         title=namespace.title,
+        layout_preset_name=namespace.layout_preset_name,
         theme_name=namespace.theme_name,
         value_format_name=namespace.value_format_name,
         typography_preset_name=namespace.typography_preset_name,
@@ -177,6 +192,12 @@ def build_preset_from_cli_options(options):
 def apply_cli_overrides(preset, options):
     chart_config = preset.chart_config
     chart_updates = {}
+
+    if options.layout_preset_name is not None:
+        chart_config = apply_layout_preset(
+            chart_config,
+            options.layout_preset_name,
+        )
 
     if options.typography_preset_name is not None:
         chart_config = apply_typography_preset(

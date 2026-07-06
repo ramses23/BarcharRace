@@ -6,6 +6,7 @@ from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from config.layout_config import apply_layout_preset, get_layout_preset
 from config.project_preset import ProjectPreset, get_preset
 from config.theme_config import get_theme
 from config.typography_config import apply_typography_preset, get_typography_preset
@@ -168,18 +169,31 @@ def _chart_base_config(base_config, chart_data):
     if not isinstance(chart_data, dict):
         raise ProjectFileError("Project section 'chart' must be an object.")
 
-    preset_name = chart_data.get("typography_preset")
+    layout_preset_name = chart_data.get("layout_preset")
 
-    if preset_name is None:
+    if layout_preset_name is not None:
+        if not isinstance(layout_preset_name, str):
+            raise ProjectFileError(
+                "Chart field 'layout_preset' must be a named layout preset."
+            )
+
+        try:
+            base_config = apply_layout_preset(base_config, layout_preset_name)
+        except ValueError as exc:
+            raise ProjectFileError(str(exc)) from exc
+
+    typography_preset_name = chart_data.get("typography_preset")
+
+    if typography_preset_name is None:
         return base_config
 
-    if not isinstance(preset_name, str):
+    if not isinstance(typography_preset_name, str):
         raise ProjectFileError(
             "Chart field 'typography_preset' must be a named typography preset."
         )
 
     try:
-        return apply_typography_preset(base_config, preset_name)
+        return apply_typography_preset(base_config, typography_preset_name)
     except ValueError as exc:
         raise ProjectFileError(str(exc)) from exc
 
@@ -200,6 +214,19 @@ def _convert_chart_value(key, value):
             raise ProjectFileError("Chart field 'theme' must be a named theme.")
 
         return get_theme(value)
+
+    if key == "layout_preset":
+        if not isinstance(value, str):
+            raise ProjectFileError(
+                "Chart field 'layout_preset' must be a named layout preset."
+            )
+
+        try:
+            get_layout_preset(value)
+        except ValueError as exc:
+            raise ProjectFileError(str(exc)) from exc
+
+        return value
 
     if key == "value_format":
         if not isinstance(value, str):

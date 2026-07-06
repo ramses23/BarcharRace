@@ -5,6 +5,7 @@
     "title": "External Project Demo",
     "output_file": "output/external_project.mp4",
     "frames_dir": "output/external_project_frames",
+    "layout_preset": "youtube_1080p",
     "theme": "clean_report",
     "value_format": "decimal",
     "typography_preset": "editorial",

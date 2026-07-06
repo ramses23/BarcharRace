@@ -37,6 +37,7 @@ The project is a usable MVP:
 - Rank labels.
 - Text fitting for long labels and value labels.
 - Themes.
+- Reusable layout presets.
 - Configurable typography weights and max widths for title, subtitle, time
   label, and source label.
 - Reusable typography presets.
@@ -147,8 +148,9 @@ Current configuration layers:
 
 - Internal presets live in `src/config/project_preset.py`.
 - External reusable project files live in `projects/*.json`.
-- CLI overrides can adjust output path, frames directory, title, theme, value
-  format, typography preset, fps, duration, size, and related options.
+- CLI overrides can adjust output path, frames directory, title, theme, layout
+  preset, value format, typography preset, fps, duration, size, and related
+  options.
 
 External project files are the preferred way to define reusable videos.
 
@@ -200,6 +202,7 @@ Useful CLI discovery commands:
 ```powershell
 .venv\Scripts\python.exe src\main.py --list-presets
 .venv\Scripts\python.exe src\main.py --list-themes
+.venv\Scripts\python.exe src\main.py --list-layouts
 .venv\Scripts\python.exe src\main.py --list-typographies
 .venv\Scripts\python.exe src\main.py --list-value-formats
 .venv\Scripts\python.exe src\main.py --list-easings
@@ -254,7 +257,7 @@ The project has been using a pattern of:
 Recommended next steps:
 
 1. Continue larger-dataset profiling.
-2. Add richer visual polish: reusable layout presets for common video formats.
+2. Add richer FFmpeg export controls: CRF, codec, bitrate, and preset.
 3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
