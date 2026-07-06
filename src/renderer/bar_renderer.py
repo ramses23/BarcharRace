@@ -8,6 +8,7 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 
 from config.chart_config import ChartConfig
+from utils.text_fit import estimate_text_width, fit_text_to_width
 from utils.value_formatter import format_value
 
 
@@ -101,7 +102,7 @@ class BarRenderer:
             ax.text(
                 self._label_x(sprite),
                 sprite.y,
-                sprite.name,
+                self._fit_bar_label(sprite),
                 ha="right",
                 va="center",
                 fontsize=self.config.label_font_size,
@@ -110,18 +111,21 @@ class BarRenderer:
                 alpha=opacity,
             )
 
+            value_text = format_value(
+                sprite.value,
+                value_format=self.config.value_format,
+            )
+            value_layout = self._value_label_layout(sprite, value_text)
+
             ax.text(
-                sprite.x + sprite.width + 16,
+                value_layout["x"],
                 sprite.y,
-                format_value(
-                    sprite.value,
-                    value_format=self.config.value_format,
-                ),
-                ha="left",
+                value_layout["text"],
+                ha=value_layout["ha"],
                 va="center",
                 fontsize=self.config.value_font_size,
                 fontfamily=self.config.font_family,
-                color=self.config.muted_text_color,
+                color=value_layout["color"],
                 alpha=opacity,
             )
 
@@ -151,6 +155,60 @@ class BarRenderer:
     def _format_rank(self, rank):
         rounded_rank = max(1, round(rank))
         return f"{self.config.rank_label_prefix}{rounded_rank}"
+
+    def _fit_bar_label(self, sprite):
+        max_width = self._label_x(sprite) - self.config.label_min_x
+
+        return fit_text_to_width(
+            sprite.name,
+            max_width=max_width,
+            font_size=self.config.label_font_size,
+            average_char_width=self.config.text_average_char_width,
+        )
+
+    def _value_label_layout(self, sprite, value_text):
+        text = fit_text_to_width(
+            value_text,
+            max_width=self.config.width - (self.config.label_min_x * 2),
+            font_size=self.config.value_font_size,
+            average_char_width=self.config.text_average_char_width,
+        )
+        text_width = estimate_text_width(
+            text,
+            self.config.value_font_size,
+            self.config.text_average_char_width,
+        )
+        max_right = self.config.width - self.config.value_label_edge_padding
+        outside_x = sprite.x + sprite.width + self.config.value_label_gap
+
+        if outside_x + text_width <= max_right:
+            return {
+                "text": text,
+                "x": outside_x,
+                "ha": "left",
+                "color": self.config.muted_text_color,
+            }
+
+        inside_x = sprite.x + sprite.width - self.config.value_label_gap
+        required_inside_width = text_width + (self.config.value_label_inside_padding * 2)
+
+        if sprite.width >= required_inside_width:
+            return {
+                "text": text,
+                "x": inside_x,
+                "ha": "right",
+                "color": self._value_label_inside_color(),
+            }
+
+        return {
+            "text": text,
+            "x": max_right,
+            "ha": "right",
+            "color": self.config.muted_text_color,
+        }
+
+    def _value_label_inside_color(self):
+        return self.config.value_label_inside_color or self.config.background_color
 
     def _draw_logo(self, ax, sprite, opacity):
         if not sprite.logo_path:

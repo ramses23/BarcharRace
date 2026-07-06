@@ -25,6 +25,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "logo_file_extensions": [".png", ".webp"],
                             "rank_labels_enabled": False,
                             "rank_label_prefix": "No.",
+                            "label_min_x": 56,
+                            "value_label_gap": 20,
                         },
                         "animation": {
                             "easing": "ease_out_cubic",
@@ -58,6 +60,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.logo_file_extensions, (".png", ".webp"))
         self.assertFalse(preset.chart_config.rank_labels_enabled)
         self.assertEqual(preset.chart_config.rank_label_prefix, "No.")
+        self.assertEqual(preset.chart_config.label_min_x, 56)
+        self.assertEqual(preset.chart_config.value_label_gap, 20)
         self.assertEqual(preset.chart_config.animation.easing, "ease_out_cubic")
         self.assertFalse(preset.chart_config.animation.enter_exit)
         self.assertFalse(preset.chart_config.animation.value_smoothing)

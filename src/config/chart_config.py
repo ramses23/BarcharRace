@@ -51,6 +51,14 @@ class ChartConfig:
     rank_label_font_size: int = 18
     rank_label_gap: int = 320
 
+    label_min_x: int = 40
+    text_average_char_width: float = 0.56
+
+    value_label_gap: int = 16
+    value_label_edge_padding: int = 24
+    value_label_inside_padding: int = 18
+    value_label_inside_color: str | None = None
+
     logos_enabled: bool = True
     logos_dir: str = "logos"
     logo_size: int = 48

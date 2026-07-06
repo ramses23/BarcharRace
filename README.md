@@ -133,7 +133,9 @@ Example:
     "fps": 24,
     "steps_per_transition": 24,
     "rank_labels_enabled": true,
-    "rank_label_prefix": "#"
+    "rank_label_prefix": "#",
+    "label_min_x": 40,
+    "value_label_gap": 16
   },
   "animation": {
     "easing": "ease_out_cubic",
@@ -229,6 +231,26 @@ rank_label_gap
 ```
 
 The default label format is `#1`, `#2`, `#3`.
+
+## Text Fitting
+
+Bar labels and value labels include basic collision handling.
+
+Long bar names are truncated with `...` so they stay inside the available
+label column. Value labels are drawn outside the bar when they fit, moved
+inside the bar when the right edge would overflow, or clamped to a safe
+right edge when the bar is too small.
+
+Text fitting is configured in `ChartConfig`:
+
+```text
+label_min_x
+text_average_char_width
+value_label_gap
+value_label_edge_padding
+value_label_inside_padding
+value_label_inside_color
+```
 
 For reusable video definitions that should not require Python edits, prefer
 external project files in:
@@ -326,6 +348,7 @@ Current test coverage includes:
 - `ThemeConfig`
 - `ColorPalette`
 - `LayoutEngine` rank assignment
+- text fitting and value-label layout
 - `DatasetValidator`
 - `DataSourceLoader`
 - `RenderJob`
@@ -547,4 +570,4 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add value-label collision handling and safer text fitting for long names.
+- Add configurable top-N filtering and trailing "other" handling for larger datasets.

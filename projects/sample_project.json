@@ -10,7 +10,9 @@
     "fps": 24,
     "steps_per_transition": 24,
     "rank_labels_enabled": true,
-    "rank_label_prefix": "#"
+    "rank_label_prefix": "#",
+    "label_min_x": 40,
+    "value_label_gap": 16
   },
   "animation": {
     "easing": "ease_out_cubic",
