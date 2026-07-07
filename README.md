@@ -30,6 +30,7 @@ charts, animated scatter plots, and timeline animations.
 - Render configurable horizontal gradients on bars.
 - Resolve and render optional logos for bars.
 - Export PNG frames to MP4 with configurable FFmpeg quality options.
+- Report render progress through a reusable `RenderJob` callback.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
@@ -172,8 +173,8 @@ without editing Python source files.
 `Project Studio` is a local Streamlit interface for creating and editing these
 JSON files from a CSV. It can open existing files from `projects/*.json`,
 inspect columns, save a project file, render a preview frame, and launch the
-final video render. When it edits an existing file, it preserves advanced JSON
-fields that are not exposed in the form yet.
+final video render with visible progress. When it edits an existing file, it
+preserves advanced JSON fields that are not exposed in the form yet.
 
 Example:
 
@@ -632,6 +633,7 @@ Current test coverage includes:
 - `DataSourceConfig`
 - `RenderJob`
 - per-year sprite precomputation
+- render progress callbacks
 - render profiling metrics
 - synthetic larger-dataset profiling tool
 - configurable FFmpeg export command
@@ -884,5 +886,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue Project Studio polish with richer preview controls, render progress,
-  and publication-ready dataset-specific project presets.
+- Continue Project Studio polish with richer preview controls and
+  publication-ready dataset-specific project presets.

@@ -189,6 +189,63 @@ class RenderJobTest(unittest.TestCase):
             self.assertEqual(bars_by_name["Carbon"].color, "#333333")
             self.assertIn("Solar", bars_by_name)
 
+    def test_reports_render_progress(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            csv_path = temp_path / "sample.csv"
+            frames_dir = temp_path / "frames"
+            output_file = temp_path / "video.mp4"
+
+            csv_path.write_text(
+                "\n".join(
+                    [
+                        "year,country,value",
+                        "2000,USA,100",
+                        "2001,USA,110",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            chart_config = ChartConfig(
+                frames_dir=str(frames_dir),
+                output_file=str(output_file),
+                steps_per_transition=2,
+            )
+            data_source_config = DataSourceConfig(
+                source_type="csv",
+                csv_path=str(csv_path),
+            )
+            progress_events = []
+
+            with patch("pipeline.render_job.BarRenderer"):
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        RenderJob(
+                            config=chart_config,
+                            data_source_config=data_source_config,
+                            dataset_config=DatasetConfig(),
+                            progress_callback=progress_events.append,
+                        ).run()
+
+            self.assertEqual(progress_events[0].stage, "load_data")
+            self.assertEqual(progress_events[-1].stage, "complete")
+            self.assertEqual(progress_events[-1].progress, 1.0)
+
+            frame_events = [
+                event
+                for event in progress_events
+                if event.stage == "render_frames" and event.current
+            ]
+            self.assertEqual([event.current for event in frame_events], [1, 2])
+            self.assertTrue(all(event.total == 2 for event in frame_events))
+            self.assertTrue(
+                all(
+                    earlier.progress <= later.progress
+                    for earlier, later in zip(progress_events, progress_events[1:])
+                )
+            )
+
     def test_precomputes_sprites_once_per_year(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

@@ -37,26 +37,45 @@ class RenderResult:
     profile: RenderProfile
 
 
+@dataclass(frozen=True)
+class RenderProgress:
+    stage: str
+    message: str
+    progress: float
+    current: int = 0
+    total: int = 0
+
+
 class RenderJob:
-    def __init__(self, config=None, data_source_config=None, dataset_config=None):
+    def __init__(
+        self,
+        config=None,
+        data_source_config=None,
+        dataset_config=None,
+        progress_callback=None,
+    ):
         self.config = config or ChartConfig()
         self.data_source_config = data_source_config or DataSourceConfig()
         self.dataset_config = dataset_config or DatasetConfig()
+        self.progress_callback = progress_callback
 
     def run(self):
         total_started_at = perf_counter()
         timings = {}
 
+        self._emit_progress("load_data", "Loading data", 0.02)
         dataframe = self._measure_stage(
             timings,
             "load_data",
             lambda: DataSourceLoader(self.data_source_config).load(),
         )
+        self._emit_progress("validate_data", "Validating dataset", 0.08)
         dataframe = self._measure_stage(
             timings,
             "validate_data",
             lambda: DatasetValidator(config=self.dataset_config).validate(dataframe),
         )
+        self._emit_progress("build_timeline", "Building timeline", 0.16)
         timeline = self._measure_stage(
             timings,
             "build_timeline",
@@ -73,6 +92,7 @@ class RenderJob:
         renderer = BarRenderer(output_dir=self.config.frames_dir, config=self.config)
         exporter = VideoExporter(config=self.config)
 
+        self._emit_progress("cleanup", "Cleaning previous frames", 0.22)
         removed_frames = self._measure_stage(
             timings,
             "cleanup",
@@ -83,6 +103,7 @@ class RenderJob:
         )
         print(f"Frames anteriores eliminados: {removed_frames}")
 
+        self._emit_progress("precompute_sprites", "Preparing chart layout", 0.28)
         sprites_by_year = self._measure_stage(
             timings,
             "precompute_sprites",
@@ -96,8 +117,19 @@ class RenderJob:
 
         frame_id = 0
         transitions_rendered = 0
+        total_frame_count = max(
+            1,
+            (len(years) - 1) * self.config.steps_per_transition,
+        )
 
         render_started_at = perf_counter()
+        self._emit_progress(
+            "render_frames",
+            "Rendering frames",
+            0.35,
+            current=0,
+            total=total_frame_count,
+        )
         for i in range(len(years) - 1):
             year_a = years[i]
             year_b = years[i + 1]
@@ -128,11 +160,13 @@ class RenderJob:
                 )
 
                 frame_id += 1
+                self._emit_render_frame_progress(frame_id, total_frame_count)
 
             transitions_rendered += 1
 
         timings["render_frames"] = perf_counter() - render_started_at
 
+        self._emit_progress("export_video", "Exporting MP4", 0.92)
         self._measure_stage(timings, "export_video", exporter.export)
 
         profile = self._build_profile(
@@ -142,6 +176,7 @@ class RenderJob:
 
         print("Video generado correctamente.")
         self._print_profile(profile)
+        self._emit_progress("complete", "Video rendered", 1.0)
 
         return RenderResult(
             frames_rendered=frame_id,
@@ -156,6 +191,32 @@ class RenderJob:
         result = callback()
         timings[name] = perf_counter() - started_at
         return result
+
+    def _emit_progress(self, stage, message, progress, current=0, total=0):
+        if self.progress_callback is None:
+            return
+
+        progress = max(0.0, min(1.0, float(progress)))
+        self.progress_callback(
+            RenderProgress(
+                stage=stage,
+                message=message,
+                progress=progress,
+                current=current,
+                total=total,
+            )
+        )
+
+    def _emit_render_frame_progress(self, frame_id, total_frame_count):
+        frame_progress = frame_id / total_frame_count
+        progress = 0.35 + (0.55 * frame_progress)
+        self._emit_progress(
+            "render_frames",
+            "Rendering frames",
+            progress,
+            current=frame_id,
+            total=total_frame_count,
+        )
 
     def _build_profile(self, timings, total_seconds):
         return RenderProfile(

@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from subprocess import CalledProcessError
 
 import pandas as pd
 import streamlit as st
@@ -413,18 +414,41 @@ def _render_preview(project_file):
 
 
 def _render_video(project_file):
+    progress_bar = st.progress(0.0)
+    status_message = st.empty()
+
     try:
         preset = load_project_file(ROOT_DIR / project_file)
+        progress_callback = _streamlit_progress_callback(
+            progress_bar,
+            status_message,
+        )
         result = RenderJob(
             config=preset.chart_config,
             data_source_config=preset.data_source_config,
             dataset_config=preset.dataset_config,
+            progress_callback=progress_callback,
         ).run()
-    except (ProjectFileError, ValueError, OSError) as exc:
+    except (ProjectFileError, ValueError, OSError, CalledProcessError) as exc:
+        progress_bar.empty()
         st.error(str(exc))
         return
 
-    st.success(f"Rendered {result.output_file}")
+    progress_bar.progress(1.0)
+    status_message.success(f"Rendered {result.output_file}")
+
+
+def _streamlit_progress_callback(progress_bar, status_message):
+    def update(progress):
+        message = progress.message
+
+        if progress.total:
+            message = f"{message}: {progress.current}/{progress.total}"
+
+        progress_bar.progress(progress.progress)
+        status_message.caption(message)
+
+    return update
 
 
 def _column_index(columns, selected):

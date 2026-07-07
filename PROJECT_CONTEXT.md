@@ -61,12 +61,14 @@ The project is a usable MVP:
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
 - Basic per-stage render profiling for larger-dataset tuning.
+- `RenderJob` supports an optional progress callback for UI progress updates.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
 - Local Streamlit project editor in `src/ui/project_studio.py`.
 - Project Studio can create new project JSON files and open/edit existing
   `projects/*.json` files while preserving advanced fields that are not exposed
   in the form yet.
+- Project Studio shows render progress while launching a final video render.
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
   directly to the output frame.
@@ -114,6 +116,8 @@ Important boundaries:
 
 - `main.py` must stay thin. It is only the CLI entry point.
 - `RenderJob` owns orchestration of the render workflow.
+- `RenderJob` may report progress, but UI-specific rendering of that progress
+  belongs outside the pipeline.
 - Importers load data only. They should not know about rendering.
 - Validators validate data only. They should not know about rendering.
 - `Timeline` exposes frame data by period.
@@ -304,7 +308,7 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Polish Project Studio with richer preview controls and render progress.
+1. Polish Project Studio with richer preview controls.
 2. Polish the electricity project with logos, refined copy, or source-specific
    visual adjustments if the user wants a more publication-ready output.
 3. Add more chart types while preserving the same pipeline ideas.
