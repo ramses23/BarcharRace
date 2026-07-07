@@ -286,6 +286,25 @@ keep those columns or adjust the `dataset` section in the project file.
 `data_source.source_label_override` lets a project show a clean source label
 instead of a local file path.
 
+## Dataset Factory
+
+Dataset curation lives in the independent companion project:
+
+```text
+dataset_factory/
+```
+
+It validates CSVs, tracks source methodology, classifies dataset ideas as
+production-ready or extraction-required, and keeps dataset work separate from
+the rendering engine.
+
+Example:
+
+```powershell
+.venv\Scripts\python.exe dataset_factory\src\main.py catalog
+.venv\Scripts\python.exe dataset_factory\src\main.py validate data\datasets\global_electricity_sources.csv
+```
+
 ## Animation
 
 Motion behavior is configured with `AnimationConfig`.
