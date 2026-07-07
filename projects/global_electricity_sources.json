@@ -44,11 +44,11 @@
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/global_electricity_sources.csv",
-    "source_label_override": "Source: Demo dataset, values in TWh"
+    "source_label_override": "Source: User-provided dataset, values in TWh"
   },
   "dataset": {
     "year_column": "year",
-    "name_column": "source",
-    "value_column": "generation_twh"
+    "name_column": "country",
+    "value_column": "value"
   }
 }

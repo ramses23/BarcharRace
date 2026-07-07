@@ -271,7 +271,7 @@ Included examples:
 | Project file | Notes |
 |---|---|
 | `projects/sample_project.json` | Small default CSV demo |
-| `projects/global_electricity_sources.json` | Real-world-shaped electricity generation demo |
+| `projects/global_electricity_sources.json` | User-provided global electricity generation dataset |
 
 The electricity example uses:
 
@@ -279,9 +279,9 @@ The electricity example uses:
 data/datasets/global_electricity_sources.csv
 ```
 
-That CSV is a compact demo dataset with values in TWh. Replace it with your
-preferred official dataset when you are ready; keep the same columns or adjust
-the `dataset` section in the project file.
+That CSV currently uses the standard engine columns `year`, `country`, and
+`value`, with values in TWh. If you replace it with another official dataset,
+keep those columns or adjust the `dataset` section in the project file.
 
 `data_source.source_label_override` lets a project show a clean source label
 instead of a local file path.
