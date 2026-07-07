@@ -8,7 +8,9 @@ from studio.project_builder import (
     build_project_data,
     default_project_paths,
     inspect_csv,
+    load_project_data,
     preferred_column,
+    project_form_values,
     project_name_from_title,
     save_project_data,
 )
@@ -63,6 +65,128 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["title"], "Electricity")
         self.assertEqual(loaded["data_source"]["source_label_override"], "Source: Test")
         self.assertEqual(loaded["dataset"]["value_column"], "value")
+
+    def test_loads_project_data(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "project.json"
+            project_path.write_text(
+                json.dumps({"name": "loaded", "chart": {"title": "Loaded"}}),
+                encoding="utf-8",
+            )
+
+            loaded = load_project_data(project_path)
+
+        self.assertEqual(loaded["name"], "loaded")
+        self.assertEqual(loaded["chart"]["title"], "Loaded")
+
+    def test_extracts_project_form_values_from_existing_project(self):
+        values = project_form_values(
+            {
+                "name": "electricity",
+                "chart": {
+                    "title": "Electricity",
+                    "output_file": "output/custom.mp4",
+                    "frames_dir": "output/custom_frames",
+                    "layout_preset": "vertical_shorts",
+                    "theme": "midnight_contrast",
+                    "typography_preset": "compact",
+                    "value_format": "integer",
+                    "fps": 12,
+                    "steps_per_transition": 6,
+                    "max_visible_bars": 5,
+                },
+                "selection": {
+                    "top_n": 5,
+                    "aggregate_other": True,
+                },
+                "data_source": {
+                    "csv_path": "data/custom.csv",
+                    "source_label_override": "Source: Custom",
+                },
+                "dataset": {
+                    "year_column": "period",
+                    "name_column": "source",
+                    "value_column": "amount",
+                },
+            }
+        )
+
+        self.assertEqual(values["name"], "electricity")
+        self.assertEqual(values["title"], "Electricity")
+        self.assertEqual(values["csv_path"], "data/custom.csv")
+        self.assertEqual(values["source_label"], "Source: Custom")
+        self.assertEqual(values["year_column"], "period")
+        self.assertEqual(values["name_column"], "source")
+        self.assertEqual(values["value_column"], "amount")
+        self.assertEqual(values["layout_preset"], "vertical_shorts")
+        self.assertEqual(values["theme"], "midnight_contrast")
+        self.assertEqual(values["typography_preset"], "compact")
+        self.assertEqual(values["value_format"], "integer")
+        self.assertEqual(values["fps"], 12)
+        self.assertEqual(values["steps_per_transition"], 6)
+        self.assertEqual(values["top_n"], 5)
+        self.assertEqual(values["max_visible_bars"], 5)
+        self.assertTrue(values["aggregate_other"])
+        self.assertEqual(values["output_file"], "output/custom.mp4")
+        self.assertEqual(values["frames_dir"], "output/custom_frames")
+
+    def test_preserves_unexposed_fields_when_rebuilding_existing_project(self):
+        base_project = {
+            "name": "electricity",
+            "chart": {
+                "title": "Old",
+                "left_margin": 420,
+                "source_x": 420,
+                "bar_shadow_alpha": 0.2,
+            },
+            "animation": {
+                "easing": "linear",
+                "enter_exit": False,
+            },
+            "selection": {
+                "top_n": 5,
+                "other_label": "Rest",
+            },
+            "data_source": {
+                "source_type": "csv",
+                "csv_path": "old.csv",
+            },
+            "dataset": {
+                "year_column": "year",
+            },
+        }
+
+        project_data = build_project_data(
+            name="electricity",
+            csv_path="data/new.csv",
+            year_column="year",
+            name_column="country",
+            value_column="value",
+            title="New",
+            source_label="Source: New",
+            output_file="output/new.mp4",
+            frames_dir="output/new_frames",
+            layout_preset="youtube_1080p",
+            theme="clean_report",
+            typography_preset="editorial",
+            value_format="decimal",
+            fps=24,
+            steps_per_transition=24,
+            top_n=8,
+            max_visible_bars=8,
+            base_project_data=base_project,
+        )
+
+        self.assertEqual(project_data["chart"]["title"], "New")
+        self.assertEqual(project_data["chart"]["left_margin"], 420)
+        self.assertEqual(project_data["chart"]["source_x"], 420)
+        self.assertEqual(project_data["chart"]["bar_shadow_alpha"], 0.2)
+        self.assertEqual(project_data["animation"]["easing"], "linear")
+        self.assertFalse(project_data["animation"]["enter_exit"])
+        self.assertEqual(project_data["selection"]["top_n"], 8)
+        self.assertEqual(project_data["selection"]["other_label"], "Rest")
+        self.assertEqual(project_data["data_source"]["csv_path"], "data/new.csv")
+        self.assertEqual(project_data["dataset"]["name_column"], "country")
 
     def test_builds_project_name_and_default_paths(self):
         name = project_name_from_title("Electricity by Source!")

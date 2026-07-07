@@ -33,7 +33,7 @@ charts, animated scatter plots, and timeline animations.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
-- Create project files and preview renders from a local Streamlit editor.
+- Create, open, edit, and preview project files from a local Streamlit editor.
 - Render project-specific source labels instead of raw local file paths.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
@@ -169,8 +169,10 @@ External project files are JSON documents. They let you create new videos
 without editing Python source files.
 
 `Project Studio` is a local Streamlit interface for creating and editing these
-JSON files from a CSV. It can inspect columns, save a project file, render a
-preview frame, and launch the final video render.
+JSON files from a CSV. It can open existing files from `projects/*.json`,
+inspect columns, save a project file, render a preview frame, and launch the
+final video render. When it edits an existing file, it preserves advanced JSON
+fields that are not exposed in the form yet.
 
 Example:
 
@@ -607,6 +609,7 @@ Current test coverage includes:
 - CLI preset overrides
 - external project file loader
 - Streamlit project editor helpers
+- existing-project loading in Project Studio
 - real render integration test with FFmpeg
 
 ## Architecture
@@ -851,5 +854,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue visual polish with dataset-specific presets and real-world sample
-  project files.
+- Continue Project Studio polish with label aliases, richer preview controls,
+  and publication-ready dataset-specific project presets.

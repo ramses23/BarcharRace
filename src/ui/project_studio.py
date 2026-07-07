@@ -22,7 +22,9 @@ from studio.project_builder import (
     build_project_data,
     default_project_paths,
     inspect_csv,
+    load_project_data,
     preferred_column,
+    project_form_values,
     project_name_from_title,
     save_project_data,
 )
@@ -39,7 +41,13 @@ st.set_page_config(
 def main():
     st.title("BarChartStudio")
 
-    csv_path = _csv_source_panel()
+    _project_source_panel()
+
+    loaded_project_data = st.session_state.get("loaded_project_data")
+    loaded_project_path = st.session_state.get("loaded_project_path")
+    values = project_form_values(loaded_project_data)
+
+    csv_path = _csv_source_panel(values)
 
     if not csv_path:
         return
@@ -55,7 +63,13 @@ def main():
     preview_df = pd.read_csv(csv_path, nrows=12)
     st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
-    project_data, project_file = _project_form(csv_path, inspection)
+    project_data, project_file = _project_form(
+        csv_path,
+        inspection,
+        values,
+        loaded_project_data,
+        loaded_project_path,
+    )
 
     preview_column, render_column = st.columns(2)
 
@@ -72,10 +86,47 @@ def main():
     st.json(project_data, expanded=False)
 
 
-def _csv_source_panel():
+def _project_source_panel():
+    st.subheader("Project")
+    project_files = _project_files()
+    project_options = ("", *project_files)
+    current_project = st.session_state.get("loaded_project_path", "")
+    selected_project = st.selectbox(
+        "Open project",
+        project_options,
+        index=_option_index(project_options, current_project),
+        format_func=lambda path: "New project" if not path else path,
+    )
+    load_column, new_column = st.columns(2)
+
+    with load_column:
+        if st.button("Load project", use_container_width=True, disabled=not selected_project):
+            try:
+                project_data = load_project_data(ROOT_DIR / selected_project)
+            except (OSError, ValueError) as exc:
+                st.error(str(exc))
+                return
+
+            st.session_state["loaded_project_data"] = project_data
+            st.session_state["loaded_project_path"] = selected_project
+            _refresh_form()
+            st.rerun()
+
+    with new_column:
+        if st.button("New project", use_container_width=True):
+            st.session_state.pop("loaded_project_data", None)
+            st.session_state.pop("loaded_project_path", None)
+            _refresh_form()
+            st.rerun()
+
+    if st.session_state.get("loaded_project_path"):
+        st.caption(f"Editing {st.session_state['loaded_project_path']}")
+
+
+def _csv_source_panel(values):
     st.subheader("Dataset")
     uploaded_file = st.file_uploader("CSV file", type=["csv"])
-    default_csv = "data/datasets/global_electricity_sources.csv"
+    default_csv = values["csv_path"]
 
     if uploaded_file is not None:
         datasets_dir = ROOT_DIR / "data" / "datasets"
@@ -84,14 +135,15 @@ def _csv_source_panel():
         csv_path.write_bytes(uploaded_file.getbuffer())
         return str(csv_path.relative_to(ROOT_DIR))
 
-    return st.text_input("CSV path", value=default_csv)
+    return st.text_input("CSV path", value=default_csv, key=_widget_key("csv_path"))
 
 
-def _project_form(csv_path, inspection):
-    title = st.text_input("Title", value="Electricity by Source")
+def _project_form(csv_path, inspection, values, loaded_project_data, loaded_project_path):
+    title = st.text_input("Title", value=values["title"], key=_widget_key("title"))
     project_name = st.text_input(
         "Project name",
-        value=project_name_from_title(title),
+        value=values["name"] or project_name_from_title(title),
+        key=_widget_key("project_name"),
     )
     paths = default_project_paths(project_name)
 
@@ -103,28 +155,39 @@ def _project_form(csv_path, inspection):
             inspection.columns,
             index=_column_index(
                 inspection.columns,
-                preferred_column(inspection.year_candidates, inspection.columns, "year"),
+                values["year_column"]
+                or preferred_column(inspection.year_candidates, inspection.columns, "year"),
             ),
+            key=_widget_key("year_column"),
         )
         name_column = st.selectbox(
             "Name column",
             inspection.columns,
             index=_column_index(
                 inspection.columns,
-                preferred_column(inspection.name_candidates, inspection.columns, "country"),
+                values["name_column"]
+                or preferred_column(
+                    inspection.name_candidates,
+                    inspection.columns,
+                    "country",
+                ),
             ),
+            key=_widget_key("name_column"),
         )
         value_column = st.selectbox(
             "Value column",
             inspection.columns,
             index=_column_index(
                 inspection.columns,
-                preferred_column(inspection.value_candidates, inspection.columns, "value"),
+                values["value_column"]
+                or preferred_column(inspection.value_candidates, inspection.columns, "value"),
             ),
+            key=_widget_key("value_column"),
         )
         source_label = st.text_input(
             "Source label",
-            value="Source: User-provided dataset",
+            value=values["source_label"],
+            key=_widget_key("source_label"),
         )
 
     with visual_column:
@@ -136,50 +199,87 @@ def _project_form(csv_path, inspection):
         layout_preset = st.selectbox(
             "Layout",
             layouts,
-            index=_option_index(layouts, "youtube_1080p"),
+            index=_option_index(layouts, values["layout_preset"]),
+            key=_widget_key("layout_preset"),
         )
         theme = st.selectbox(
             "Theme",
             themes,
-            index=_option_index(themes, "clean_report"),
+            index=_option_index(themes, values["theme"]),
+            key=_widget_key("theme"),
         )
         typography_preset = st.selectbox(
             "Typography",
             typographies,
-            index=_option_index(typographies, "editorial"),
+            index=_option_index(typographies, values["typography_preset"]),
+            key=_widget_key("typography_preset"),
         )
         value_format = st.selectbox(
             "Value format",
             value_formats,
-            index=_option_index(value_formats, "decimal"),
+            index=_option_index(value_formats, values["value_format"]),
+            key=_widget_key("value_format"),
         )
 
     with render_column:
-        fps = st.number_input("FPS", min_value=1, max_value=120, value=24, step=1)
+        fps = st.number_input(
+            "FPS",
+            min_value=1,
+            max_value=120,
+            value=_positive_int_or_default(values["fps"], 24),
+            step=1,
+            key=_widget_key("fps"),
+        )
         steps = st.number_input(
             "Steps per transition",
             min_value=1,
             max_value=240,
-            value=24,
+            value=_positive_int_or_default(values["steps_per_transition"], 24),
             step=1,
+            key=_widget_key("steps"),
         )
-        top_n = st.number_input("Top N", min_value=1, max_value=100, value=8, step=1)
+        top_n = st.number_input(
+            "Top N",
+            min_value=1,
+            max_value=100,
+            value=_positive_int_or_default(values["top_n"], 8),
+            step=1,
+            key=_widget_key("top_n"),
+        )
         max_visible = st.number_input(
             "Visible bars",
             min_value=1,
             max_value=100,
-            value=8,
+            value=_positive_int_or_default(values["max_visible_bars"], 8),
             step=1,
+            key=_widget_key("max_visible"),
+        )
+        aggregate_other = st.checkbox(
+            "Aggregate hidden bars",
+            value=bool(values["aggregate_other"]),
+            key=_widget_key("aggregate_other"),
         )
 
     output_column, project_column = st.columns(2)
 
     with output_column:
-        output_file = st.text_input("Output MP4", value=paths["output_file"])
-        frames_dir = st.text_input("Frames directory", value=paths["frames_dir"])
+        output_file = st.text_input(
+            "Output MP4",
+            value=values["output_file"] or paths["output_file"],
+            key=_widget_key("output_file"),
+        )
+        frames_dir = st.text_input(
+            "Frames directory",
+            value=values["frames_dir"] or paths["frames_dir"],
+            key=_widget_key("frames_dir"),
+        )
 
     with project_column:
-        project_file = st.text_input("Project JSON", value=paths["project_file"])
+        project_file = st.text_input(
+            "Project JSON",
+            value=loaded_project_path or values["project_file"] or paths["project_file"],
+            key=_widget_key("project_file"),
+        )
 
     project_data = build_project_data(
         name=project_name,
@@ -199,6 +299,8 @@ def _project_form(csv_path, inspection):
         steps_per_transition=int(steps),
         top_n=int(top_n),
         max_visible_bars=int(max_visible),
+        aggregate_other=aggregate_other,
+        base_project_data=loaded_project_data,
     )
 
     return project_data, project_file
@@ -246,6 +348,35 @@ def _option_index(options, selected):
         return tuple(options).index(selected)
     except ValueError:
         return 0
+
+
+def _project_files():
+    projects_dir = ROOT_DIR / "projects"
+
+    if not projects_dir.exists():
+        return ()
+
+    return tuple(
+        str(path.relative_to(ROOT_DIR))
+        for path in sorted(projects_dir.glob("*.json"))
+    )
+
+
+def _widget_key(name):
+    return f"{name}_{st.session_state.get('form_version', 0)}"
+
+
+def _refresh_form():
+    st.session_state["form_version"] = st.session_state.get("form_version", 0) + 1
+
+
+def _positive_int_or_default(value, default):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    return value if value >= 1 else default
 
 
 if __name__ == "__main__":

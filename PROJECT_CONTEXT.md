@@ -62,6 +62,9 @@ The project is a usable MVP:
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
 - Local Streamlit project editor in `src/ui/project_studio.py`.
+- Project Studio can create new project JSON files and open/edit existing
+  `projects/*.json` files while preserving advanced fields that are not exposed
+  in the form yet.
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
   directly to the output frame.
@@ -171,9 +174,11 @@ Current configuration layers:
   FFmpeg export options.
 
 External project files are the preferred way to define reusable videos.
-The Streamlit editor should remain a convenience layer that creates and edits
-project JSON files, renders preview frames, and launches `RenderJob`. It should
-not duplicate timeline, layout, motion, renderer, or exporter logic.
+The Streamlit editor should remain a convenience layer that creates, opens, and
+edits project JSON files, renders preview frames, and launches `RenderJob`. It
+should not duplicate timeline, layout, motion, renderer, or exporter logic.
+When editing an existing project, preserve JSON fields that are not currently
+represented by form controls.
 
 ## Development Rules
 
@@ -271,10 +276,16 @@ Remote:
 https://github.com/ramses23/BarcharRace.git
 ```
 
-Current working branch:
+Primary branch:
 
 ```text
 master
+```
+
+Current interface-editor work branch:
+
+```text
+project-studio-editor
 ```
 
 The project has been using a pattern of:
@@ -283,14 +294,13 @@ The project has been using a pattern of:
 2. Run tests and compile.
 3. Run a real render when visual/pipeline behavior changes.
 4. Commit.
-5. Push to `origin/master`.
+5. Push to the active GitHub branch.
 
 ## Near-Term Roadmap
 
 Recommended next steps:
 
-1. Polish Project Studio with label aliases, project loading, and richer preview
-   controls.
+1. Polish Project Studio with label aliases and richer preview controls.
 2. Polish the electricity project with label aliases, colors, or logos if the
    user wants a more publication-ready output.
 3. Add more chart types while preserving the same pipeline ideas.
@@ -299,7 +309,8 @@ Recommended next steps:
 
 - Do not migrate away from Matplotlib until the current engine behavior is
   stable.
-- Do not add a GUI before the CLI and JSON project workflow are robust.
+- Do not let the GUI duplicate engine pipeline logic; it should drive JSON
+  project files and `RenderJob`.
 - Do not replace the custom engine with a high-level chart-race package.
 - Do not mix business data models with visual state models.
 - Do not prioritize additional visual polish for aggregated `Other` bars unless

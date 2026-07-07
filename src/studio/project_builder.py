@@ -1,3 +1,4 @@
+import copy
 import json
 import re
 from dataclasses import dataclass
@@ -61,10 +62,47 @@ def build_project_data(
     top_n,
     max_visible_bars,
     aggregate_other=False,
+    base_project_data=None,
 ):
-    return {
-        "name": name,
-        "chart": {
+    project_data = copy.deepcopy(base_project_data) if base_project_data else {}
+    project_data["name"] = name
+
+    chart = project_data.setdefault("chart", {})
+    data_source = project_data.setdefault("data_source", {})
+    dataset = project_data.setdefault("dataset", {})
+    selection = project_data.setdefault("selection", {})
+
+    if not base_project_data:
+        chart.update(
+            {
+                "rank_labels_enabled": True,
+                "rank_label_prefix": "#",
+                "label_min_x": 40,
+                "value_label_gap": 16,
+                "value_label_min_x": None,
+                "auto_fit_bar_count": True,
+                "bar_shadow_enabled": True,
+                "bar_shadow_alpha": 0.12,
+                "bar_shadow_offset_x": 5,
+                "bar_shadow_offset_y": 4,
+                "bar_gradient_enabled": True,
+                "bar_gradient_lighten": 0.22,
+            }
+        )
+        project_data["animation"] = {
+            "easing": "ease_out_cubic",
+            "enter_exit": True,
+            "value_smoothing": True,
+        }
+        selection.update(
+            {
+                "other_label": "Other",
+                "other_color": "#A0A0A0",
+            }
+        )
+
+    chart.update(
+        {
             "title": title,
             "output_file": output_file,
             "frames_dir": frames_dir,
@@ -74,42 +112,31 @@ def build_project_data(
             "typography_preset": typography_preset,
             "fps": fps,
             "steps_per_transition": steps_per_transition,
-            "rank_labels_enabled": True,
-            "rank_label_prefix": "#",
-            "label_min_x": 40,
-            "value_label_gap": 16,
-            "value_label_min_x": None,
-            "auto_fit_bar_count": True,
             "max_visible_bars": max_visible_bars,
-            "bar_shadow_enabled": True,
-            "bar_shadow_alpha": 0.12,
-            "bar_shadow_offset_x": 5,
-            "bar_shadow_offset_y": 4,
-            "bar_gradient_enabled": True,
-            "bar_gradient_lighten": 0.22,
-        },
-        "animation": {
-            "easing": "ease_out_cubic",
-            "enter_exit": True,
-            "value_smoothing": True,
-        },
-        "selection": {
+        }
+    )
+    selection.update(
+        {
             "top_n": top_n,
             "aggregate_other": aggregate_other,
-            "other_label": "Other",
-            "other_color": "#A0A0A0",
-        },
-        "data_source": {
+        }
+    )
+    data_source.update(
+        {
             "source_type": "csv",
             "csv_path": csv_path,
             "source_label_override": source_label,
-        },
-        "dataset": {
+        }
+    )
+    dataset.update(
+        {
             "year_column": year_column,
             "name_column": name_column,
             "value_column": value_column,
-        },
-    }
+        }
+    )
+
+    return project_data
 
 
 def save_project_data(project_data, project_path):
@@ -121,6 +148,56 @@ def save_project_data(project_data, project_path):
     )
 
     return path
+
+
+def load_project_data(project_path):
+    path = Path(project_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    if not isinstance(data, dict):
+        raise ValueError("Project JSON must contain an object.")
+
+    return data
+
+
+def project_form_values(project_data=None):
+    project_data = project_data or {}
+    chart = _section(project_data, "chart")
+    data_source = _section(project_data, "data_source")
+    dataset = _section(project_data, "dataset")
+    selection = _section(project_data, "selection")
+
+    title = chart.get("title", "Electricity by Source")
+    project_name = project_data.get("name") or project_name_from_title(title)
+    paths = default_project_paths(project_name)
+
+    return {
+        "name": project_name,
+        "title": title,
+        "csv_path": data_source.get(
+            "csv_path",
+            "data/datasets/global_electricity_sources.csv",
+        ),
+        "source_label": data_source.get(
+            "source_label_override",
+            "Source: User-provided dataset",
+        ),
+        "year_column": dataset.get("year_column", "year"),
+        "name_column": dataset.get("name_column", "country"),
+        "value_column": dataset.get("value_column", "value"),
+        "layout_preset": chart.get("layout_preset", "youtube_1080p"),
+        "theme": chart.get("theme", "clean_report"),
+        "typography_preset": chart.get("typography_preset", "editorial"),
+        "value_format": chart.get("value_format", "decimal"),
+        "fps": chart.get("fps", 24),
+        "steps_per_transition": chart.get("steps_per_transition", 24),
+        "top_n": selection.get("top_n", 8),
+        "max_visible_bars": chart.get("max_visible_bars", 8),
+        "aggregate_other": selection.get("aggregate_other", False),
+        "output_file": chart.get("output_file", paths["output_file"]),
+        "frames_dir": chart.get("frames_dir", paths["frames_dir"]),
+        "project_file": paths["project_file"],
+    }
 
 
 def project_name_from_title(title):
@@ -148,6 +225,11 @@ def preferred_column(candidates, fallback_columns, default=None):
         return fallback_columns[0]
 
     return ""
+
+
+def _section(project_data, name):
+    section = project_data.get(name, {})
+    return section if isinstance(section, dict) else {}
 
 
 def _matching_columns(columns, names):
