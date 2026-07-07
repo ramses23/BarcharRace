@@ -42,6 +42,22 @@ def inspect_csv(csv_path):
     )
 
 
+def category_values(csv_path, name_column, limit=80):
+    dataframe = pd.read_csv(csv_path, usecols=[name_column])
+    values = (
+        dataframe[name_column]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    values = sorted(value for value in values.unique() if value)
+
+    if limit is None:
+        return tuple(values)
+
+    return tuple(values[:limit])
+
+
 def build_project_data(
     *,
     name,
@@ -62,6 +78,7 @@ def build_project_data(
     top_n,
     max_visible_bars,
     aggregate_other=False,
+    category_styles=None,
     base_project_data=None,
 ):
     project_data = copy.deepcopy(base_project_data) if base_project_data else {}
@@ -136,6 +153,14 @@ def build_project_data(
         }
     )
 
+    if category_styles is not None:
+        category_styles = clean_category_styles(category_styles)
+
+        if category_styles:
+            project_data["categories"] = category_styles
+        else:
+            project_data.pop("categories", None)
+
     return project_data
 
 
@@ -197,6 +222,7 @@ def project_form_values(project_data=None):
         "output_file": chart.get("output_file", paths["output_file"]),
         "frames_dir": chart.get("frames_dir", paths["frames_dir"]),
         "project_file": paths["project_file"],
+        "categories": clean_category_styles(project_data.get("categories", {})),
     }
 
 
@@ -225,6 +251,38 @@ def preferred_column(candidates, fallback_columns, default=None):
         return fallback_columns[0]
 
     return ""
+
+
+def clean_category_styles(category_styles):
+    if not isinstance(category_styles, dict):
+        return {}
+
+    cleaned = {}
+
+    for raw_name, style in category_styles.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            continue
+
+        if not isinstance(style, dict):
+            continue
+
+        cleaned_style = {}
+        label = style.get("label")
+        color = style.get("color")
+
+        if isinstance(label, str):
+            label = label.strip()
+
+            if label and label != raw_name:
+                cleaned_style["label"] = label
+
+        if isinstance(color, str) and color.strip():
+            cleaned_style["color"] = color.strip()
+
+        if cleaned_style:
+            cleaned[raw_name] = cleaned_style
+
+    return cleaned
 
 
 def _section(project_data, name):

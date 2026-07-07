@@ -20,6 +20,7 @@ from pipeline.render_job import RenderJob
 from studio.preview import render_project_preview
 from studio.project_builder import (
     build_project_data,
+    category_values,
     default_project_paths,
     inspect_csv,
     load_project_data,
@@ -29,6 +30,20 @@ from studio.project_builder import (
     save_project_data,
 )
 from config.project_file_loader import load_project_file
+
+
+DEFAULT_CATEGORY_COLORS = (
+    "#4E79A7",
+    "#F28E2B",
+    "#E15759",
+    "#76B7B2",
+    "#59A14F",
+    "#EDC948",
+    "#B07AA1",
+    "#FF9DA7",
+    "#9C755F",
+    "#BAB0AC",
+)
 
 
 st.set_page_config(
@@ -260,6 +275,12 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             key=_widget_key("aggregate_other"),
         )
 
+    category_styles = _category_styles_panel(
+        csv_path=csv_path,
+        name_column=name_column,
+        existing_styles=values["categories"],
+    )
+
     output_column, project_column = st.columns(2)
 
     with output_column:
@@ -300,10 +321,80 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
         top_n=int(top_n),
         max_visible_bars=int(max_visible),
         aggregate_other=aggregate_other,
+        category_styles=category_styles,
         base_project_data=loaded_project_data,
     )
 
     return project_data, project_file
+
+
+def _category_styles_panel(csv_path, name_column, existing_styles):
+    styles = {
+        raw_name: dict(style)
+        for raw_name, style in existing_styles.items()
+        if isinstance(style, dict)
+    }
+
+    try:
+        categories = category_values(csv_path, name_column)
+    except (OSError, ValueError) as exc:
+        st.error(str(exc))
+        return styles
+
+    if not categories:
+        return styles
+
+    with st.expander("Categories"):
+        for index, raw_name in enumerate(categories):
+            current_style = styles.get(raw_name, {})
+            current_label = current_style.get("label", raw_name)
+            current_color = current_style.get("color")
+            default_color = (
+                current_color
+                or DEFAULT_CATEGORY_COLORS[index % len(DEFAULT_CATEGORY_COLORS)]
+            )
+
+            label_column, toggle_column, color_column = st.columns([3, 1, 1])
+            key = _safe_widget_key(raw_name, index)
+
+            with label_column:
+                label = st.text_input(
+                    raw_name,
+                    value=current_label,
+                    key=_widget_key(f"category_label_{key}"),
+                )
+
+            with toggle_column:
+                use_color = st.checkbox(
+                    "Custom color",
+                    value=bool(current_color),
+                    key=_widget_key(f"category_use_color_{key}"),
+                )
+
+            with color_column:
+                color = st.color_picker(
+                    raw_name,
+                    value=default_color,
+                    key=_widget_key(f"category_color_{key}"),
+                    label_visibility="collapsed",
+                    disabled=not use_color,
+                )
+
+            next_style = {}
+            label = label.strip()
+
+            if label and label != raw_name:
+                next_style["label"] = label
+
+            if use_color:
+                next_style["color"] = color
+
+            if next_style:
+                styles[raw_name] = next_style
+            else:
+                styles.pop(raw_name, None)
+
+    return styles
 
 
 def _save_project(project_data, project_file):
@@ -364,6 +455,14 @@ def _project_files():
 
 def _widget_key(name):
     return f"{name}_{st.session_state.get('form_version', 0)}"
+
+
+def _safe_widget_key(value, index):
+    safe_value = "".join(
+        character if character.isalnum() else "_"
+        for character in str(value).lower()
+    ).strip("_")
+    return f"{index}_{safe_value or 'category'}"
 
 
 def _refresh_form():

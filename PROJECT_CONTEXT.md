@@ -52,6 +52,8 @@ The project is a usable MVP:
 - Logo resolution and rendering.
 - External JSON project files.
 - Project-specific source labels through `DataSourceConfig.source_label_override`.
+- Project-specific category labels and colors through the top-level
+  `categories` section in external project files.
 - A user-provided electricity project exists at
   `projects/global_electricity_sources.json` with data in
   `data/datasets/global_electricity_sources.csv`.
@@ -172,6 +174,8 @@ Current configuration layers:
 - CLI overrides can adjust output path, frames directory, title, theme, layout
   preset, value format, typography preset, fps, duration, size, and related
   FFmpeg export options.
+- Project files can define category-specific display labels and colors in a
+  top-level `categories` section keyed by the raw dataset category name.
 
 External project files are the preferred way to define reusable videos.
 The Streamlit editor should remain a convenience layer that creates, opens, and
@@ -300,9 +304,9 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Polish Project Studio with label aliases and richer preview controls.
-2. Polish the electricity project with label aliases, colors, or logos if the
-   user wants a more publication-ready output.
+1. Polish Project Studio with richer preview controls and render progress.
+2. Polish the electricity project with logos, refined copy, or source-specific
+   visual adjustments if the user wants a more publication-ready output.
 3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

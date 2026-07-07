@@ -65,6 +65,15 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "other_label": "Rest",
                             "other_color": "#999999",
                         },
+                        "categories": {
+                            "Coal": {
+                                "label": "Carbon",
+                                "color": "#333333",
+                            },
+                            "Solar": {
+                                "color": "#F2C94C",
+                            },
+                        },
                         "data_source": {
                             "source_type": "csv",
                             "csv_path": "data/custom.csv",
@@ -145,6 +154,9 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.dataset_config.name_column, "name")
         self.assertEqual(preset.dataset_config.value_column, "amount")
         self.assertTrue(preset.dataset_config.allow_negative_values)
+        self.assertEqual(preset.dataset_config.category_labels["Coal"], "Carbon")
+        self.assertEqual(preset.dataset_config.category_colors["Coal"], "#333333")
+        self.assertEqual(preset.dataset_config.category_colors["Solar"], "#F2C94C")
 
     def test_uses_file_stem_as_default_name(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -216,6 +228,39 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"selection": {"unknown": "value"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_invalid_categories_section(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"categories": []}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_unknown_category_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"categories": {"Coal": {"unknown": "value"}}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_blank_category_label(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"categories": {"Coal": {"label": ""}}}),
                 encoding="utf-8",
             )
 

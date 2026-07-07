@@ -21,6 +21,7 @@ PROJECT_FILE_SECTIONS = {
     "name",
     "base_preset",
     "animation",
+    "categories",
     "selection",
     "chart",
     "data_source",
@@ -63,6 +64,17 @@ def load_project_file(path):
         ),
     )
 
+    dataset_config = _build_config(
+        base_preset.dataset_config,
+        data.get("dataset", {}),
+        "dataset",
+        _convert_dataset_value,
+    )
+    dataset_config = _apply_category_styles(
+        dataset_config,
+        data.get("categories", {}),
+    )
+
     return ProjectPreset(
         name=project_name,
         chart_config=chart_config,
@@ -72,11 +84,7 @@ def load_project_file(path):
             "data_source",
             _convert_data_source_value,
         ),
-        dataset_config=_build_config(
-            base_preset.dataset_config,
-            data.get("dataset", {}),
-            "dataset",
-        ),
+        dataset_config=dataset_config,
     )
 
 
@@ -405,6 +413,86 @@ def _convert_data_source_value(key, value):
         return value
 
     return value
+
+
+def _convert_dataset_value(key, value):
+    if key in ("category_labels", "category_colors"):
+        return _convert_string_map(value, f"Dataset field '{key}'")
+
+    return value
+
+
+def _apply_category_styles(dataset_config, categories):
+    if categories is None:
+        categories = {}
+
+    if not isinstance(categories, dict):
+        raise ProjectFileError("Project section 'categories' must be an object.")
+
+    labels = dict(dataset_config.category_labels)
+    colors = dict(dataset_config.category_colors)
+
+    for raw_name, style in categories.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise ProjectFileError("Category names must be non-empty strings.")
+
+        if not isinstance(style, dict):
+            raise ProjectFileError(
+                f"Category '{raw_name}' must be an object."
+            )
+
+        _reject_unknown_keys(style, {"label", "color"}, f"category '{raw_name}'")
+
+        if "label" in style:
+            _update_optional_style(
+                labels,
+                raw_name,
+                style["label"],
+                f"Category '{raw_name}' field 'label'",
+            )
+
+        if "color" in style:
+            _update_optional_style(
+                colors,
+                raw_name,
+                style["color"],
+                f"Category '{raw_name}' field 'color'",
+            )
+
+    return replace(
+        dataset_config,
+        category_labels=labels,
+        category_colors=colors,
+    )
+
+
+def _convert_string_map(value, label):
+    if not isinstance(value, dict):
+        raise ProjectFileError(f"{label} must be an object.")
+
+    converted = {}
+
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ProjectFileError(f"{label} keys must be non-empty strings.")
+
+        if not isinstance(item, str) or not item.strip():
+            raise ProjectFileError(f"{label} values must be non-empty strings.")
+
+        converted[key] = item
+
+    return converted
+
+
+def _update_optional_style(styles, raw_name, value, label):
+    if value is None:
+        styles.pop(raw_name, None)
+        return
+
+    if not isinstance(value, str) or not value.strip():
+        raise ProjectFileError(f"{label} must be null or a non-empty string.")
+
+    styles[raw_name] = value
 
 
 def _reject_unknown_keys(data, allowed_keys, location):

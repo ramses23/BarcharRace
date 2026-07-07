@@ -35,6 +35,7 @@ charts, animated scatter plots, and timeline animations.
 - Render external JSON project files.
 - Create, open, edit, and preview project files from a local Streamlit editor.
 - Render project-specific source labels instead of raw local file paths.
+- Apply project-specific category labels and bar colors.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
 - Report per-stage render profiling timings for larger-dataset tuning.
@@ -222,6 +223,15 @@ Example:
     "other_label": "Other",
     "other_color": "#A0A0A0"
   },
+  "categories": {
+    "USA": {
+      "label": "United States",
+      "color": "#4E79A7"
+    },
+    "Mexico": {
+      "color": "#59A14F"
+    }
+  },
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/sample_dynamic.csv",
@@ -244,11 +254,30 @@ Supported top-level keys:
 | `chart` | `ChartConfig` values |
 | `animation` | `AnimationConfig` values |
 | `selection` | `BarSelectionConfig` values |
+| `categories` | optional labels and colors keyed by raw dataset category |
 | `data_source` | `DataSourceConfig` values |
 | `dataset` | `DatasetConfig` values |
 
 Named `theme`, `layout_preset`, `typography_preset`, and `value_format` values
 are resolved through their registries.
+
+Category styles are keyed by the raw value from the dataset name column. Each
+entry can define a display `label`, a bar `color`, or both:
+
+```json
+"categories": {
+  "Gas": {
+    "label": "Natural gas",
+    "color": "#F28E2B"
+  },
+  "Solar": {
+    "color": "#EDC948"
+  }
+}
+```
+
+If a category has no custom color, the renderer keeps using the active theme
+palette.
 
 ## Presets
 
@@ -610,6 +639,7 @@ Current test coverage includes:
 - external project file loader
 - Streamlit project editor helpers
 - existing-project loading in Project Studio
+- category labels and colors from project files
 - real render integration test with FFmpeg
 
 ## Architecture
@@ -854,5 +884,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue Project Studio polish with label aliases, richer preview controls,
+- Continue Project Studio polish with richer preview controls, render progress,
   and publication-ready dataset-specific project presets.

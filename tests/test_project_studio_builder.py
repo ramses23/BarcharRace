@@ -6,6 +6,8 @@ from pathlib import Path
 import _test_path
 from studio.project_builder import (
     build_project_data,
+    category_values,
+    clean_category_styles,
     default_project_paths,
     inspect_csv,
     load_project_data,
@@ -54,6 +56,10 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             steps_per_transition=24,
             top_n=8,
             max_visible_bars=8,
+            category_styles={
+                "Coal": {"label": "Carbon", "color": "#333333"},
+                "Solar": {"label": "Solar"},
+            },
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -65,6 +71,25 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["title"], "Electricity")
         self.assertEqual(loaded["data_source"]["source_label_override"], "Source: Test")
         self.assertEqual(loaded["dataset"]["value_column"], "value")
+        self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
+        self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
+        self.assertNotIn("Solar", loaded["categories"])
+
+    def test_extracts_category_values_from_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "electricity.csv"
+            csv_path.write_text(
+                "year,country,value\n"
+                "2020, Coal ,100\n"
+                "2020,Solar,40\n"
+                "2021,Coal,120\n"
+                "2021,,20\n",
+                encoding="utf-8",
+            )
+
+            values = category_values(csv_path, "country")
+
+        self.assertEqual(values, ("Coal", "Solar"))
 
     def test_loads_project_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -108,6 +133,12 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "name_column": "source",
                     "value_column": "amount",
                 },
+                "categories": {
+                    "Coal": {
+                        "label": "Carbon",
+                        "color": "#333333",
+                    },
+                },
             }
         )
 
@@ -129,6 +160,8 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertTrue(values["aggregate_other"])
         self.assertEqual(values["output_file"], "output/custom.mp4")
         self.assertEqual(values["frames_dir"], "output/custom_frames")
+        self.assertEqual(values["categories"]["Coal"]["label"], "Carbon")
+        self.assertEqual(values["categories"]["Coal"]["color"], "#333333")
 
     def test_preserves_unexposed_fields_when_rebuilding_existing_project(self):
         base_project = {
@@ -153,6 +186,12 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             },
             "dataset": {
                 "year_column": "year",
+            },
+            "categories": {
+                "Coal": {
+                    "label": "Carbon",
+                    "color": "#333333",
+                },
             },
         }
 
@@ -187,6 +226,66 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(project_data["selection"]["other_label"], "Rest")
         self.assertEqual(project_data["data_source"]["csv_path"], "data/new.csv")
         self.assertEqual(project_data["dataset"]["name_column"], "country")
+        self.assertEqual(project_data["categories"]["Coal"]["label"], "Carbon")
+
+    def test_replaces_category_styles_when_rebuilding_project(self):
+        base_project = {
+            "name": "electricity",
+            "categories": {
+                "Coal": {
+                    "label": "Carbon",
+                    "color": "#333333",
+                },
+            },
+        }
+
+        project_data = build_project_data(
+            name="electricity",
+            csv_path="data/new.csv",
+            year_column="year",
+            name_column="country",
+            value_column="value",
+            title="New",
+            source_label="Source: New",
+            output_file="output/new.mp4",
+            frames_dir="output/new_frames",
+            layout_preset="youtube_1080p",
+            theme="clean_report",
+            typography_preset="editorial",
+            value_format="decimal",
+            fps=24,
+            steps_per_transition=24,
+            top_n=8,
+            max_visible_bars=8,
+            category_styles={
+                "Coal": {"label": "Coal"},
+                "Solar": {"color": "#F2C94C"},
+            },
+            base_project_data=base_project,
+        )
+
+        self.assertNotIn("Coal", project_data["categories"])
+        self.assertEqual(project_data["categories"]["Solar"]["color"], "#F2C94C")
+
+    def test_cleans_category_styles(self):
+        styles = clean_category_styles(
+            {
+                "Coal": {"label": " Carbon ", "color": " #333333 "},
+                "Solar": {"label": "Solar", "color": ""},
+                "": {"label": "Missing"},
+                "Wind": "blue",
+            }
+        )
+
+        self.assertEqual(
+            styles,
+            {
+                "Coal": {
+                    "label": "Carbon",
+                    "color": "#333333",
+                },
+            },
+        )
 
     def test_builds_project_name_and_default_paths(self):
         name = project_name_from_title("Electricity by Source!")

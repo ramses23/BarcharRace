@@ -138,6 +138,57 @@ class RenderJobTest(unittest.TestCase):
             self.assertEqual(first_frame_names, ["USA", "Other"])
             self.assertEqual(first_frame_values["Other"], 140)
 
+    def test_applies_category_labels_and_colors_before_rendering(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            csv_path = temp_path / "sample.csv"
+            frames_dir = temp_path / "frames"
+            output_file = temp_path / "video.mp4"
+
+            csv_path.write_text(
+                "\n".join(
+                    [
+                        "year,country,value",
+                        "2000,Coal,100",
+                        "2000,Solar,50",
+                        "2001,Coal,110",
+                        "2001,Solar,60",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            chart_config = ChartConfig(
+                frames_dir=str(frames_dir),
+                output_file=str(output_file),
+                steps_per_transition=2,
+            )
+            data_source_config = DataSourceConfig(
+                source_type="csv",
+                csv_path=str(csv_path),
+            )
+
+            with patch("pipeline.render_job.BarRenderer") as renderer_class:
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        renderer = renderer_class.return_value
+
+                        RenderJob(
+                            config=chart_config,
+                            data_source_config=data_source_config,
+                            dataset_config=DatasetConfig(
+                                category_labels={"Coal": "Carbon"},
+                                category_colors={"Coal": "#333333"},
+                            ),
+                        ).run()
+
+            first_scene = renderer.render.call_args_list[0].args[0]
+            bars_by_name = {bar.name: bar for bar in first_scene.bars}
+
+            self.assertIn("Carbon", bars_by_name)
+            self.assertEqual(bars_by_name["Carbon"].color, "#333333")
+            self.assertIn("Solar", bars_by_name)
+
     def test_precomputes_sprites_once_per_year(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

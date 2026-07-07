@@ -41,6 +41,33 @@
     "other_label": "Other",
     "other_color": "#A0A0A0"
   },
+  "categories": {
+    "Coal": {
+      "color": "#333333"
+    },
+    "Gas": {
+      "label": "Natural gas",
+      "color": "#F28E2B"
+    },
+    "Hydro": {
+      "color": "#4E79A7"
+    },
+    "Nuclear": {
+      "color": "#B07AA1"
+    },
+    "Wind": {
+      "color": "#76B7B2"
+    },
+    "Solar": {
+      "color": "#EDC948"
+    },
+    "Bioenergy": {
+      "color": "#59A14F"
+    },
+    "Oil and other fossil": {
+      "color": "#9C755F"
+    }
+  },
   "data_source": {
     "source_type": "csv",
     "csv_path": "data/datasets/global_electricity_sources.csv",
