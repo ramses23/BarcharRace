@@ -61,6 +61,7 @@ The project is a usable MVP:
 - Basic per-stage render profiling for larger-dataset tuning.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
+- Local Streamlit project editor in `src/ui/project_studio.py`.
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
   directly to the output frame.
@@ -170,6 +171,9 @@ Current configuration layers:
   FFmpeg export options.
 
 External project files are the preferred way to define reusable videos.
+The Streamlit editor should remain a convenience layer that creates and edits
+project JSON files, renders preview frames, and launches `RenderJob`. It should
+not duplicate timeline, layout, motion, renderer, or exporter logic.
 
 ## Development Rules
 
@@ -223,6 +227,12 @@ Useful CLI discovery commands:
 .venv\Scripts\python.exe src\main.py --list-typographies
 .venv\Scripts\python.exe src\main.py --list-value-formats
 .venv\Scripts\python.exe src\main.py --list-easings
+```
+
+Project Studio command:
+
+```powershell
+.venv\Scripts\python.exe -m streamlit run src\ui\project_studio.py
 ```
 
 Larger-dataset profiling command:
@@ -279,9 +289,11 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Polish the electricity project with label aliases, colors, or logos if the
+1. Polish Project Studio with label aliases, project loading, and richer preview
+   controls.
+2. Polish the electricity project with label aliases, colors, or logos if the
    user wants a more publication-ready output.
-2. Add more chart types while preserving the same pipeline ideas.
+3. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
 

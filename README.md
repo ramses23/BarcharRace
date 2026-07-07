@@ -33,6 +33,7 @@ charts, animated scatter plots, and timeline animations.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
+- Create project files and preview renders from a local Streamlit editor.
 - Render project-specific source labels instead of raw local file paths.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
@@ -88,6 +89,12 @@ Run an external project file:
 ```powershell
 .venv\Scripts\python.exe src\main.py --project projects/sample_project.json
 .venv\Scripts\python.exe src\main.py --project projects/global_electricity_sources.json
+```
+
+Run the local project editor:
+
+```powershell
+.venv\Scripts\python.exe -m streamlit run src\ui\project_studio.py
 ```
 
 At the end of a render, the CLI prints a compact profiling line with the
@@ -160,6 +167,10 @@ Overrides can also be applied on top of an external project file:
 
 External project files are JSON documents. They let you create new videos
 without editing Python source files.
+
+`Project Studio` is a local Streamlit interface for creating and editing these
+JSON files from a CSV. It can inspect columns, save a project file, render a
+preview frame, and launch the final video render.
 
 Example:
 
@@ -595,6 +606,7 @@ Current test coverage includes:
 - configurable FFmpeg export command
 - CLI preset overrides
 - external project file loader
+- Streamlit project editor helpers
 - real render integration test with FFmpeg
 
 ## Architecture
