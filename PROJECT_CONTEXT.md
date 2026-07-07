@@ -68,6 +68,8 @@ The project is a usable MVP:
 - Project Studio can create new project JSON files and open/edit existing
   `projects/*.json` files while preserving advanced fields that are not exposed
   in the form yet.
+- Project Studio can render selected-year previews and transition-point
+  previews before generating the full video.
 - Project Studio shows render progress while launching a final video render.
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
@@ -308,7 +310,7 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Polish Project Studio with richer preview controls.
+1. Polish Project Studio with easier visual tuning controls.
 2. Polish the electricity project with logos, refined copy, or source-specific
    visual adjustments if the user wants a more publication-ready output.
 3. Add more chart types while preserving the same pipeline ideas.

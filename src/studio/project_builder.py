@@ -58,6 +58,14 @@ def category_values(csv_path, name_column, limit=80):
     return tuple(values[:limit])
 
 
+def year_values(csv_path, year_column):
+    dataframe = pd.read_csv(csv_path, usecols=[year_column])
+    years = pd.to_numeric(dataframe[year_column], errors="coerce").dropna()
+    years = sorted({int(year) for year in years if float(year).is_integer()})
+
+    return tuple(years)
+
+
 def build_project_data(
     *,
     name,

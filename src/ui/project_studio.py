@@ -29,6 +29,7 @@ from studio.project_builder import (
     project_form_values,
     project_name_from_title,
     save_project_data,
+    year_values,
 )
 from config.project_file_loader import load_project_file
 
@@ -79,7 +80,7 @@ def main():
     preview_df = pd.read_csv(csv_path, nrows=12)
     st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
-    project_data, project_file = _project_form(
+    project_data, project_file, preview_settings = _project_form(
         csv_path,
         inspection,
         values,
@@ -92,7 +93,7 @@ def main():
     with preview_column:
         if st.button("Render preview", use_container_width=True):
             _save_project(project_data, project_file)
-            _render_preview(project_file)
+            _render_preview(project_file, preview_settings)
 
     with render_column:
         if st.button("Render video", type="primary", use_container_width=True):
@@ -303,6 +304,8 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             key=_widget_key("project_file"),
         )
 
+    preview_settings = _preview_controls(csv_path, year_column)
+
     project_data = build_project_data(
         name=project_name,
         csv_path=csv_path,
@@ -326,7 +329,7 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
         base_project_data=loaded_project_data,
     )
 
-    return project_data, project_file
+    return project_data, project_file, preview_settings
 
 
 def _category_styles_panel(csv_path, name_column, existing_styles):
@@ -403,9 +406,72 @@ def _save_project(project_data, project_file):
     st.success(f"Saved {path.relative_to(ROOT_DIR)}")
 
 
-def _render_preview(project_file):
+def _preview_controls(csv_path, year_column):
     try:
-        preview_path = render_project_preview(ROOT_DIR / project_file)
+        years = year_values(csv_path, year_column)
+    except (OSError, ValueError) as exc:
+        st.error(str(exc))
+        years = ()
+
+    if not years:
+        return {
+            "year": None,
+            "preview_mode": "year",
+            "transition_progress": 0.0,
+        }
+
+    with st.expander("Preview", expanded=True):
+        mode = st.segmented_control(
+            "Mode",
+            ("Year", "Transition"),
+            default="Year",
+            key=_widget_key("preview_mode"),
+            disabled=len(years) < 2,
+        )
+
+        if mode == "Transition" and len(years) > 1:
+            year_options = years[:-1]
+            year = st.selectbox(
+                "Start year",
+                year_options,
+                key=_widget_key("preview_start_year"),
+            )
+            progress = st.slider(
+                "Transition progress",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.5,
+                step=0.05,
+                key=_widget_key("preview_transition_progress"),
+            )
+
+            return {
+                "year": year,
+                "preview_mode": "transition",
+                "transition_progress": progress,
+            }
+
+        year = st.selectbox(
+            "Year",
+            years,
+            key=_widget_key("preview_year"),
+        )
+
+    return {
+        "year": year,
+        "preview_mode": "year",
+        "transition_progress": 0.0,
+    }
+
+
+def _render_preview(project_file, preview_settings):
+    try:
+        preview_path = render_project_preview(
+            ROOT_DIR / project_file,
+            year=preview_settings["year"],
+            preview_mode=preview_settings["preview_mode"],
+            transition_progress=preview_settings["transition_progress"],
+        )
     except (ProjectFileError, ValueError, OSError) as exc:
         st.error(str(exc))
         return

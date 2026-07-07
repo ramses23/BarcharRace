@@ -15,6 +15,7 @@ from studio.project_builder import (
     project_form_values,
     project_name_from_title,
     save_project_data,
+    year_values,
 )
 
 
@@ -90,6 +91,22 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             values = category_values(csv_path, "country")
 
         self.assertEqual(values, ("Coal", "Solar"))
+
+    def test_extracts_year_values_from_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "electricity.csv"
+            csv_path.write_text(
+                "year,country,value\n"
+                "2021,Coal,120\n"
+                "not-a-year,Solar,40\n"
+                "2020,Coal,100\n"
+                "2021,Solar,50\n",
+                encoding="utf-8",
+            )
+
+            values = year_values(csv_path, "year")
+
+        self.assertEqual(values, (2020, 2021))
 
     def test_loads_project_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:
