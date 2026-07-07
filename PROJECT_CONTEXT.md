@@ -55,9 +55,6 @@ The project is a usable MVP:
 - A user-provided electricity project exists at
   `projects/global_electricity_sources.json` with data in
   `data/datasets/global_electricity_sources.csv`.
-- Dataset curation lives in the independent `dataset_factory/` companion
-  project. Keep source validation, metadata, and dataset classification there,
-  not in the renderer.
 - Top-N bar selection and optional "Other" aggregation.
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
@@ -284,9 +281,7 @@ Recommended next steps:
 
 1. Polish the electricity project with label aliases, colors, or logos if the
    user wants a more publication-ready output.
-2. Use `dataset_factory/` to prepare the next real dataset, likely FIFA men's
-   world ranking or World Bank population/GDP.
-3. Add more chart types while preserving the same pipeline ideas.
+2. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now
 
