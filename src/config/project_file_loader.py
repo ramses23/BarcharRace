@@ -70,6 +70,7 @@ def load_project_file(path):
             base_preset.data_source_config,
             data.get("data_source", {}),
             "data_source",
+            _convert_data_source_value,
         ),
         dataset_config=_build_config(
             base_preset.dataset_config,
@@ -375,6 +376,37 @@ def _convert_selection_value(key, value):
         return value
 
     return value
+
+
+def _convert_data_source_value(key, value):
+    if key in (
+        "source_type",
+        "csv_path",
+        "sqlite_database_path",
+        "sqlite_table_name",
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                f"Data source field '{key}' must be a non-empty string."
+            )
+
+        return value
+
+    if key == "source_label_override":
+        if value is None:
+            return None
+
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                "Data source field 'source_label_override' must be null "
+                "or a non-empty string."
+            )
+
+        return value
+
+    return value
+
+
 def _reject_unknown_keys(data, allowed_keys, location):
     unknown_keys = sorted(set(data) - set(allowed_keys))
 

@@ -68,6 +68,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                         "data_source": {
                             "source_type": "csv",
                             "csv_path": "data/custom.csv",
+                            "source_label_override": "Source: Custom data",
                         },
                         "dataset": {
                             "year_column": "date",
@@ -132,6 +133,14 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.selection.other_label, "Rest")
         self.assertEqual(preset.chart_config.selection.other_color, "#999999")
         self.assertEqual(preset.data_source_config.csv_path, "data/custom.csv")
+        self.assertEqual(
+            preset.data_source_config.source_label_override,
+            "Source: Custom data",
+        )
+        self.assertEqual(
+            preset.data_source_config.source_label,
+            "Source: Custom data",
+        )
         self.assertEqual(preset.dataset_config.year_column, "date")
         self.assertEqual(preset.dataset_config.name_column, "name")
         self.assertEqual(preset.dataset_config.value_column, "amount")
@@ -207,6 +216,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"selection": {"unknown": "value"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_blank_source_label_override(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"data_source": {"source_label_override": ""}}),
                 encoding="utf-8",
             )
 

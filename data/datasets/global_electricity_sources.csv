@@ -1,0 +1,49 @@
+year,source,generation_twh
+2000,Coal,6000
+2000,Natural gas,2800
+2000,Hydro,2600
+2000,Nuclear,2500
+2000,Oil,1200
+2000,Bioenergy,170
+2000,Wind,31
+2000,Solar,1
+2005,Coal,7500
+2005,Natural gas,3800
+2005,Hydro,3000
+2005,Nuclear,2700
+2005,Oil,1100
+2005,Bioenergy,250
+2005,Wind,104
+2005,Solar,4
+2010,Coal,8700
+2010,Natural gas,4800
+2010,Hydro,3500
+2010,Nuclear,2750
+2010,Oil,950
+2010,Bioenergy,390
+2010,Wind,342
+2010,Solar,32
+2015,Coal,9600
+2015,Natural gas,5600
+2015,Hydro,3900
+2015,Nuclear,2550
+2015,Wind,838
+2015,Oil,900
+2015,Bioenergy,500
+2015,Solar,253
+2020,Coal,9500
+2020,Natural gas,6300
+2020,Hydro,4300
+2020,Nuclear,2550
+2020,Wind,1590
+2020,Solar,850
+2020,Oil,750
+2020,Bioenergy,620
+2023,Coal,10300
+2023,Natural gas,6500
+2023,Hydro,4300
+2023,Nuclear,2700
+2023,Wind,2300
+2023,Solar,1600
+2023,Bioenergy,700
+2023,Oil,650

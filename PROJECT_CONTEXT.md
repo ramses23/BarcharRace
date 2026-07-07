@@ -51,6 +51,9 @@ The project is a usable MVP:
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
+- Project-specific source labels through `DataSourceConfig.source_label_override`.
+- A demo electricity project exists at `projects/global_electricity_sources.json`
+  with data in `data/datasets/global_electricity_sources.csv`.
 - Top-N bar selection and optional "Other" aggregation.
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
@@ -275,7 +278,8 @@ The project has been using a pattern of:
 
 Recommended next steps:
 
-1. Add dataset-specific presets and real-world sample project files.
+1. Replace or expand the demo electricity CSV with an official dataset when
+   the user provides one.
 2. Add more chart types while preserving the same pipeline ideas.
 
 ## Non-Goals For Now

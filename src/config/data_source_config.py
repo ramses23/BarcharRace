@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class DataSourceConfig:
     source_type: str = "csv"
+    source_label_override: str | None = None
 
     csv_path: str = "data/datasets/sample_dynamic.csv"
 
@@ -12,6 +13,9 @@ class DataSourceConfig:
 
     @property
     def source_label(self):
+        if self.source_label_override:
+            return self.source_label_override
+
         if self.source_type == "csv":
             return f"Source: {self.csv_path}"
 

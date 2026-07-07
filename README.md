@@ -33,6 +33,7 @@ charts, animated scatter plots, and timeline animations.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
+- Render project-specific source labels instead of raw local file paths.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
 - Report per-stage render profiling timings for larger-dataset tuning.
@@ -86,6 +87,7 @@ Run an external project file:
 
 ```powershell
 .venv\Scripts\python.exe src\main.py --project projects/sample_project.json
+.venv\Scripts\python.exe src\main.py --project projects/global_electricity_sources.json
 ```
 
 At the end of a render, the CLI prints a compact profiling line with the
@@ -209,7 +211,8 @@ Example:
   },
   "data_source": {
     "source_type": "csv",
-    "csv_path": "data/datasets/sample_dynamic.csv"
+    "csv_path": "data/datasets/sample_dynamic.csv",
+    "source_label_override": "Source: BarChartStudio sample dataset"
   },
   "dataset": {
     "year_column": "year",
@@ -254,6 +257,34 @@ Each preset combines:
 - `ThemeConfig`
 - `DataSourceConfig`
 - `DatasetConfig`
+
+## Example Projects
+
+Reusable project files live in:
+
+```text
+projects/
+```
+
+Included examples:
+
+| Project file | Notes |
+|---|---|
+| `projects/sample_project.json` | Small default CSV demo |
+| `projects/global_electricity_sources.json` | Real-world-shaped electricity generation demo |
+
+The electricity example uses:
+
+```text
+data/datasets/global_electricity_sources.csv
+```
+
+That CSV is a compact demo dataset with values in TWh. Replace it with your
+preferred official dataset when you are ready; keep the same columns or adjust
+the `dataset` section in the project file.
+
+`data_source.source_label_override` lets a project show a clean source label
+instead of a local file path.
 
 ## Animation
 
@@ -556,6 +587,7 @@ Current test coverage includes:
 - background time-label layering
 - `DatasetValidator`
 - `DataSourceLoader`
+- `DataSourceConfig`
 - `RenderJob`
 - per-year sprite precomputation
 - render profiling metrics

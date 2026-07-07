@@ -1,16 +1,19 @@
 {
-  "name": "sample_project",
-  "base_preset": "csv_sample",
+  "name": "global_electricity_sources",
   "chart": {
-    "title": "Ramses Proyect",
-    "output_file": "output/external_project.mp4",
-    "frames_dir": "output/external_project_frames",
+    "title": "Electricity by Source",
+    "output_file": "output/global_electricity_sources.mp4",
+    "frames_dir": "output/global_electricity_sources_frames",
     "layout_preset": "youtube_1080p",
     "theme": "clean_report",
     "value_format": "decimal",
     "typography_preset": "editorial",
     "fps": 24,
     "steps_per_transition": 24,
+    "left_margin": 420,
+    "source_x": 420,
+    "title_max_width": 1300,
+    "source_max_width": 1100,
     "rank_labels_enabled": true,
     "rank_label_prefix": "#",
     "rank_label_min_x": 96,
@@ -19,7 +22,7 @@
     "value_label_gap": 16,
     "value_label_min_x": null,
     "auto_fit_bar_count": true,
-    "max_visible_bars": null,
+    "max_visible_bars": 8,
     "bar_shadow_enabled": true,
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
@@ -33,19 +36,19 @@
     "value_smoothing": true
   },
   "selection": {
-    "top_n": 3,
+    "top_n": 8,
     "aggregate_other": false,
     "other_label": "Other",
     "other_color": "#A0A0A0"
   },
   "data_source": {
     "source_type": "csv",
-    "csv_path": "data/datasets/sample_dynamic.csv",
-    "source_label_override": "Source: BarChartStudio sample dataset"
+    "csv_path": "data/datasets/global_electricity_sources.csv",
+    "source_label_override": "Source: Demo dataset, values in TWh"
   },
   "dataset": {
     "year_column": "year",
-    "name_column": "country",
-    "value_column": "value"
+    "name_column": "source",
+    "value_column": "generation_twh"
   }
 }
