@@ -38,6 +38,7 @@ charts, animated scatter plots, and timeline animations.
 - Preview a selected year or transition point before rendering a full video.
 - Render project-specific source labels instead of raw local file paths.
 - Apply project-specific category labels and bar colors.
+- Assign project-specific category logos from the local Streamlit editor.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
 - Report per-stage render profiling timings for larger-dataset tuning.
@@ -265,16 +266,19 @@ Named `theme`, `layout_preset`, `typography_preset`, and `value_format` values
 are resolved through their registries.
 
 Category styles are keyed by the raw value from the dataset name column. Each
-entry can define a display `label`, a bar `color`, or both:
+entry can define a display `label`, a bar `color`, a `logo`, or any combination
+of those fields:
 
 ```json
 "categories": {
   "Gas": {
     "label": "Natural gas",
-    "color": "#F28E2B"
+    "color": "#F28E2B",
+    "logo": "logos/gas.png"
   },
   "Solar": {
-    "color": "#EDC948"
+    "color": "#EDC948",
+    "logo": "logos/solar.png"
   }
 }
 ```
@@ -645,6 +649,7 @@ Current test coverage includes:
 - existing-project loading in Project Studio
 - selected-year and transition preview rendering in Project Studio
 - category labels and colors from project files
+- explicit category logo paths from project files
 - real render integration test with FFmpeg
 
 ## Architecture
@@ -849,6 +854,20 @@ example, these files can match these bars:
 | `Mexico` | `logos/mexico.jpg` |
 
 If a logo is missing, the bar still renders normally.
+
+Project files can also assign explicit logos per category:
+
+```json
+"categories": {
+  "Coal": {
+    "logo": "logos/coal.png"
+  }
+}
+```
+
+Project Studio can choose an existing file from `logos/` or upload a logo for a
+category. Uploaded category logos are saved under `logos/` and referenced from
+the project JSON.
 
 Logo behavior is configured in:
 

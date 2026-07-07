@@ -11,3 +11,4 @@ class BarData:
     name: str
     value: float
     color: str | None = None
+    logo_path: str | None = None

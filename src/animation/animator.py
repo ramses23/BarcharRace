@@ -28,7 +28,8 @@ class Animator:
                 BarData(
                     name=bar.name,
                     value=base_value * progress,
-                    color=bar.color
+                    color=bar.color,
+                    logo_path=bar.logo_path,
                 )
                 for bar, base_value in zip(bars, base_values)
             ]

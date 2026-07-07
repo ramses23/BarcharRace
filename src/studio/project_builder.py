@@ -277,6 +277,7 @@ def clean_category_styles(category_styles):
         cleaned_style = {}
         label = style.get("label")
         color = style.get("color")
+        logo = style.get("logo")
 
         if isinstance(label, str):
             label = label.strip()
@@ -286,6 +287,9 @@ def clean_category_styles(category_styles):
 
         if isinstance(color, str) and color.strip():
             cleaned_style["color"] = color.strip()
+
+        if isinstance(logo, str) and logo.strip():
+            cleaned_style["logo"] = logo.strip()
 
         if cleaned_style:
             cleaned[raw_name] = cleaned_style

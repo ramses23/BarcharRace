@@ -416,7 +416,7 @@ def _convert_data_source_value(key, value):
 
 
 def _convert_dataset_value(key, value):
-    if key in ("category_labels", "category_colors"):
+    if key in ("category_labels", "category_colors", "category_logos"):
         return _convert_string_map(value, f"Dataset field '{key}'")
 
     return value
@@ -431,6 +431,7 @@ def _apply_category_styles(dataset_config, categories):
 
     labels = dict(dataset_config.category_labels)
     colors = dict(dataset_config.category_colors)
+    logos = dict(dataset_config.category_logos)
 
     for raw_name, style in categories.items():
         if not isinstance(raw_name, str) or not raw_name.strip():
@@ -441,7 +442,11 @@ def _apply_category_styles(dataset_config, categories):
                 f"Category '{raw_name}' must be an object."
             )
 
-        _reject_unknown_keys(style, {"label", "color"}, f"category '{raw_name}'")
+        _reject_unknown_keys(
+            style,
+            {"label", "color", "logo"},
+            f"category '{raw_name}'",
+        )
 
         if "label" in style:
             _update_optional_style(
@@ -459,10 +464,19 @@ def _apply_category_styles(dataset_config, categories):
                 f"Category '{raw_name}' field 'color'",
             )
 
+        if "logo" in style:
+            _update_optional_style(
+                logos,
+                raw_name,
+                style["logo"],
+                f"Category '{raw_name}' field 'logo'",
+            )
+
     return replace(
         dataset_config,
         category_labels=labels,
         category_colors=colors,
+        category_logos=logos,
     )
 
 

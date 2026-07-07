@@ -46,6 +46,7 @@ DEFAULT_CATEGORY_COLORS = (
     "#9C755F",
     "#BAB0AC",
 )
+LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
 
 st.set_page_config(
@@ -349,33 +350,36 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
         return styles
 
     with st.expander("Categories"):
+        logo_files = _logo_files()
+
         for index, raw_name in enumerate(categories):
             current_style = styles.get(raw_name, {})
             current_label = current_style.get("label", raw_name)
             current_color = current_style.get("color")
+            current_logo = current_style.get("logo", "")
             default_color = (
                 current_color
                 or DEFAULT_CATEGORY_COLORS[index % len(DEFAULT_CATEGORY_COLORS)]
             )
 
-            label_column, toggle_column, color_column = st.columns([3, 1, 1])
+            columns = st.columns([3, 1, 1, 2, 1])
             key = _safe_widget_key(raw_name, index)
 
-            with label_column:
+            with columns[0]:
                 label = st.text_input(
                     raw_name,
                     value=current_label,
                     key=_widget_key(f"category_label_{key}"),
                 )
 
-            with toggle_column:
+            with columns[1]:
                 use_color = st.checkbox(
                     "Custom color",
                     value=bool(current_color),
                     key=_widget_key(f"category_use_color_{key}"),
                 )
 
-            with color_column:
+            with columns[2]:
                 color = st.color_picker(
                     raw_name,
                     value=default_color,
@@ -383,6 +387,26 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
                     label_visibility="collapsed",
                     disabled=not use_color,
                 )
+
+            with columns[3]:
+                logo_options = _logo_options(current_logo, logo_files)
+                logo_path = st.selectbox(
+                    "Logo",
+                    logo_options,
+                    index=_option_index(logo_options, current_logo),
+                    format_func=lambda path: "No logo" if not path else path,
+                    key=_widget_key(f"category_logo_{key}"),
+                )
+
+            with columns[4]:
+                uploaded_logo = st.file_uploader(
+                    "Upload",
+                    type=[extension.lstrip(".") for extension in LOGO_FILE_EXTENSIONS],
+                    key=_widget_key(f"category_upload_logo_{key}"),
+                )
+
+                if uploaded_logo is not None:
+                    logo_path = _save_uploaded_logo(raw_name, uploaded_logo)
 
             next_style = {}
             label = label.strip()
@@ -392,6 +416,9 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 
             if use_color:
                 next_style["color"] = color
+
+            if logo_path:
+                next_style["logo"] = logo_path
 
             if next_style:
                 styles[raw_name] = next_style
@@ -543,16 +570,57 @@ def _project_files():
     )
 
 
+def _logo_files():
+    logos_dir = ROOT_DIR / "logos"
+
+    if not logos_dir.exists():
+        return ()
+
+    return tuple(
+        str(path.relative_to(ROOT_DIR))
+        for path in sorted(logos_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in LOGO_FILE_EXTENSIONS
+    )
+
+
+def _logo_options(current_logo, logo_files):
+    options = ["", *logo_files]
+
+    if current_logo and current_logo not in options:
+        options.insert(1, current_logo)
+
+    return tuple(options)
+
+
+def _save_uploaded_logo(raw_name, uploaded_logo):
+    logos_dir = ROOT_DIR / "logos"
+    logos_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = Path(uploaded_logo.name).suffix.lower()
+
+    if suffix not in LOGO_FILE_EXTENSIONS:
+        suffix = ".png"
+
+    logo_path = logos_dir / f"{_safe_filename_key(raw_name)}{suffix}"
+    logo_path.write_bytes(uploaded_logo.getbuffer())
+
+    return str(logo_path.relative_to(ROOT_DIR))
+
+
 def _widget_key(name):
     return f"{name}_{st.session_state.get('form_version', 0)}"
 
 
-def _safe_widget_key(value, index):
+def _safe_filename_key(value):
     safe_value = "".join(
         character if character.isalnum() else "_"
         for character in str(value).lower()
     ).strip("_")
-    return f"{index}_{safe_value or 'category'}"
+    return safe_value or "category"
+
+
+def _safe_widget_key(value, index):
+    return f"{index}_{_safe_filename_key(value)}"
 
 
 def _refresh_form():

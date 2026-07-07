@@ -21,6 +21,7 @@ class TimelineTest(unittest.TestCase):
             config=DatasetConfig(
                 category_labels={"Coal": "Carbon"},
                 category_colors={"Coal": "#333333"},
+                category_logos={"Coal": "logos/coal.png"},
             ),
         )
 
@@ -28,8 +29,10 @@ class TimelineTest(unittest.TestCase):
 
         self.assertEqual(bars[0].name, "Carbon")
         self.assertEqual(bars[0].color, "#333333")
+        self.assertEqual(bars[0].logo_path, "logos/coal.png")
         self.assertEqual(bars[1].name, "Solar")
         self.assertIsNone(bars[1].color)
+        self.assertIsNone(bars[1].logo_path)
 
 
 if __name__ == "__main__":

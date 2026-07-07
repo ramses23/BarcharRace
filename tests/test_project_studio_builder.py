@@ -58,7 +58,11 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             top_n=8,
             max_visible_bars=8,
             category_styles={
-                "Coal": {"label": "Carbon", "color": "#333333"},
+                "Coal": {
+                    "label": "Carbon",
+                    "color": "#333333",
+                    "logo": "logos/coal.png",
+                },
                 "Solar": {"label": "Solar"},
             },
         )
@@ -74,6 +78,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["dataset"]["value_column"], "value")
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
+        self.assertEqual(loaded["categories"]["Coal"]["logo"], "logos/coal.png")
         self.assertNotIn("Solar", loaded["categories"])
 
     def test_extracts_category_values_from_csv(self):
@@ -154,6 +159,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "Coal": {
                         "label": "Carbon",
                         "color": "#333333",
+                        "logo": "logos/coal.png",
                     },
                 },
             }
@@ -179,6 +185,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["frames_dir"], "output/custom_frames")
         self.assertEqual(values["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(values["categories"]["Coal"]["color"], "#333333")
+        self.assertEqual(values["categories"]["Coal"]["logo"], "logos/coal.png")
 
     def test_preserves_unexposed_fields_when_rebuilding_existing_project(self):
         base_project = {
@@ -208,6 +215,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                 "Coal": {
                     "label": "Carbon",
                     "color": "#333333",
+                    "logo": "logos/coal.png",
                 },
             },
         }
@@ -244,6 +252,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(project_data["data_source"]["csv_path"], "data/new.csv")
         self.assertEqual(project_data["dataset"]["name_column"], "country")
         self.assertEqual(project_data["categories"]["Coal"]["label"], "Carbon")
+        self.assertEqual(project_data["categories"]["Coal"]["logo"], "logos/coal.png")
 
     def test_replaces_category_styles_when_rebuilding_project(self):
         base_project = {
@@ -252,6 +261,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                 "Coal": {
                     "label": "Carbon",
                     "color": "#333333",
+                    "logo": "logos/coal.png",
                 },
             },
         }
@@ -276,19 +286,21 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             max_visible_bars=8,
             category_styles={
                 "Coal": {"label": "Coal"},
-                "Solar": {"color": "#F2C94C"},
+                "Solar": {"color": "#F2C94C", "logo": "logos/solar.png"},
             },
             base_project_data=base_project,
         )
 
         self.assertNotIn("Coal", project_data["categories"])
         self.assertEqual(project_data["categories"]["Solar"]["color"], "#F2C94C")
+        self.assertEqual(project_data["categories"]["Solar"]["logo"], "logos/solar.png")
 
     def test_cleans_category_styles(self):
         styles = clean_category_styles(
             {
                 "Coal": {"label": " Carbon ", "color": " #333333 "},
-                "Solar": {"label": "Solar", "color": ""},
+                "Solar": {"label": "Solar", "color": "", "logo": ""},
+                "Hydro": {"logo": " logos/hydro.png "},
                 "": {"label": "Missing"},
                 "Wind": "blue",
             }
@@ -300,6 +312,9 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                 "Coal": {
                     "label": "Carbon",
                     "color": "#333333",
+                },
+                "Hydro": {
+                    "logo": "logos/hydro.png",
                 },
             },
         )

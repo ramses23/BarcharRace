@@ -48,7 +48,7 @@ class LayoutEngine:
                     width=width,
                     height=self.config.bar_height,
                     rank=i + 1,
-                    logo_path=self._resolve_logo(bar.name),
+                    logo_path=self._resolve_logo(bar),
                 )
             )
 
@@ -71,11 +71,11 @@ class LayoutEngine:
 
         return (value / max_value) * self.config.max_bar_width
 
-    def _resolve_logo(self, name):
+    def _resolve_logo(self, bar):
         if not self.config.logos_enabled:
             return None
 
-        return self.logo_resolver.resolve(name)
+        return bar.logo_path or self.logo_resolver.resolve(bar.name)
 
     def _sort_key(self, bar):
         if (

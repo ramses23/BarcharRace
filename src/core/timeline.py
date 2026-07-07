@@ -28,4 +28,5 @@ class Timeline:
             name=self.config.display_name_for(raw_name),
             value=row[self.config.value_column],
             color=self.config.color_for(raw_name),
+            logo_path=self.config.logo_for(raw_name),
         )

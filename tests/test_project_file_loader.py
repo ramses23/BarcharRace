@@ -69,6 +69,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "Coal": {
                                 "label": "Carbon",
                                 "color": "#333333",
+                                "logo": "logos/coal.png",
                             },
                             "Solar": {
                                 "color": "#F2C94C",
@@ -156,6 +157,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertTrue(preset.dataset_config.allow_negative_values)
         self.assertEqual(preset.dataset_config.category_labels["Coal"], "Carbon")
         self.assertEqual(preset.dataset_config.category_colors["Coal"], "#333333")
+        self.assertEqual(preset.dataset_config.category_logos["Coal"], "logos/coal.png")
         self.assertEqual(preset.dataset_config.category_colors["Solar"], "#F2C94C")
 
     def test_uses_file_stem_as_default_name(self):
@@ -261,6 +263,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"categories": {"Coal": {"label": ""}}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_blank_category_logo(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"categories": {"Coal": {"logo": ""}}}),
                 encoding="utf-8",
             )
 
