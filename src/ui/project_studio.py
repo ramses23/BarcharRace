@@ -1,5 +1,5 @@
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from subprocess import CalledProcessError
 
 import pandas as pd
@@ -50,6 +50,7 @@ DEFAULT_CATEGORY_COLORS = (
 )
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_LOGO_FOLDER = "logos"
+LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
 NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
 
@@ -137,6 +138,7 @@ def _project_source_panel():
             st.session_state["loaded_project_path"] = selected_project
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
+            st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
             _refresh_form()
             st.rerun()
 
@@ -146,6 +148,7 @@ def _project_source_panel():
             st.session_state.pop("loaded_project_path", None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
+            st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
             _refresh_form()
             st.rerun()
 
@@ -399,12 +402,32 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
         return styles
 
     with st.expander("Categories"):
-        logo_folder_column, logo_action_column = st.columns([3, 1])
+        upload_column, logo_folder_column, logo_action_column = st.columns([2, 2, 1])
+
+        with upload_column:
+            uploaded_logo_files = st.file_uploader(
+                "Logo folder",
+                type=[extension.lstrip(".") for extension in LOGO_FILE_EXTENSIONS],
+                accept_multiple_files="directory",
+                key=_widget_key("category_logo_folder_upload"),
+            )
+
+            if uploaded_logo_files:
+                logo_folder = _save_uploaded_logo_folder(uploaded_logo_files)
+                previous_logo_folder = st.session_state.get(LOGO_FOLDER_OVERRIDE_STATE)
+                st.session_state[LOGO_FOLDER_OVERRIDE_STATE] = logo_folder
+
+                if previous_logo_folder != logo_folder:
+                    _refresh_form()
+                    st.rerun()
 
         with logo_folder_column:
             logo_folder = st.text_input(
-                "Logo folder",
-                value=DEFAULT_LOGO_FOLDER,
+                "Logo folder path",
+                value=st.session_state.get(
+                    LOGO_FOLDER_OVERRIDE_STATE,
+                    DEFAULT_LOGO_FOLDER,
+                ),
                 key=_widget_key("category_logo_folder"),
             )
 
@@ -652,7 +675,7 @@ def _logo_files(logos_dir=DEFAULT_LOGO_FOLDER):
 
     return tuple(
         _project_relative_path(path)
-        for path in sorted(logos_dir.iterdir())
+        for path in sorted(logos_dir.rglob("*"))
         if path.is_file() and path.suffix.lower() in LOGO_FILE_EXTENSIONS
     )
 
@@ -678,7 +701,49 @@ def _save_uploaded_logo(raw_name, uploaded_logo):
     logo_path = logos_dir / f"{_safe_filename_key(raw_name)}{suffix}"
     logo_path.write_bytes(uploaded_logo.getbuffer())
 
-    return str(logo_path.relative_to(ROOT_DIR))
+    return _project_relative_path(logo_path)
+
+
+def _save_uploaded_logo_folder(uploaded_logo_files):
+    folder_name = _uploaded_folder_name(uploaded_logo_files)
+    folder_key = _safe_filename_key(folder_name)
+    target_dir = ROOT_DIR / DEFAULT_LOGO_FOLDER
+
+    if folder_key != DEFAULT_LOGO_FOLDER:
+        target_dir = target_dir / folder_key
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for uploaded_logo_file in uploaded_logo_files:
+        suffix = Path(uploaded_logo_file.name).suffix.lower()
+
+        if suffix not in LOGO_FILE_EXTENSIONS:
+            continue
+
+        logo_path = target_dir / _safe_logo_filename(uploaded_logo_file.name)
+        logo_path.write_bytes(uploaded_logo_file.getbuffer())
+
+    return _project_relative_path(target_dir)
+
+
+def _uploaded_folder_name(uploaded_logo_files):
+    for uploaded_logo_file in uploaded_logo_files:
+        parts = PurePosixPath(str(uploaded_logo_file.name).replace("\\", "/")).parts
+
+        if len(parts) > 1:
+            return parts[0]
+
+    return "uploaded_logos"
+
+
+def _safe_logo_filename(uploaded_name):
+    filename = PurePosixPath(str(uploaded_name).replace("\\", "/")).name
+    suffix = Path(filename).suffix.lower()
+
+    if suffix not in LOGO_FILE_EXTENSIONS:
+        suffix = ".png"
+
+    return f"{_safe_filename_key(Path(filename).stem)}{suffix}"
 
 
 def _resolve_project_path(path):

@@ -55,8 +55,8 @@ The project is a usable MVP:
 - Project-specific category labels and colors through the top-level
   `categories` section in external project files.
 - Project-specific category logos through `categories.<raw_name>.logo`, with
-  Project Studio support for choosing, uploading, or auto-matching files from a
-  logo folder by category name.
+  Project Studio support for uploading a logo folder, choosing individual
+  logos, uploading individual logos, or auto-matching files by category name.
 - A user-provided electricity project exists at
   `projects/global_electricity_sources.json` with data in
   `data/datasets/global_electricity_sources.csv`.
@@ -192,6 +192,8 @@ Current configuration layers:
 - Project Studio can auto-match logo files by comparing normalized category
   names to normalized logo filenames, including case, spaces, underscores, and
   simple accent differences.
+- Uploaded logo folders are copied under `logos/`, and the copied folder becomes
+  the active logo folder for category matching.
 
 External project files are the preferred way to define reusable videos.
 The Streamlit editor should remain a convenience layer that creates, opens, and
