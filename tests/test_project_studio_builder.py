@@ -11,6 +11,8 @@ from studio.project_builder import (
     default_project_paths,
     inspect_csv,
     load_project_data,
+    logo_match_key,
+    match_category_logos,
     preferred_column,
     project_defaults_from_csv_path,
     project_form_values,
@@ -113,6 +115,26 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             values = year_values(csv_path, "year")
 
         self.assertEqual(values, (2020, 2021))
+
+    def test_matches_category_logos_by_file_name(self):
+        matches = match_category_logos(
+            ("Argentina", "United States", "México", "No Match"),
+            (
+                "logos/argentina.png",
+                "logos/united_states.webp",
+                "logos/Mexico.jpg",
+                "logos/extra.png",
+            ),
+        )
+
+        self.assertEqual(matches["Argentina"], "logos/argentina.png")
+        self.assertEqual(matches["United States"], "logos/united_states.webp")
+        self.assertEqual(matches["México"], "logos/Mexico.jpg")
+        self.assertNotIn("No Match", matches)
+
+    def test_normalizes_logo_match_keys(self):
+        self.assertEqual(logo_match_key("México / USA"), "mexico_usa")
+        self.assertEqual(logo_match_key("National-Team Goals"), "national_team_goals")
 
     def test_loads_project_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:

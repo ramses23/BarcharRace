@@ -1,6 +1,7 @@
 import copy
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +65,47 @@ def year_values(csv_path, year_column):
     years = sorted({int(year) for year in years if float(year).is_integer()})
 
     return tuple(years)
+
+
+def match_category_logos(category_names, logo_paths):
+    exact_logos = {}
+    normalized_logos = {}
+
+    for logo_path in sorted((str(path) for path in logo_paths), key=str.casefold):
+        stem = _path_stem(logo_path)
+        exact_key = stem.strip().casefold()
+        normalized_key = logo_match_key(stem)
+
+        if exact_key:
+            exact_logos.setdefault(exact_key, logo_path)
+
+        if normalized_key:
+            normalized_logos.setdefault(normalized_key, logo_path)
+
+    matches = {}
+
+    for category_name in category_names:
+        category_name = str(category_name)
+        exact_key = category_name.strip().casefold()
+        normalized_key = logo_match_key(category_name)
+        logo_path = exact_logos.get(exact_key) or normalized_logos.get(normalized_key)
+
+        if logo_path:
+            matches[category_name] = logo_path
+
+    return matches
+
+
+def logo_match_key(value):
+    normalized = unicodedata.normalize("NFKD", str(value))
+    without_accents = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+    key = re.sub(r"[^a-z0-9]+", "_", without_accents.casefold())
+
+    return key.strip("_")
 
 
 def build_project_data(

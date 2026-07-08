@@ -25,6 +25,7 @@ from studio.project_builder import (
     default_project_paths,
     inspect_csv,
     load_project_data,
+    match_category_logos,
     preferred_column,
     project_defaults_from_csv_path,
     project_form_values,
@@ -48,6 +49,7 @@ DEFAULT_CATEGORY_COLORS = (
     "#BAB0AC",
 )
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+DEFAULT_LOGO_FOLDER = "logos"
 NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
 
@@ -397,13 +399,38 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
         return styles
 
     with st.expander("Categories"):
-        logo_files = _logo_files()
+        logo_folder_column, logo_action_column = st.columns([3, 1])
+
+        with logo_folder_column:
+            logo_folder = st.text_input(
+                "Logo folder",
+                value=DEFAULT_LOGO_FOLDER,
+                key=_widget_key("category_logo_folder"),
+            )
+
+        logo_files = _logo_files(logo_folder)
+        matched_logos = match_category_logos(categories, logo_files)
+
+        with logo_action_column:
+            apply_matched_logos = st.button(
+                "Apply matched logos",
+                use_container_width=True,
+                disabled=not matched_logos,
+                key=_widget_key("apply_matched_logos"),
+            )
+
+        if matched_logos:
+            st.caption(f"{len(matched_logos)} logo matches")
+
+        if apply_matched_logos:
+            for raw_name, logo_path in matched_logos.items():
+                styles.setdefault(raw_name, {})["logo"] = logo_path
 
         for index, raw_name in enumerate(categories):
             current_style = styles.get(raw_name, {})
             current_label = current_style.get("label", raw_name)
             current_color = current_style.get("color")
-            current_logo = current_style.get("logo", "")
+            current_logo = current_style.get("logo") or matched_logos.get(raw_name, "")
             default_color = (
                 current_color
                 or DEFAULT_CATEGORY_COLORS[index % len(DEFAULT_CATEGORY_COLORS)]
@@ -617,14 +644,14 @@ def _project_files():
     )
 
 
-def _logo_files():
-    logos_dir = ROOT_DIR / "logos"
+def _logo_files(logos_dir=DEFAULT_LOGO_FOLDER):
+    logos_dir = _resolve_project_path(logos_dir)
 
     if not logos_dir.exists():
         return ()
 
     return tuple(
-        str(path.relative_to(ROOT_DIR))
+        _project_relative_path(path)
         for path in sorted(logos_dir.iterdir())
         if path.is_file() and path.suffix.lower() in LOGO_FILE_EXTENSIONS
     )
@@ -652,6 +679,22 @@ def _save_uploaded_logo(raw_name, uploaded_logo):
     logo_path.write_bytes(uploaded_logo.getbuffer())
 
     return str(logo_path.relative_to(ROOT_DIR))
+
+
+def _resolve_project_path(path):
+    path = Path(str(path).strip() or DEFAULT_LOGO_FOLDER)
+
+    if not path.is_absolute():
+        path = ROOT_DIR / path
+
+    return path
+
+
+def _project_relative_path(path):
+    try:
+        return str(path.relative_to(ROOT_DIR)).replace("\\", "/")
+    except ValueError:
+        return str(path).replace("\\", "/")
 
 
 def _widget_key(name):

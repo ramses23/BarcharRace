@@ -866,9 +866,9 @@ Project files can also assign explicit logos per category:
 }
 ```
 
-Project Studio can choose an existing file from `logos/` or upload a logo for a
-category. Uploaded category logos are saved under `logos/` and referenced from
-the project JSON.
+Project Studio can choose an existing file from a logo folder, auto-match files
+whose names match category names, or upload a logo for a category. Uploaded
+category logos are saved under `logos/` and referenced from the project JSON.
 
 Logo behavior is configured in:
 
