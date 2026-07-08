@@ -7,6 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
 from config.chart_config import ChartConfig
 from utils.text_fit import estimate_text_width, fit_text_to_width
@@ -363,13 +364,33 @@ class BarRenderer:
         )
 
     def _load_logo(self, logo_path):
-        if logo_path not in self.logo_cache:
-            try:
-                self.logo_cache[logo_path] = plt.imread(logo_path)
-            except (OSError, ValueError):
-                self.logo_cache[logo_path] = None
+        cache_key = (logo_path, self.config.logo_size)
 
-        return self.logo_cache[logo_path]
+        if cache_key not in self.logo_cache:
+            try:
+                self.logo_cache[cache_key] = self._prepare_logo_image(logo_path)
+            except (OSError, ValueError):
+                self.logo_cache[cache_key] = None
+
+        return self.logo_cache[cache_key]
+
+    def _prepare_logo_image(self, logo_path):
+        logo_size = max(1, int(self.config.logo_size))
+
+        with Image.open(logo_path) as image:
+            image = image.convert("RGBA")
+            image.thumbnail(
+                (logo_size, logo_size),
+                Image.Resampling.LANCZOS,
+            )
+            canvas = Image.new("RGBA", (logo_size, logo_size), (255, 255, 255, 0))
+            offset = (
+                (logo_size - image.width) // 2,
+                (logo_size - image.height) // 2,
+            )
+            canvas.alpha_composite(image, offset)
+
+        return np.asarray(canvas)
 
     def _opacity(self, sprite):
         return min(1.0, max(0.0, sprite.opacity))

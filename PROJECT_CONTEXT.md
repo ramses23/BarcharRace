@@ -64,6 +64,7 @@ The project is a usable MVP:
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
 - Basic per-stage render profiling for larger-dataset tuning, shown in CLI output and Project Studio after video renders.
+- Renderer caches logos already resized to `ChartConfig.logo_size` to avoid repeatedly resampling large image assets per frame.
 - `RenderJob` supports an optional progress callback for UI progress updates.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.

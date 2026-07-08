@@ -1,7 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import _test_path
 import matplotlib.pyplot as plt
+from PIL import Image
 from config.chart_config import ChartConfig
 from models.bar_sprite import BarSprite
 from models.scene import Scene
@@ -446,6 +449,19 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(axis.text_calls[0]["fontweight"], "heavy")
         self.assertEqual(axis.text_calls[1]["text"], "Subtitle")
         self.assertEqual(axis.text_calls[1]["fontweight"], "light")
+
+    def test_load_logo_resizes_and_caches_image(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "large_logo.png"
+            Image.new("RGBA", (240, 120), (255, 0, 0, 255)).save(logo_path)
+            renderer = BarRenderer(config=ChartConfig(logo_size=32))
+
+            image = renderer._load_logo(str(logo_path))
+            cached_image = renderer._load_logo(str(logo_path))
+
+        self.assertEqual(image.shape, (32, 32, 4))
+        self.assertEqual(str(image.dtype), "uint8")
+        self.assertIs(image, cached_image)
 
     def test_footer_uses_configured_font_weights_and_fits_source(self):
         renderer = BarRenderer(
