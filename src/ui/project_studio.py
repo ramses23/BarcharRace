@@ -20,6 +20,7 @@ from config.value_format_config import list_value_formats
 from pipeline.render_job import RenderJob
 from studio.preview import render_project_preview
 from studio.project_builder import (
+    apply_category_logo_matches,
     build_project_data,
     category_values,
     default_project_paths,
@@ -51,6 +52,7 @@ DEFAULT_CATEGORY_COLORS = (
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_LOGO_FOLDER = "logos"
 CATEGORY_DISPLAY_LIMIT = 80
+APPLIED_LOGO_MATCHES_STATE = "applied_logo_matches"
 LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
 NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
@@ -139,7 +141,7 @@ def _project_source_panel():
             st.session_state["loaded_project_path"] = selected_project
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
-            st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
+            _clear_logo_session_overrides()
             _refresh_form()
             st.rerun()
 
@@ -149,7 +151,7 @@ def _project_source_panel():
             st.session_state.pop("loaded_project_path", None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
-            st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
+            _clear_logo_session_overrides()
             _refresh_form()
             st.rerun()
 
@@ -382,6 +384,7 @@ def _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data):
     st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = csv_path
 
     if previous_csv_path is not None and previous_csv_path != csv_path:
+        st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
         _refresh_form()
         st.rerun()
 
@@ -421,6 +424,7 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
                 st.session_state[LOGO_FOLDER_OVERRIDE_STATE] = logo_folder
 
                 if previous_logo_folder != logo_folder:
+                    st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
                     _refresh_form()
                     st.rerun()
 
@@ -436,6 +440,11 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 
         logo_files = _logo_files(logo_folder)
         matched_logos = match_category_logos(all_categories, logo_files)
+        match_context = _logo_match_context(csv_path, name_column, logo_folder)
+        styles = apply_category_logo_matches(
+            styles,
+            _applied_logo_matches(match_context),
+        )
 
         with logo_action_column:
             apply_matched_logos = st.button(
@@ -454,8 +463,11 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
             )
 
         if apply_matched_logos:
-            for raw_name, logo_path in matched_logos.items():
-                styles.setdefault(raw_name, {})["logo"] = logo_path
+            st.session_state[APPLIED_LOGO_MATCHES_STATE] = {
+                "context": match_context,
+                "matches": matched_logos,
+            }
+            styles = apply_category_logo_matches(styles, matched_logos)
 
         for index, raw_name in enumerate(visible_categories):
             current_style = styles.get(raw_name, {})
@@ -536,6 +548,29 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 def _save_project(project_data, project_file):
     path = save_project_data(project_data, ROOT_DIR / project_file)
     st.success(f"Saved {path.relative_to(ROOT_DIR)}")
+
+
+def _logo_match_context(csv_path, name_column, logo_folder):
+    return "|".join(str(value) for value in (csv_path, name_column, logo_folder))
+
+
+def _applied_logo_matches(match_context):
+    applied_logo_matches = st.session_state.get(APPLIED_LOGO_MATCHES_STATE, {})
+
+    if not isinstance(applied_logo_matches, dict):
+        return {}
+
+    if applied_logo_matches.get("context") != match_context:
+        return {}
+
+    matches = applied_logo_matches.get("matches", {})
+
+    return matches if isinstance(matches, dict) else {}
+
+
+def _clear_logo_session_overrides():
+    st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
+    st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
 
 
 def _preview_controls(csv_path, year_column):

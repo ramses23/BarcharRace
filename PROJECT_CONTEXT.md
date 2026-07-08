@@ -196,6 +196,8 @@ Current configuration layers:
   the active logo folder for category matching.
 - Category editing displays the first 80 categories for usability, but logo
   auto-matching uses every category in the dataset.
+- Applied logo matches are persisted in Streamlit session state so preview and
+  video renders include matched logos beyond the visible category rows.
 
 External project files are the preferred way to define reusable videos.
 The Streamlit editor should remain a convenience layer that creates, opens, and

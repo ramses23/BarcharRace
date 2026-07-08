@@ -5,6 +5,7 @@ from pathlib import Path
 
 import _test_path
 from studio.project_builder import (
+    apply_category_logo_matches,
     build_project_data,
     category_values,
     clean_category_styles,
@@ -149,6 +150,25 @@ class ProjectStudioBuilderTest(unittest.TestCase):
     def test_normalizes_logo_match_keys(self):
         self.assertEqual(logo_match_key("México / USA"), "mexico_usa")
         self.assertEqual(logo_match_key("National-Team Goals"), "national_team_goals")
+
+    def test_applies_category_logo_matches_to_all_styles(self):
+        styles = apply_category_logo_matches(
+            {
+                "Team 001": {
+                    "label": "First Team",
+                    "color": "#111111",
+                },
+            },
+            {
+                "Team 001": "logos/team_001.png",
+                "Team 318": "logos/team_318.png",
+            },
+        )
+
+        self.assertEqual(styles["Team 001"]["label"], "First Team")
+        self.assertEqual(styles["Team 001"]["color"], "#111111")
+        self.assertEqual(styles["Team 001"]["logo"], "logos/team_001.png")
+        self.assertEqual(styles["Team 318"]["logo"], "logos/team_318.png")
 
     def test_loads_project_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:

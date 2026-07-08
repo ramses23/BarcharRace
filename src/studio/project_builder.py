@@ -96,6 +96,18 @@ def match_category_logos(category_names, logo_paths):
     return matches
 
 
+def apply_category_logo_matches(category_styles, matched_logos):
+    styles = copy.deepcopy(category_styles) if isinstance(category_styles, dict) else {}
+
+    for raw_name, logo_path in matched_logos.items():
+        if not raw_name or not logo_path:
+            continue
+
+        styles.setdefault(raw_name, {})["logo"] = logo_path
+
+    return styles
+
+
 def logo_match_key(value):
     normalized = unicodedata.normalize("NFKD", str(value))
     without_accents = "".join(

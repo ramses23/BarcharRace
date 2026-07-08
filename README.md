@@ -871,7 +871,9 @@ a logo folder, auto-match files whose names match category names, or upload a
 logo for a category. Uploaded logo folders are copied under `logos/`, and
 category logo paths are referenced from the project JSON.
 Logo auto-matching runs against every category in the dataset, even when the
-category editor only displays the first 80 rows.
+category editor only displays the first 80 rows. Applied logo matches are kept
+in the editor session so subsequent preview and video renders use the full
+matched set.
 
 Logo behavior is configured in:
 
