@@ -63,7 +63,7 @@ The project is a usable MVP:
 - Top-N bar selection and optional "Other" aggregation.
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
-- Basic per-stage render profiling for larger-dataset tuning.
+- Basic per-stage render profiling for larger-dataset tuning, shown in CLI output and Project Studio after video renders.
 - `RenderJob` supports an optional progress callback for UI progress updates.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.

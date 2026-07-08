@@ -36,6 +36,13 @@ class RenderResult:
     output_file: str
     profile: RenderProfile
 
+    @property
+    def average_frame_seconds(self):
+        if self.frames_rendered <= 0:
+            return 0.0
+
+        return self.profile.render_frames_seconds / self.frames_rendered
+
 
 @dataclass(frozen=True)
 class RenderProgress:

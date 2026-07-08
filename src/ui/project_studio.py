@@ -669,6 +669,44 @@ def _render_video(project_file):
 
     progress_bar.progress(1.0)
     status_message.success(f"Rendered {result.output_file}")
+    _show_render_profile(result)
+
+
+def _show_render_profile(result):
+    profile = result.profile
+    total_seconds = profile.total_seconds
+
+    st.subheader("Render profile")
+    total_column, frames_column, average_column, transitions_column = st.columns(4)
+    total_column.metric("Total", _format_seconds(total_seconds))
+    frames_column.metric("Frames", f"{result.frames_rendered:,}")
+    average_column.metric("Avg / frame", _format_seconds(result.average_frame_seconds))
+    transitions_column.metric("Transitions", f"{result.transitions_rendered:,}")
+
+    rows = (
+        _profile_row("Load data", profile.load_data_seconds, total_seconds),
+        _profile_row("Validate data", profile.validate_data_seconds, total_seconds),
+        _profile_row("Build timeline", profile.build_timeline_seconds, total_seconds),
+        _profile_row("Clean frames", profile.cleanup_seconds, total_seconds),
+        _profile_row("Precompute sprites", profile.precompute_sprites_seconds, total_seconds),
+        _profile_row("Render PNG frames", profile.render_frames_seconds, total_seconds),
+        _profile_row("Export MP4", profile.export_video_seconds, total_seconds),
+    )
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def _profile_row(stage, seconds, total_seconds):
+    share = (seconds / total_seconds * 100) if total_seconds else 0.0
+
+    return {
+        "Stage": stage,
+        "Seconds": round(seconds, 3),
+        "Share": f"{share:.1f}%",
+    }
+
+
+def _format_seconds(seconds):
+    return f"{seconds:.3f}s"
 
 
 def _streamlit_progress_callback(progress_bar, status_message):

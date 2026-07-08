@@ -104,7 +104,8 @@ Run the local project editor:
 At the end of a render, the CLI prints a compact profiling line with the
 seconds spent loading data, validating data, building the timeline,
 precomputing sprites, rendering frames, exporting video, and running the full
-job.
+job. Project Studio shows the same render profile after a video render,
+including total frames and average seconds per frame.
 
 Run a synthetic larger-dataset profiling render:
 
