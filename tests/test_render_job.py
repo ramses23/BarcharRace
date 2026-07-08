@@ -84,6 +84,7 @@ class RenderJobTest(unittest.TestCase):
                 renderer.render.call_args_list[1].kwargs["filename"],
                 "frame_0001.png",
             )
+            renderer.close.assert_called_once_with()
             exporter.export.assert_called_once_with()
 
     def test_applies_bar_selection_before_rendering(self):

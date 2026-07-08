@@ -20,13 +20,12 @@ class BarRenderer:
         self.output_dir = output_dir
         self.config = config or ChartConfig()
         self.logo_cache = {}
+        self._figure = None
+        self._axis = None
         os.makedirs(self.output_dir, exist_ok=True)
 
     def render(self, scene, filename="frame.png"):
-        fig, ax = plt.subplots(
-            figsize=self.config.figure_size,
-            dpi=self.config.dpi,
-        )
+        fig, ax = self._figure_axis()
 
         self._setup_canvas(fig, ax)
         self._draw_time_label(ax, scene)
@@ -35,23 +34,37 @@ class BarRenderer:
         self._draw_source_label(ax, scene)
 
         path = os.path.join(self.output_dir, filename)
-        plt.savefig(
+        fig.savefig(
             path,
             dpi=self.config.dpi,
             facecolor=fig.get_facecolor(),
             bbox_inches=None,
             pad_inches=0,
         )
-        plt.close(fig)
 
         return path
 
+    def close(self):
+        if self._figure is not None:
+            plt.close(self._figure)
+            self._figure = None
+            self._axis = None
+
+    def _figure_axis(self):
+        if self._figure is None or self._axis is None:
+            self._figure, self._axis = plt.subplots(
+                figsize=self.config.figure_size,
+                dpi=self.config.dpi,
+            )
+
+        return self._figure, self._axis
+
     def _setup_canvas(self, fig, ax):
         fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        ax.clear()
         ax.set_position((0, 0, 1, 1))
         fig.patch.set_facecolor(self.config.background_color)
         ax.set_facecolor(self.config.background_color)
-        ax.clear()
         ax.set_xlim(0, self.config.width)
         ax.set_ylim(0, self.config.height)
         ax.invert_yaxis()

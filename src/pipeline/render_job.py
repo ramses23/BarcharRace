@@ -171,6 +171,7 @@ class RenderJob:
 
             transitions_rendered += 1
 
+        renderer.close()
         timings["render_frames"] = perf_counter() - render_started_at
 
         self._emit_progress("export_video", "Exporting MP4", 0.92)

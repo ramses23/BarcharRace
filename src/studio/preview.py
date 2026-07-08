@@ -63,7 +63,10 @@ def render_project_preview(
     output_path = Path(output_dir)
     renderer = BarRenderer(output_dir=str(output_path), config=preset.chart_config)
 
-    return renderer.render(scene, filename="preview.png")
+    try:
+        return renderer.render(scene, filename="preview.png")
+    finally:
+        renderer.close()
 
 
 def _selected_year(year, years):

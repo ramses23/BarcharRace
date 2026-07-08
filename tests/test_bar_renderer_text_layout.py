@@ -34,6 +34,19 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertEqual(renderer._fit_bar_label(sprite), "United Stat...")
 
+    def test_reuses_figure_until_closed(self):
+        renderer = BarRenderer(config=ChartConfig())
+        first_figure, first_axis = renderer._figure_axis()
+        second_figure, second_axis = renderer._figure_axis()
+
+        self.assertIs(first_figure, second_figure)
+        self.assertIs(first_axis, second_axis)
+
+        renderer.close()
+
+        self.assertIsNone(renderer._figure)
+        self.assertIsNone(renderer._axis)
+
     def test_canvas_axis_fills_entire_figure(self):
         renderer = BarRenderer(config=ChartConfig())
         fig, ax = plt.subplots()
