@@ -105,7 +105,7 @@ At the end of a render, the CLI prints a compact profiling line with the
 seconds spent loading data, validating data, building the timeline,
 precomputing sprites, rendering frames, exporting video, and running the full
 job. Project Studio shows the same render profile after a video render,
-including total frames and average seconds per frame.
+including total frames, average seconds per frame, draw time, PNG save time, and render overhead.
 
 Run a synthetic larger-dataset profiling render:
 

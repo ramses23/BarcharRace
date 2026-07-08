@@ -24,6 +24,8 @@ class RenderProfile:
     cleanup_seconds: float = 0.0
     precompute_sprites_seconds: float = 0.0
     render_frames_seconds: float = 0.0
+    draw_frames_seconds: float = 0.0
+    save_frames_seconds: float = 0.0
     export_video_seconds: float = 0.0
     total_seconds: float = 0.0
 
@@ -171,6 +173,8 @@ class RenderJob:
 
             transitions_rendered += 1
 
+        timings["draw_frames"] = self._renderer_seconds(renderer, "draw_seconds")
+        timings["save_frames"] = self._renderer_seconds(renderer, "save_seconds")
         renderer.close()
         timings["render_frames"] = perf_counter() - render_started_at
 
@@ -193,6 +197,14 @@ class RenderJob:
             output_file=self.config.output_file,
             profile=profile,
         )
+
+    def _renderer_seconds(self, renderer, attribute):
+        value = getattr(renderer, attribute, 0.0)
+
+        if isinstance(value, (int, float)):
+            return value
+
+        return 0.0
 
     def _measure_stage(self, timings, name, callback):
         started_at = perf_counter()
@@ -234,6 +246,8 @@ class RenderJob:
             cleanup_seconds=timings.get("cleanup", 0.0),
             precompute_sprites_seconds=timings.get("precompute_sprites", 0.0),
             render_frames_seconds=timings.get("render_frames", 0.0),
+            draw_frames_seconds=timings.get("draw_frames", 0.0),
+            save_frames_seconds=timings.get("save_frames", 0.0),
             export_video_seconds=timings.get("export_video", 0.0),
             total_seconds=total_seconds,
         )
@@ -247,6 +261,8 @@ class RenderJob:
             f"cleanup={profile.cleanup_seconds:.3f}s, "
             f"precompute={profile.precompute_sprites_seconds:.3f}s, "
             f"render={profile.render_frames_seconds:.3f}s, "
+            f"draw={profile.draw_frames_seconds:.3f}s, "
+            f"save={profile.save_frames_seconds:.3f}s, "
             f"export={profile.export_video_seconds:.3f}s, "
             f"total={profile.total_seconds:.3f}s"
         )

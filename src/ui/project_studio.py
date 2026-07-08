@@ -683,13 +683,21 @@ def _show_render_profile(result):
     average_column.metric("Avg / frame", _format_seconds(result.average_frame_seconds))
     transitions_column.metric("Transitions", f"{result.transitions_rendered:,}")
 
+    render_overhead_seconds = max(
+        0.0,
+        profile.render_frames_seconds
+        - profile.draw_frames_seconds
+        - profile.save_frames_seconds,
+    )
     rows = (
         _profile_row("Load data", profile.load_data_seconds, total_seconds),
         _profile_row("Validate data", profile.validate_data_seconds, total_seconds),
         _profile_row("Build timeline", profile.build_timeline_seconds, total_seconds),
         _profile_row("Clean frames", profile.cleanup_seconds, total_seconds),
         _profile_row("Precompute sprites", profile.precompute_sprites_seconds, total_seconds),
-        _profile_row("Render PNG frames", profile.render_frames_seconds, total_seconds),
+        _profile_row("Draw frames", profile.draw_frames_seconds, total_seconds),
+        _profile_row("Save PNG frames", profile.save_frames_seconds, total_seconds),
+        _profile_row("Render overhead", render_overhead_seconds, total_seconds),
         _profile_row("Export MP4", profile.export_video_seconds, total_seconds),
     )
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)

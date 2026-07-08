@@ -66,6 +66,7 @@ The project is a usable MVP:
 - Basic per-stage render profiling for larger-dataset tuning, shown in CLI output and Project Studio after video renders.
 - Renderer caches logos already resized to `ChartConfig.logo_size` to avoid repeatedly resampling large image assets per frame.
 - `BarRenderer` reuses a single Matplotlib figure/axis during a render job and clears it between frames to reduce per-frame setup overhead.
+- Render profiling separates frame drawing time from PNG save time to guide further renderer or exporter optimization.
 - `RenderJob` supports an optional progress callback for UI progress updates.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.

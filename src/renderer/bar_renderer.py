@@ -1,4 +1,5 @@
 import os
+from time import perf_counter
 
 import matplotlib
 
@@ -22,18 +23,23 @@ class BarRenderer:
         self.logo_cache = {}
         self._figure = None
         self._axis = None
+        self.draw_seconds = 0.0
+        self.save_seconds = 0.0
         os.makedirs(self.output_dir, exist_ok=True)
 
     def render(self, scene, filename="frame.png"):
         fig, ax = self._figure_axis()
 
+        draw_started_at = perf_counter()
         self._setup_canvas(fig, ax)
         self._draw_time_label(ax, scene)
         self._draw_header(ax, scene)
         self._draw_bars(ax, scene.bars)
         self._draw_source_label(ax, scene)
+        self.draw_seconds += perf_counter() - draw_started_at
 
         path = os.path.join(self.output_dir, filename)
+        save_started_at = perf_counter()
         fig.savefig(
             path,
             dpi=self.config.dpi,
@@ -41,6 +47,7 @@ class BarRenderer:
             bbox_inches=None,
             pad_inches=0,
         )
+        self.save_seconds += perf_counter() - save_started_at
 
         return path
 

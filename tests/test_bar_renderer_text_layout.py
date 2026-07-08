@@ -34,6 +34,18 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertEqual(renderer._fit_bar_label(sprite), "United Stat...")
 
+    def test_tracks_draw_and_save_seconds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            renderer = BarRenderer(output_dir=temp_dir, config=ChartConfig())
+            scene = Scene(title="Title")
+            renderer.render(scene, filename="frame.png")
+
+        try:
+            self.assertGreaterEqual(renderer.draw_seconds, 0.0)
+            self.assertGreaterEqual(renderer.save_seconds, 0.0)
+        finally:
+            renderer.close()
+
     def test_reuses_figure_until_closed(self):
         renderer = BarRenderer(config=ChartConfig())
         first_figure, first_axis = renderer._figure_axis()

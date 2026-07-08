@@ -68,8 +68,14 @@ class RenderJobTest(unittest.TestCase):
             self.assertGreaterEqual(result.profile.cleanup_seconds, 0.0)
             self.assertGreaterEqual(result.profile.precompute_sprites_seconds, 0.0)
             self.assertGreaterEqual(result.profile.render_frames_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.draw_frames_seconds, 0.0)
+            self.assertGreaterEqual(result.profile.save_frames_seconds, 0.0)
             self.assertGreaterEqual(result.profile.export_video_seconds, 0.0)
             self.assertGreaterEqual(result.profile.total_seconds, 0.0)
+            self.assertLessEqual(
+                result.profile.draw_frames_seconds + result.profile.save_frames_seconds,
+                result.profile.render_frames_seconds,
+            )
             self.assertAlmostEqual(
                 result.average_frame_seconds,
                 result.profile.render_frames_seconds / result.frames_rendered,
