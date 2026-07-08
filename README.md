@@ -197,6 +197,7 @@ Example:
     "typography_preset": "editorial",
     "fps": 24,
     "steps_per_transition": 24,
+    "png_compress_level": 1,
     "video_codec": "libx264",
     "video_pixel_format": "yuv420p",
     "video_crf": 18,
@@ -804,6 +805,13 @@ Before each render, old `frame_*.png` files are removed from the configured
 frames directory so FFmpeg cannot mix old and new frames.
 
 `output/` is ignored by Git.
+
+## Frame Output
+
+Temporary PNG frame writing is controlled with `png_compress_level` from `0` to
+`9`. Lower values write frames faster and create larger temporary PNG files. The
+default is `1`, optimized for render speed; final MP4 quality is still controlled
+by FFmpeg settings.
 
 ## Video Export
 

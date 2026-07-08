@@ -50,6 +50,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "bar_gradient_lighten": 0.3,
                             "video_codec": "libx265",
                             "video_pixel_format": "yuv444p",
+                            "png_compress_level": 0,
                             "video_crf": 22,
                             "video_bitrate": "8M",
                             "ffmpeg_preset": "slow",
@@ -132,6 +133,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.bar_gradient_lighten, 0.3)
         self.assertEqual(preset.chart_config.video_codec, "libx265")
         self.assertEqual(preset.chart_config.video_pixel_format, "yuv444p")
+        self.assertEqual(preset.chart_config.png_compress_level, 0)
         self.assertEqual(preset.chart_config.video_crf, 22)
         self.assertEqual(preset.chart_config.video_bitrate, "8M")
         self.assertEqual(preset.chart_config.ffmpeg_preset, "slow")
@@ -351,6 +353,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"chart": {"video_crf": -1}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_invalid_png_compress_level(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"chart": {"png_compress_level": 10}}),
                 encoding="utf-8",
             )
 

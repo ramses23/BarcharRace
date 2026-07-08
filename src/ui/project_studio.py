@@ -301,6 +301,19 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             step=1,
             key=_widget_key("max_visible"),
         )
+        png_compress_level = st.number_input(
+            "PNG compression",
+            min_value=0,
+            max_value=9,
+            value=_int_in_range_or_default(
+                values["png_compress_level"],
+                default=1,
+                minimum=0,
+                maximum=9,
+            ),
+            step=1,
+            key=_widget_key("png_compress_level"),
+        )
         aggregate_other = st.checkbox(
             "Aggregate hidden bars",
             value=bool(values["aggregate_other"]),
@@ -354,6 +367,7 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
         steps_per_transition=int(steps),
         top_n=int(top_n),
         max_visible_bars=int(max_visible),
+        png_compress_level=int(png_compress_level),
         aggregate_other=aggregate_other,
         category_styles=category_styles,
         base_project_data=loaded_project_data,
@@ -878,6 +892,15 @@ def _positive_int_or_default(value, default):
         return default
 
     return value if value >= 1 else default
+
+
+def _int_in_range_or_default(value, default, minimum, maximum):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    return min(maximum, max(minimum, value))
 
 
 if __name__ == "__main__":

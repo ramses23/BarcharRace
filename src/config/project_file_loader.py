@@ -264,6 +264,14 @@ def _convert_chart_value(key, value):
 
         return value
 
+    if key == "png_compress_level":
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 9:
+            raise ProjectFileError(
+                "Chart field 'png_compress_level' must be an integer from 0 to 9."
+            )
+
+        return value
+
     if key == "video_crf":
         if value is None:
             return None

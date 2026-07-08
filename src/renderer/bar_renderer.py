@@ -40,13 +40,7 @@ class BarRenderer:
 
         path = os.path.join(self.output_dir, filename)
         save_started_at = perf_counter()
-        fig.savefig(
-            path,
-            dpi=self.config.dpi,
-            facecolor=fig.get_facecolor(),
-            bbox_inches=None,
-            pad_inches=0,
-        )
+        fig.savefig(path, **self._savefig_kwargs(fig, path))
         self.save_seconds += perf_counter() - save_started_at
 
         return path
@@ -56,6 +50,29 @@ class BarRenderer:
             plt.close(self._figure)
             self._figure = None
             self._axis = None
+
+    def _savefig_kwargs(self, fig, path):
+        kwargs = {
+            "dpi": self.config.dpi,
+            "facecolor": fig.get_facecolor(),
+            "bbox_inches": None,
+            "pad_inches": 0,
+        }
+
+        if str(path).lower().endswith(".png"):
+            kwargs["pil_kwargs"] = {
+                "compress_level": self._png_compress_level(),
+            }
+
+        return kwargs
+
+    def _png_compress_level(self):
+        try:
+            level = int(self.config.png_compress_level)
+        except (TypeError, ValueError):
+            return 1
+
+        return min(9, max(0, level))
 
     def _figure_axis(self):
         if self._figure is None or self._axis is None:

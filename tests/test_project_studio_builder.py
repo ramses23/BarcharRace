@@ -61,6 +61,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             steps_per_transition=24,
             top_n=8,
             max_visible_bars=8,
+            png_compress_level=0,
             category_styles={
                 "Coal": {
                     "label": "Carbon",
@@ -80,6 +81,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["title"], "Electricity")
         self.assertEqual(loaded["data_source"]["source_label_override"], "Source: Test")
         self.assertEqual(loaded["dataset"]["value_column"], "value")
+        self.assertEqual(loaded["chart"]["png_compress_level"], 0)
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
         self.assertEqual(loaded["categories"]["Coal"]["logo"], "logos/coal.png")
@@ -198,6 +200,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "fps": 12,
                     "steps_per_transition": 6,
                     "max_visible_bars": 5,
+                    "png_compress_level": 3,
                 },
                 "selection": {
                     "top_n": 5,
@@ -237,6 +240,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["steps_per_transition"], 6)
         self.assertEqual(values["top_n"], 5)
         self.assertEqual(values["max_visible_bars"], 5)
+        self.assertEqual(values["png_compress_level"], 3)
         self.assertTrue(values["aggregate_other"])
         self.assertEqual(values["output_file"], "output/custom.mp4")
         self.assertEqual(values["frames_dir"], "output/custom_frames")
@@ -341,6 +345,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             steps_per_transition=24,
             top_n=8,
             max_visible_bars=8,
+            png_compress_level=0,
             category_styles={
                 "Coal": {"label": "Coal"},
                 "Solar": {"color": "#F2C94C", "logo": "logos/solar.png"},

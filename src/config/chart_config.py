@@ -39,6 +39,7 @@ class ChartConfig:
     frame_filename_template: str = "frame_{frame_id:04d}.png"
     frame_file_pattern: str = "frame_*.png"
     ffmpeg_frame_pattern: str = "frame_%04d.png"
+    png_compress_level: int = 1
     video_codec: str = "libx264"
     video_pixel_format: str = "yuv420p"
     video_crf: int | None = 18

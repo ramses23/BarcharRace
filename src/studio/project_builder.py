@@ -139,6 +139,7 @@ def build_project_data(
     steps_per_transition,
     top_n,
     max_visible_bars,
+    png_compress_level=1,
     aggregate_other=False,
     category_styles=None,
     base_project_data=None,
@@ -192,6 +193,12 @@ def build_project_data(
             "fps": fps,
             "steps_per_transition": steps_per_transition,
             "max_visible_bars": max_visible_bars,
+            "png_compress_level": _bounded_int_or_default(
+                png_compress_level,
+                default=1,
+                minimum=0,
+                maximum=9,
+            ),
         }
     )
     selection.update(
@@ -280,6 +287,7 @@ def project_form_values(project_data=None):
         "steps_per_transition": chart.get("steps_per_transition", 24),
         "top_n": selection.get("top_n", 8),
         "max_visible_bars": chart.get("max_visible_bars", 8),
+        "png_compress_level": chart.get("png_compress_level", 1),
         "aggregate_other": selection.get("aggregate_other", False),
         "output_file": chart.get("output_file", paths["output_file"]),
         "frames_dir": chart.get("frames_dir", paths["frames_dir"]),
@@ -370,6 +378,15 @@ def clean_category_styles(category_styles):
             cleaned[raw_name] = cleaned_style
 
     return cleaned
+
+
+def _bounded_int_or_default(value, default, minimum, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    return min(maximum, max(minimum, parsed))
 
 
 def _path_stem(path):

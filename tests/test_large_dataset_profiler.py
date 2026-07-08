@@ -61,6 +61,8 @@ class LargeDatasetProfilerTest(unittest.TestCase):
                 "output/profile.mp4",
                 "--frames-dir",
                 "output/profile_frames",
+                "--png-compress-level",
+                "0",
                 "--video-crf",
                 "24",
                 "--ffmpeg-preset",
@@ -78,6 +80,7 @@ class LargeDatasetProfilerTest(unittest.TestCase):
         self.assertEqual(config.layout_preset, "compact_dashboard")
         self.assertEqual(config.typography_preset, "compact")
         self.assertFalse(config.logos_enabled)
+        self.assertEqual(config.png_compress_level, 0)
         self.assertEqual(config.video_crf, 24)
         self.assertEqual(config.ffmpeg_preset, "slow")
 

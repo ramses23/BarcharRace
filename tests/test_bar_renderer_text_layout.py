@@ -46,6 +46,28 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         finally:
             renderer.close()
 
+    def test_png_save_kwargs_use_configured_compression_level(self):
+        renderer = BarRenderer(config=ChartConfig(png_compress_level=0))
+        fig = plt.figure()
+
+        try:
+            kwargs = renderer._savefig_kwargs(fig, "frame.png")
+
+            self.assertEqual(kwargs["pil_kwargs"]["compress_level"], 0)
+        finally:
+            plt.close(fig)
+
+    def test_png_save_kwargs_clamp_compression_level(self):
+        renderer = BarRenderer(config=ChartConfig(png_compress_level=99))
+        fig = plt.figure()
+
+        try:
+            kwargs = renderer._savefig_kwargs(fig, "frame.png")
+
+            self.assertEqual(kwargs["pil_kwargs"]["compress_level"], 9)
+        finally:
+            plt.close(fig)
+
     def test_reuses_figure_until_closed(self):
         renderer = BarRenderer(config=ChartConfig())
         first_figure, first_axis = renderer._figure_axis()
