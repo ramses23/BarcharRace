@@ -194,6 +194,8 @@ Current configuration layers:
   simple accent differences.
 - Uploaded logo folders are copied under `logos/`, and the copied folder becomes
   the active logo folder for category matching.
+- Category editing displays the first 80 categories for usability, but logo
+  auto-matching uses every category in the dataset.
 
 External project files are the preferred way to define reusable videos.
 The Streamlit editor should remain a convenience layer that creates, opens, and

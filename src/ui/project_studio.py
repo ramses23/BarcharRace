@@ -50,6 +50,7 @@ DEFAULT_CATEGORY_COLORS = (
 )
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_LOGO_FOLDER = "logos"
+CATEGORY_DISPLAY_LIMIT = 80
 LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
 NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
@@ -393,13 +394,15 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
     }
 
     try:
-        categories = category_values(csv_path, name_column)
+        all_categories = category_values(csv_path, name_column, limit=None)
     except (OSError, ValueError) as exc:
         st.error(str(exc))
         return styles
 
-    if not categories:
+    if not all_categories:
         return styles
+
+    visible_categories = all_categories[:CATEGORY_DISPLAY_LIMIT]
 
     with st.expander("Categories"):
         upload_column, logo_folder_column, logo_action_column = st.columns([2, 2, 1])
@@ -432,7 +435,7 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
             )
 
         logo_files = _logo_files(logo_folder)
-        matched_logos = match_category_logos(categories, logo_files)
+        matched_logos = match_category_logos(all_categories, logo_files)
 
         with logo_action_column:
             apply_matched_logos = st.button(
@@ -445,11 +448,16 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
         if matched_logos:
             st.caption(f"{len(matched_logos)} logo matches")
 
+        if len(all_categories) > len(visible_categories):
+            st.caption(
+                f"Showing {len(visible_categories)} of {len(all_categories)} categories"
+            )
+
         if apply_matched_logos:
             for raw_name, logo_path in matched_logos.items():
                 styles.setdefault(raw_name, {})["logo"] = logo_path
 
-        for index, raw_name in enumerate(categories):
+        for index, raw_name in enumerate(visible_categories):
             current_style = styles.get(raw_name, {})
             current_label = current_style.get("label", raw_name)
             current_color = current_style.get("color")

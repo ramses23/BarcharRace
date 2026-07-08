@@ -100,6 +100,20 @@ class ProjectStudioBuilderTest(unittest.TestCase):
 
         self.assertEqual(values, ("Coal", "Solar"))
 
+    def test_extracts_all_category_values_without_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "many_categories.csv"
+            rows = ["year,country,value"]
+            rows.extend(f"2020,Team {index:03d},{index}" for index in range(85))
+            csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+            limited_values = category_values(csv_path, "country")
+            all_values = category_values(csv_path, "country", limit=None)
+
+        self.assertEqual(len(limited_values), 80)
+        self.assertEqual(len(all_values), 85)
+        self.assertEqual(all_values[-1], "Team 084")
+
     def test_extracts_year_values_from_csv(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "electricity.csv"

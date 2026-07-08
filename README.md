@@ -870,6 +870,8 @@ Project Studio can upload a complete logo folder, choose an existing file from
 a logo folder, auto-match files whose names match category names, or upload a
 logo for a category. Uploaded logo folders are copied under `logos/`, and
 category logo paths are referenced from the project JSON.
+Logo auto-matching runs against every category in the dataset, even when the
+category editor only displays the first 80 rows.
 
 Logo behavior is configured in:
 
