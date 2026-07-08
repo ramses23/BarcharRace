@@ -71,9 +71,10 @@ The project is a usable MVP:
   `ChartConfig.png_compress_level` from 0 to 9; the default is 1 to prioritize
   render speed over temporary PNG size. On the real 456-frame national team
   dataset, level 1 produced runs around 149.7s to 159.4s total, with PNG save
-  time still around 121.9s to 128.6s. Treat this as normal run-to-run variance,
-  not a major stable optimization. Before building a direct FFmpeg streaming
-  renderer, test `png_compress_level = 0` explicitly.
+  time still around 121.9s to 128.6s. Level 0 produced about 161.0s total with
+  130.1s in PNG saving. Treat PNG compression changes as a non-solution for
+  this workload; the next meaningful optimization should bypass per-frame PNG
+  file writing, likely by streaming rendered frames directly to FFmpeg.
 - `RenderJob` supports an optional progress callback for UI progress updates.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
