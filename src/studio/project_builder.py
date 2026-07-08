@@ -234,6 +234,27 @@ def project_form_values(project_data=None):
     }
 
 
+def project_defaults_from_csv_path(csv_path):
+    title = project_title_from_csv_path(csv_path)
+    name = project_name_from_title(_path_stem(csv_path))
+    paths = default_project_paths(name)
+
+    return {
+        "name": name,
+        "title": title,
+        "project_file": paths["project_file"],
+        "output_file": paths["output_file"],
+        "frames_dir": paths["frames_dir"],
+    }
+
+
+def project_title_from_csv_path(csv_path):
+    words = re.split(r"[_\-\s]+", _path_stem(csv_path).strip())
+    title = " ".join(_title_word(word) for word in words if word)
+
+    return title or "Bar Chart Project"
+
+
 def project_name_from_title(title):
     slug = re.sub(r"[^a-z0-9]+", "_", str(title).lower())
     slug = slug.strip("_")
@@ -295,6 +316,18 @@ def clean_category_styles(category_styles):
             cleaned[raw_name] = cleaned_style
 
     return cleaned
+
+
+def _path_stem(path):
+    normalized_path = str(path).replace("\\", "/")
+    return Path(normalized_path).stem
+
+
+def _title_word(word):
+    if word.isupper() and len(word) > 1:
+        return word
+
+    return word.capitalize()
 
 
 def _section(project_data, name):

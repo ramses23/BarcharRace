@@ -26,6 +26,7 @@ from studio.project_builder import (
     inspect_csv,
     load_project_data,
     preferred_column,
+    project_defaults_from_csv_path,
     project_form_values,
     project_name_from_title,
     save_project_data,
@@ -47,6 +48,8 @@ DEFAULT_CATEGORY_COLORS = (
     "#BAB0AC",
 )
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
+NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
 
 
 st.set_page_config(
@@ -65,10 +68,13 @@ def main():
     loaded_project_path = st.session_state.get("loaded_project_path")
     values = project_form_values(loaded_project_data)
 
-    csv_path = _csv_source_panel(values)
+    csv_path = _csv_source_panel(values, loaded_project_data)
 
     if not csv_path:
         return
+
+    _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data)
+    values = _project_values_for_csv(values, csv_path, loaded_project_data)
 
     try:
         inspection = inspect_csv(csv_path)
@@ -127,6 +133,8 @@ def _project_source_panel():
 
             st.session_state["loaded_project_data"] = project_data
             st.session_state["loaded_project_path"] = selected_project
+            st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
+            st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
             _refresh_form()
             st.rerun()
 
@@ -134,6 +142,8 @@ def _project_source_panel():
         if st.button("New project", use_container_width=True):
             st.session_state.pop("loaded_project_data", None)
             st.session_state.pop("loaded_project_path", None)
+            st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
+            st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
             _refresh_form()
             st.rerun()
 
@@ -141,17 +151,28 @@ def _project_source_panel():
         st.caption(f"Editing {st.session_state['loaded_project_path']}")
 
 
-def _csv_source_panel(values):
+def _csv_source_panel(values, loaded_project_data):
     st.subheader("Dataset")
     uploaded_file = st.file_uploader("CSV file", type=["csv"])
     default_csv = values["csv_path"]
+
+    if not loaded_project_data:
+        default_csv = st.session_state.get(
+            NEW_PROJECT_CSV_PATH_OVERRIDE_STATE,
+            default_csv,
+        )
 
     if uploaded_file is not None:
         datasets_dir = ROOT_DIR / "data" / "datasets"
         datasets_dir.mkdir(parents=True, exist_ok=True)
         csv_path = datasets_dir / uploaded_file.name
         csv_path.write_bytes(uploaded_file.getbuffer())
-        return str(csv_path.relative_to(ROOT_DIR))
+        csv_path = str(csv_path.relative_to(ROOT_DIR))
+
+        if not loaded_project_data:
+            st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = csv_path
+
+        return csv_path
 
     return st.text_input("CSV path", value=default_csv, key=_widget_key("csv_path"))
 
@@ -331,6 +352,32 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
     )
 
     return project_data, project_file, preview_settings
+
+
+def _project_values_for_csv(values, csv_path, loaded_project_data):
+    if loaded_project_data:
+        return values
+
+    csv_defaults = project_defaults_from_csv_path(csv_path)
+    next_values = dict(values)
+    next_values.update(csv_defaults)
+    next_values["csv_path"] = csv_path
+
+    return next_values
+
+
+def _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data):
+    if loaded_project_data:
+        st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
+        return
+
+    previous_csv_path = st.session_state.get(NEW_PROJECT_CSV_PATH_STATE)
+    st.session_state[NEW_PROJECT_CSV_PATH_STATE] = csv_path
+    st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = csv_path
+
+    if previous_csv_path is not None and previous_csv_path != csv_path:
+        _refresh_form()
+        st.rerun()
 
 
 def _category_styles_panel(csv_path, name_column, existing_styles):

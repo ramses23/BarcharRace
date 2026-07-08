@@ -174,8 +174,9 @@ without editing Python source files.
 
 `Project Studio` is a local Streamlit interface for creating and editing these
 JSON files from a CSV. It can open existing files from `projects/*.json`,
-inspect columns, save a project file, render a selected year or transition
-preview frame, and launch the final video render with visible progress. When it
+inspect columns, derive new-project names and output paths from the selected
+CSV filename, save a project file, render a selected year or transition preview
+frame, and launch the final video render with visible progress. When it
 edits an existing file, it preserves advanced JSON fields that are not exposed
 in the form yet.
 

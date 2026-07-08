@@ -70,6 +70,8 @@ The project is a usable MVP:
 - Project Studio can create new project JSON files and open/edit existing
   `projects/*.json` files while preserving advanced fields that are not exposed
   in the form yet.
+- For new projects, Project Studio derives the title, project name, project JSON
+  path, output MP4 path, and frames directory from the selected CSV filename.
 - Project Studio can render selected-year previews and transition-point
   previews before generating the full video.
 - Project Studio shows render progress while launching a final video render.

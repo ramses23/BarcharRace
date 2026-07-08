@@ -12,6 +12,7 @@ from studio.project_builder import (
     inspect_csv,
     load_project_data,
     preferred_column,
+    project_defaults_from_csv_path,
     project_form_values,
     project_name_from_title,
     save_project_data,
@@ -326,6 +327,26 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(name, "electricity_by_source")
         self.assertEqual(paths["project_file"], "projects/electricity_by_source.json")
         self.assertEqual(paths["output_file"], "output/electricity_by_source.mp4")
+
+    def test_builds_project_defaults_from_csv_path(self):
+        defaults = project_defaults_from_csv_path(
+            "data/datasets/national_team_goals_2005_2024.csv"
+        )
+
+        self.assertEqual(defaults["name"], "national_team_goals_2005_2024")
+        self.assertEqual(defaults["title"], "National Team Goals 2005 2024")
+        self.assertEqual(
+            defaults["project_file"],
+            "projects/national_team_goals_2005_2024.json",
+        )
+        self.assertEqual(
+            defaults["output_file"],
+            "output/national_team_goals_2005_2024.mp4",
+        )
+        self.assertEqual(
+            defaults["frames_dir"],
+            "output/national_team_goals_2005_2024_frames",
+        )
 
     def test_prefers_candidates_before_fallbacks(self):
         self.assertEqual(
