@@ -12,14 +12,18 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from config.layout_config import list_layout_presets
+from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
-from config.theme_config import list_themes
-from config.typography_config import list_typography_presets
+from config.theme_config import get_theme
+from config.typography_config import get_typography_preset
 from config.value_format_config import list_value_formats
 from pipeline.render_job import RenderJob
+from ui.bar_style_editor import bar_style_editor
+from ui.font_picker import font_family_picker
+from ui.text_layout_editor import text_layout_editor
 from studio.preview import render_project_preview
 from studio.project_builder import (
+    BAR_STYLE_FIELDS,
     apply_category_logo_matches,
     build_project_data,
     category_values,
@@ -35,6 +39,7 @@ from studio.project_builder import (
     year_values,
 )
 from config.project_file_loader import load_project_file
+from utils.video_duration import estimate_video_duration, format_video_duration
 
 
 DEFAULT_CATEGORY_COLORS = (
@@ -56,6 +61,8 @@ APPLIED_LOGO_MATCHES_STATE = "applied_logo_matches"
 LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
 NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
+CUSTOM_TEXTURE_PATH_STATE = "custom_bar_texture_path"
+BACKGROUND_IMAGE_PATH_STATE = "background_image_path"
 
 
 st.set_page_config(
@@ -67,14 +74,16 @@ st.set_page_config(
 
 def main():
     st.title("BarChartStudio")
+    st.caption("Build, style, preview, and export animated bar chart races.")
 
-    _project_source_panel()
+    with st.sidebar:
+        _project_source_panel()
 
-    loaded_project_data = st.session_state.get("loaded_project_data")
-    loaded_project_path = st.session_state.get("loaded_project_path")
-    values = project_form_values(loaded_project_data)
+        loaded_project_data = st.session_state.get("loaded_project_data")
+        loaded_project_path = st.session_state.get("loaded_project_path")
+        values = project_form_values(loaded_project_data)
 
-    csv_path = _csv_source_panel(values, loaded_project_data)
+        csv_path = _csv_source_panel(values, loaded_project_data)
 
     if not csv_path:
         return
@@ -88,10 +97,10 @@ def main():
         st.error(str(exc))
         return
 
-    st.caption(f"{inspection.row_count:,} rows")
-
-    preview_df = pd.read_csv(csv_path, nrows=12)
-    st.dataframe(preview_df, use_container_width=True, hide_index=True)
+    with st.expander("Dataset preview"):
+        st.caption(f"{inspection.row_count:,} rows · {len(inspection.columns):,} columns")
+        preview_df = pd.read_csv(csv_path, nrows=12)
+        st.dataframe(preview_df, width="stretch", hide_index=True)
 
     project_data, project_file, preview_settings = _project_form(
         csv_path,
@@ -104,16 +113,17 @@ def main():
     preview_column, render_column = st.columns(2)
 
     with preview_column:
-        if st.button("Render preview", use_container_width=True):
+        if st.button("Render preview", width="stretch"):
             _save_project(project_data, project_file)
             _render_preview(project_file, preview_settings)
 
     with render_column:
-        if st.button("Render video", type="primary", use_container_width=True):
+        if st.button("Render video", type="primary", width="stretch"):
             _save_project(project_data, project_file)
             _render_video(project_file)
 
-    st.json(project_data, expanded=False)
+    with st.expander("Generated project JSON"):
+        st.json(project_data, expanded=True)
 
 
 def _project_source_panel():
@@ -130,7 +140,7 @@ def _project_source_panel():
     load_column, new_column = st.columns(2)
 
     with load_column:
-        if st.button("Load project", use_container_width=True, disabled=not selected_project):
+        if st.button("Load project", width="stretch", disabled=not selected_project):
             try:
                 project_data = load_project_data(ROOT_DIR / selected_project)
             except (OSError, ValueError) as exc:
@@ -146,7 +156,7 @@ def _project_source_panel():
             st.rerun()
 
     with new_column:
-        if st.button("New project", use_container_width=True):
+        if st.button("New project", width="stretch"):
             st.session_state.pop("loaded_project_data", None)
             st.session_state.pop("loaded_project_path", None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
@@ -186,29 +196,173 @@ def _csv_source_panel(values, loaded_project_data):
 
 
 def _project_form(csv_path, inspection, values, loaded_project_data, loaded_project_path):
-    title = st.text_input("Title", value=values["title"], key=_widget_key("title"))
-    project_name = st.text_input(
-        "Project name",
-        value=values["name"] or project_name_from_title(title),
-        key=_widget_key("project_name"),
+    theme, theme_settings = _resolved_theme(values)
+    typography_preset, typography_settings = _resolved_typography(values)
+    data_tab, canvas_tab, bars_tab, animation_tab = st.tabs((
+        "1. Data & content",
+        "2. Canvas & text",
+        "3. Bars & categories",
+        "4. Animation & output",
+    ))
+
+    with data_tab:
+        data_settings = _data_content_section(csv_path, inspection, values)
+
+    paths = default_project_paths(data_settings["project_name"])
+
+    with canvas_tab:
+        canvas_settings = _canvas_text_section(
+            values=values,
+            title=data_settings["title"],
+            source_label=data_settings["source_label"],
+            theme_settings=theme_settings,
+            typography_settings=typography_settings,
+        )
+
+    with bars_tab:
+        bars_settings = _bars_categories_section(
+            csv_path=csv_path,
+            name_column=data_settings["name_column"],
+            values=values,
+            theme_settings=theme_settings,
+            background_color=canvas_settings["background"]["color"],
+        )
+
+    with animation_tab:
+        render_settings = _animation_output_section(
+            csv_path=csv_path,
+            year_column=data_settings["year_column"],
+            available_years=data_settings["available_years"],
+            values=values,
+            paths=paths,
+            loaded_project_path=loaded_project_path,
+        )
+
+    project_data = build_project_data(
+        name=data_settings["project_name"],
+        csv_path=csv_path,
+        year_column=data_settings["year_column"],
+        name_column=data_settings["name_column"],
+        value_column=data_settings["value_column"],
+        title=data_settings["title"],
+        source_label=data_settings["source_label"],
+        output_file=render_settings["output_file"],
+        frames_dir=render_settings["frames_dir"],
+        layout_preset=canvas_settings["layout_preset"],
+        theme=theme,
+        background_mode=canvas_settings["background"]["mode"],
+        background_color_override=canvas_settings["background"]["color"],
+        background_image_path=canvas_settings["background"]["image_path"],
+        background_image_fit=canvas_settings["background"]["image_fit"],
+        typography_preset=typography_preset,
+        value_format=bars_settings["value_format"],
+        fps=render_settings["fps"],
+        steps_per_transition=render_settings["steps"],
+        top_n=bars_settings["top_n"],
+        max_visible_bars=canvas_settings["max_visible"],
+        png_compress_level=render_settings["png_compress_level"],
+        frame_output_mode=render_settings["frame_output_mode"],
+        motion_mode=render_settings["motion_mode"],
+        bar_style=bars_settings["bar_style"],
+        title_font_family=canvas_settings["title_font_family"],
+        subtitle_font_family=canvas_settings["subtitle_font_family"],
+        label_font_family=canvas_settings["label_font_family"],
+        value_font_family=canvas_settings["value_font_family"],
+        time_label_font_family=canvas_settings["time_label_font_family"],
+        source_font_family=canvas_settings["source_font_family"],
+        rank_label_font_family=canvas_settings["rank_label_font_family"],
+        title_text_color=canvas_settings["title_text_color"],
+        subtitle_text_color=canvas_settings["subtitle_text_color"],
+        label_text_color=canvas_settings["label_text_color"],
+        value_text_color=canvas_settings["value_text_color"],
+        time_label_text_color=canvas_settings["time_label_text_color"],
+        source_text_color=canvas_settings["source_text_color"],
+        rank_label_text_color=canvas_settings["rank_label_text_color"],
+        title_font_size=canvas_settings["title_font_size"],
+        subtitle_font_size=canvas_settings["subtitle_font_size"],
+        label_font_size=canvas_settings["label_font_size"],
+        value_font_size=canvas_settings["value_font_size"],
+        time_label_font_size=canvas_settings["time_label_font_size"],
+        source_font_size=canvas_settings["source_font_size"],
+        rank_label_font_size=canvas_settings["rank_label_font_size"],
+        title_x=canvas_settings["title_x"],
+        title_y=canvas_settings["title_y"],
+        subtitle_x=canvas_settings["subtitle_x"],
+        subtitle_y=canvas_settings["subtitle_y"],
+        time_label_x=canvas_settings["time_label_x"],
+        time_label_y=canvas_settings["time_label_y"],
+        source_x=canvas_settings["source_x"],
+        source_y=canvas_settings["source_y"],
+        aggregate_other=bars_settings["aggregate_other"],
+        category_styles=bars_settings["category_styles"],
+        base_project_data=loaded_project_data,
     )
-    paths = default_project_paths(project_name)
 
-    dataset_column, visual_column, render_column = st.columns(3)
+    return (
+        project_data,
+        render_settings["project_file"],
+        render_settings["preview_settings"],
+    )
 
-    with dataset_column:
+
+def _resolved_theme(values):
+    theme = values.get("theme") or "clean_report"
+
+    try:
+        return theme, get_theme(theme)
+    except ValueError:
+        return "clean_report", get_theme("clean_report")
+
+
+def _resolved_typography(values):
+    typography = values.get("typography_preset") or "editorial"
+
+    try:
+        return typography, get_typography_preset(typography)
+    except ValueError:
+        return "editorial", get_typography_preset("editorial")
+
+
+def _data_content_section(csv_path, inspection, values):
+    st.caption("Name the project, map the CSV columns, and define source text.")
+    title_column, name_column_widget = st.columns((2, 1))
+
+    with title_column:
+        title = st.text_input(
+            "Video title",
+            value=values["title"],
+            key=_widget_key("title"),
+        )
+
+    with name_column_widget:
+        project_name = st.text_input(
+            "Project name",
+            value=values["name"] or project_name_from_title(title),
+            key=_widget_key("project_name"),
+        )
+
+    st.markdown("##### Column mapping")
+    year_field, category_field, value_field = st.columns(3)
+
+    with year_field:
         year_column = st.selectbox(
-            "Year column",
+            "Time column",
             inspection.columns,
             index=_column_index(
                 inspection.columns,
                 values["year_column"]
-                or preferred_column(inspection.year_candidates, inspection.columns, "year"),
+                or preferred_column(
+                    inspection.year_candidates,
+                    inspection.columns,
+                    "year",
+                ),
             ),
             key=_widget_key("year_column"),
         )
+
+    with category_field:
         name_column = st.selectbox(
-            "Name column",
+            "Category column",
             inspection.columns,
             index=_column_index(
                 inspection.columns,
@@ -221,46 +375,381 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             ),
             key=_widget_key("name_column"),
         )
+
+    with value_field:
         value_column = st.selectbox(
             "Value column",
             inspection.columns,
             index=_column_index(
                 inspection.columns,
                 values["value_column"]
-                or preferred_column(inspection.value_candidates, inspection.columns, "value"),
+                or preferred_column(
+                    inspection.value_candidates,
+                    inspection.columns,
+                    "value",
+                ),
             ),
             key=_widget_key("value_column"),
         )
-        source_label = st.text_input(
-            "Source label",
-            value=values["source_label"],
-            key=_widget_key("source_label"),
-        )
 
-    with visual_column:
-        layouts = list_layout_presets()
-        themes = list_themes()
-        typographies = list_typography_presets()
-        value_formats = list_value_formats()
+    source_label = st.text_input(
+        "Source text",
+        value=values["source_label"],
+        key=_widget_key("source_label"),
+    )
 
+    try:
+        available_years = year_values(csv_path, year_column)
+    except (OSError, ValueError) as exc:
+        st.error(str(exc))
+        available_years = ()
+
+    row_metric, period_metric, column_metric = st.columns(3)
+    row_metric.metric("Rows", f"{inspection.row_count:,}")
+    period_metric.metric("Time periods", f"{len(available_years):,}")
+    column_metric.metric("Columns", f"{len(inspection.columns):,}")
+
+    return {
+        "title": title,
+        "project_name": project_name,
+        "year_column": year_column,
+        "name_column": name_column,
+        "value_column": value_column,
+        "source_label": source_label,
+        "available_years": available_years,
+    }
+
+
+def _canvas_text_section(
+    *,
+    values,
+    title,
+    source_label,
+    theme_settings,
+    typography_settings,
+):
+    st.caption("Configure the canvas, background, fonts, sizes, and text placement.")
+    layout_column, visible_column = st.columns(2)
+    layouts = list_layout_presets()
+
+    with layout_column:
         layout_preset = st.selectbox(
-            "Layout",
+            "Canvas layout",
             layouts,
             index=_option_index(layouts, values["layout_preset"]),
             key=_widget_key("layout_preset"),
         )
-        theme = st.selectbox(
-            "Theme",
-            themes,
-            index=_option_index(themes, values["theme"]),
-            key=_widget_key("theme"),
+
+    with visible_column:
+        max_visible = st.number_input(
+            "Visible bar slots",
+            min_value=1,
+            max_value=100,
+            value=_positive_int_or_default(values["max_visible_bars"], 8),
+            step=1,
+            help="Maximum number of rows fitted into the selected canvas.",
+            key=_widget_key("max_visible"),
         )
-        typography_preset = st.selectbox(
-            "Typography",
-            typographies,
-            index=_option_index(typographies, values["typography_preset"]),
-            key=_widget_key("typography_preset"),
+
+    layout_settings = get_layout_preset(layout_preset)
+    background = _background_panel(values, theme_settings.background_color)
+
+    with st.expander("Fonts", expanded=True):
+        st.caption("Project default inherits the base font; each element can override it.")
+        font_column_a, font_column_b, font_column_c = st.columns(3)
+
+        with font_column_a:
+            title_font_family = font_family_picker(
+                "Title font",
+                values["title_font_family"],
+                _widget_key("title_font_family"),
+            )
+            subtitle_font_family = font_family_picker(
+                "Subtitle font",
+                values["subtitle_font_family"],
+                _widget_key("subtitle_font_family"),
+            )
+            time_label_font_family = font_family_picker(
+                "Date font",
+                values["time_label_font_family"],
+                _widget_key("time_label_font_family"),
+            )
+
+        with font_column_b:
+            label_font_family = font_family_picker(
+                "Category font",
+                values["label_font_family"],
+                _widget_key("label_font_family"),
+            )
+            value_font_family = font_family_picker(
+                "Value font",
+                values["value_font_family"],
+                _widget_key("value_font_family"),
+            )
+
+        with font_column_c:
+            rank_label_font_family = font_family_picker(
+                "Ranking font",
+                values["rank_label_font_family"],
+                _widget_key("rank_label_font_family"),
+            )
+            source_font_family = font_family_picker(
+                "Source font",
+                values["source_font_family"],
+                _widget_key("source_font_family"),
+            )
+
+    with st.expander("Text sizes"):
+        st.caption("Sizes use points and update the placement editor.")
+        size_column_a, size_column_b, size_column_c, size_column_d = st.columns(4)
+
+        with size_column_a:
+            title_font_size = _font_size_input(
+                "Title size",
+                values["title_font_size"],
+                typography_settings.title_font_size,
+                _widget_key("title_font_size"),
+            )
+            subtitle_font_size = _font_size_input(
+                "Subtitle size",
+                values["subtitle_font_size"],
+                typography_settings.subtitle_font_size,
+                _widget_key("subtitle_font_size"),
+            )
+
+        with size_column_b:
+            label_font_size = _font_size_input(
+                "Category size",
+                values["label_font_size"],
+                typography_settings.label_font_size,
+                _widget_key("label_font_size"),
+            )
+            value_font_size = _font_size_input(
+                "Value size",
+                values["value_font_size"],
+                typography_settings.value_font_size,
+                _widget_key("value_font_size"),
+            )
+
+        with size_column_c:
+            time_label_font_size = _font_size_input(
+                "Date size",
+                values["time_label_font_size"],
+                typography_settings.time_label_font_size,
+                _widget_key("time_label_font_size"),
+            )
+            source_font_size = _font_size_input(
+                "Source size",
+                values["source_font_size"],
+                typography_settings.source_font_size,
+                _widget_key("source_font_size"),
+            )
+
+        with size_column_d:
+            rank_label_font_size = _font_size_input(
+                "Ranking size",
+                values["rank_label_font_size"],
+                18,
+                _widget_key("rank_label_font_size"),
+            )
+
+    with st.expander("Text colors"):
+        st.caption("Each text element can override the colors inherited from the project.")
+        color_column_a, color_column_b, color_column_c, color_column_d = st.columns(4)
+
+        with color_column_a:
+            title_text_color = st.color_picker(
+                "Title color",
+                value=_color_or_default(
+                    values["title_text_color"],
+                    theme_settings.text_color,
+                ),
+                key=_widget_key("title_text_color"),
+            )
+            subtitle_text_color = st.color_picker(
+                "Subtitle color",
+                value=_color_or_default(
+                    values["subtitle_text_color"],
+                    theme_settings.muted_text_color,
+                ),
+                key=_widget_key("subtitle_text_color"),
+            )
+
+        with color_column_b:
+            label_text_color = st.color_picker(
+                "Category color",
+                value=_color_or_default(
+                    values["label_text_color"],
+                    theme_settings.text_color,
+                ),
+                key=_widget_key("label_text_color"),
+            )
+            value_text_color = st.color_picker(
+                "Value color",
+                value=_color_or_default(
+                    values["value_text_color"],
+                    theme_settings.muted_text_color,
+                ),
+                key=_widget_key("value_text_color"),
+            )
+
+        with color_column_c:
+            time_label_text_color = st.color_picker(
+                "Date color",
+                value=_color_or_default(
+                    values["time_label_text_color"],
+                    theme_settings.muted_text_color,
+                ),
+                key=_widget_key("time_label_text_color"),
+            )
+            source_text_color = st.color_picker(
+                "Source color",
+                value=_color_or_default(
+                    values["source_text_color"],
+                    theme_settings.muted_text_color,
+                ),
+                key=_widget_key("source_text_color"),
+            )
+
+        with color_column_d:
+            rank_label_text_color = st.color_picker(
+                "Ranking color",
+                value=_color_or_default(
+                    values["rank_label_text_color"],
+                    theme_settings.muted_text_color,
+                ),
+                key=_widget_key("rank_label_text_color"),
+            )
+
+    with st.expander("Text placement"):
+        position_values = text_layout_editor(
+            canvas_width=layout_settings.width,
+            canvas_height=layout_settings.height,
+            dpi=values["dpi"],
+            positions={
+                "title": {
+                    "x": values["title_x"] if values["title_x"] is not None else layout_settings.left_margin,
+                    "y": values["title_y"] if values["title_y"] is not None else layout_settings.title_y,
+                },
+                "subtitle": {
+                    "x": values["subtitle_x"] if values["subtitle_x"] is not None else layout_settings.left_margin,
+                    "y": values["subtitle_y"] if values["subtitle_y"] is not None else layout_settings.subtitle_y,
+                },
+                "date": {
+                    "x": values["time_label_x"] if values["time_label_x"] is not None else layout_settings.time_label_x,
+                    "y": values["time_label_y"] if values["time_label_y"] is not None else layout_settings.time_label_y,
+                },
+                "source": {
+                    "x": values["source_x"] if values["source_x"] is not None else layout_settings.source_x,
+                    "y": values["source_y"] if values["source_y"] is not None else layout_settings.source_y,
+                },
+            },
+            preset_positions={
+                "title": {"x": layout_settings.left_margin, "y": layout_settings.title_y},
+                "subtitle": {"x": layout_settings.left_margin, "y": layout_settings.subtitle_y},
+                "date": {"x": layout_settings.time_label_x, "y": layout_settings.time_label_y},
+                "source": {"x": layout_settings.source_x, "y": layout_settings.source_y},
+            },
+            elements={
+                "title": {
+                    "label": "Title",
+                    "text": title or "Title",
+                    "font_family": title_font_family,
+                    "font_size": int(title_font_size),
+                    "font_weight": typography_settings.title_font_weight,
+                    "color": title_text_color,
+                },
+                "subtitle": {
+                    "label": "Subtitle",
+                    "text": "Period A -> Period B",
+                    "font_family": subtitle_font_family,
+                    "font_size": int(subtitle_font_size),
+                    "font_weight": typography_settings.subtitle_font_weight,
+                    "color": subtitle_text_color,
+                },
+                "date": {
+                    "label": "Date",
+                    "text": "2024",
+                    "font_family": time_label_font_family,
+                    "font_size": int(time_label_font_size),
+                    "font_weight": typography_settings.time_label_font_weight,
+                    "color": time_label_text_color,
+                    "opacity": 0.22,
+                },
+                "source": {
+                    "label": "Source",
+                    "text": source_label or "Source",
+                    "font_family": source_font_family,
+                    "font_size": int(source_font_size),
+                    "font_weight": typography_settings.source_font_weight,
+                    "color": source_text_color,
+                },
+            },
+            theme={
+                "background_color": background["color"],
+                "font_family": theme_settings.font_family,
+                "bar_color": theme_settings.bar_palette[0],
+            },
+            layout={
+                "left_margin": layout_settings.left_margin,
+                "right_margin": layout_settings.right_margin,
+                "top_margin": layout_settings.top_margin,
+                "bottom_margin": layout_settings.bottom_margin,
+                "bar_height": layout_settings.bar_height,
+                "bar_count": int(max_visible),
+            },
+            key=_widget_key("text_layout_editor"),
         )
+
+    return {
+        "layout_preset": layout_preset,
+        "max_visible": int(max_visible),
+        "background": background,
+        "title_font_family": title_font_family,
+        "subtitle_font_family": subtitle_font_family,
+        "label_font_family": label_font_family,
+        "value_font_family": value_font_family,
+        "time_label_font_family": time_label_font_family,
+        "source_font_family": source_font_family,
+        "rank_label_font_family": rank_label_font_family,
+        "title_text_color": title_text_color,
+        "subtitle_text_color": subtitle_text_color,
+        "label_text_color": label_text_color,
+        "value_text_color": value_text_color,
+        "time_label_text_color": time_label_text_color,
+        "source_text_color": source_text_color,
+        "rank_label_text_color": rank_label_text_color,
+        "title_font_size": int(title_font_size),
+        "subtitle_font_size": int(subtitle_font_size),
+        "label_font_size": int(label_font_size),
+        "value_font_size": int(value_font_size),
+        "time_label_font_size": int(time_label_font_size),
+        "source_font_size": int(source_font_size),
+        "rank_label_font_size": int(rank_label_font_size),
+        "title_x": int(position_values["title"]["x"]),
+        "title_y": int(position_values["title"]["y"]),
+        "subtitle_x": int(position_values["subtitle"]["x"]),
+        "subtitle_y": int(position_values["subtitle"]["y"]),
+        "time_label_x": int(position_values["date"]["x"]),
+        "time_label_y": int(position_values["date"]["y"]),
+        "source_x": int(position_values["source"]["x"]),
+        "source_y": int(position_values["source"]["y"]),
+    }
+
+
+def _bars_categories_section(
+    *,
+    csv_path,
+    name_column,
+    values,
+    theme_settings,
+    background_color,
+):
+    st.caption("Control ranking, number formatting, bar materials, icons, and categories.")
+    format_column, ranking_column, aggregate_column = st.columns(3)
+    value_formats = list_value_formats()
+
+    with format_column:
         value_format = st.selectbox(
             "Value format",
             value_formats,
@@ -268,7 +757,64 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             key=_widget_key("value_format"),
         )
 
-    with render_column:
+    with ranking_column:
+        top_n = st.number_input(
+            "Top N categories",
+            min_value=1,
+            max_value=100,
+            value=_positive_int_or_default(values["top_n"], 8),
+            step=1,
+            help="Categories selected from the data before layout.",
+            key=_widget_key("top_n"),
+        )
+
+    with aggregate_column:
+        aggregate_other = st.checkbox(
+            "Group remaining as Other",
+            value=bool(values["aggregate_other"]),
+            key=_widget_key("aggregate_other"),
+        )
+
+    with st.expander("Bar appearance", expanded=True):
+        st.caption(
+            "Shape, material, icon placement, label alignment, borders, and effects."
+        )
+        bar_style = bar_style_editor(
+            settings=_bar_style_settings(values),
+            bar_colors=theme_settings.bar_palette,
+            background_color=background_color,
+            key=_widget_key("bar_style_editor"),
+        )
+        bar_style = _custom_texture_upload(bar_style)
+
+    category_styles = _category_styles_panel(
+        csv_path=csv_path,
+        name_column=name_column,
+        existing_styles=values["categories"],
+    )
+
+    return {
+        "value_format": value_format,
+        "top_n": int(top_n),
+        "aggregate_other": aggregate_other,
+        "bar_style": bar_style,
+        "category_styles": category_styles,
+    }
+
+
+def _animation_output_section(
+    *,
+    csv_path,
+    year_column,
+    available_years,
+    values,
+    paths,
+    loaded_project_path,
+):
+    st.caption("Set motion timing, review playback duration, and choose output files.")
+    fps_column, steps_column, motion_column = st.columns(3)
+
+    with fps_column:
         fps = st.number_input(
             "FPS",
             min_value=1,
@@ -277,6 +823,8 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             step=1,
             key=_widget_key("fps"),
         )
+
+    with steps_column:
         steps = st.number_input(
             "Steps per transition",
             min_value=1,
@@ -285,95 +833,105 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             step=1,
             key=_widget_key("steps"),
         )
-        top_n = st.number_input(
-            "Top N",
-            min_value=1,
-            max_value=100,
-            value=_positive_int_or_default(values["top_n"], 8),
-            step=1,
-            key=_widget_key("top_n"),
-        )
-        max_visible = st.number_input(
-            "Visible bars",
-            min_value=1,
-            max_value=100,
-            value=_positive_int_or_default(values["max_visible_bars"], 8),
-            step=1,
-            key=_widget_key("max_visible"),
-        )
-        png_compress_level = st.number_input(
-            "PNG compression",
-            min_value=0,
-            max_value=9,
-            value=_int_in_range_or_default(
-                values["png_compress_level"],
-                default=1,
-                minimum=0,
-                maximum=9,
-            ),
-            step=1,
-            key=_widget_key("png_compress_level"),
-        )
-        aggregate_other = st.checkbox(
-            "Aggregate hidden bars",
-            value=bool(values["aggregate_other"]),
-            key=_widget_key("aggregate_other"),
+
+    with motion_column:
+        motion_mode = st.selectbox(
+            "Motion mode",
+            options=("transition_easing", "continuous"),
+            index=0 if values["motion_mode"] == "transition_easing" else 1,
+            format_func=lambda mode: {
+                "transition_easing": "Per-period easing",
+                "continuous": "Continuous",
+            }[mode],
+            key=_widget_key("motion_mode"),
         )
 
-    category_styles = _category_styles_panel(
-        csv_path=csv_path,
-        name_column=name_column,
-        existing_styles=values["categories"],
-    )
-
-    output_column, project_column = st.columns(2)
-
-    with output_column:
-        output_file = st.text_input(
-            "Output MP4",
-            value=values["output_file"] or paths["output_file"],
-            key=_widget_key("output_file"),
+    with st.container(border=True):
+        _show_video_duration_estimate(
+            period_count=len(available_years),
+            fps=int(fps),
+            steps_per_transition=int(steps),
+            motion_mode=motion_mode,
         )
+
+    with st.expander("Export settings"):
+        output_mode_column, compression_column = st.columns(2)
+
+        with output_mode_column:
+            frame_output_mode = st.selectbox(
+                "Frame output mode",
+                options=("ffmpeg_stream", "png_sequence"),
+                index=1 if values["frame_output_mode"] == "png_sequence" else 0,
+                format_func=lambda mode: {
+                    "png_sequence": "PNG sequence",
+                    "ffmpeg_stream": "Direct FFmpeg stream (recommended)",
+                }[mode],
+                key=_widget_key("frame_output_mode"),
+            )
+
+        with compression_column:
+            png_compress_level = st.number_input(
+                "PNG compression",
+                min_value=0,
+                max_value=9,
+                value=_int_in_range_or_default(
+                    values["png_compress_level"],
+                    default=1,
+                    minimum=0,
+                    maximum=9,
+                ),
+                step=1,
+                disabled=frame_output_mode == "ffmpeg_stream",
+                help="Only used when frames are saved as a PNG sequence.",
+                key=_widget_key("png_compress_level"),
+            )
+
+    with st.expander("Output files", expanded=True):
+        output_column, project_column = st.columns(2)
+
+        with output_column:
+            output_file = st.text_input(
+                "Output MP4",
+                value=values["output_file"] or paths["output_file"],
+                key=_widget_key("output_file"),
+            )
+
+        with project_column:
+            project_file = st.text_input(
+                "Project JSON",
+                value=(
+                    loaded_project_path
+                    or values["project_file"]
+                    or paths["project_file"]
+                ),
+                key=_widget_key("project_file"),
+            )
+
         frames_dir = st.text_input(
             "Frames directory",
             value=values["frames_dir"] or paths["frames_dir"],
+            disabled=frame_output_mode == "ffmpeg_stream",
+            help="Only used when frames are saved as a PNG sequence.",
             key=_widget_key("frames_dir"),
         )
 
-    with project_column:
-        project_file = st.text_input(
-            "Project JSON",
-            value=loaded_project_path or values["project_file"] or paths["project_file"],
-            key=_widget_key("project_file"),
-        )
-
-    preview_settings = _preview_controls(csv_path, year_column)
-
-    project_data = build_project_data(
-        name=project_name,
-        csv_path=csv_path,
-        year_column=year_column,
-        name_column=name_column,
-        value_column=value_column,
-        title=title,
-        source_label=source_label,
-        output_file=output_file,
-        frames_dir=frames_dir,
-        layout_preset=layout_preset,
-        theme=theme,
-        typography_preset=typography_preset,
-        value_format=value_format,
-        fps=int(fps),
-        steps_per_transition=int(steps),
-        top_n=int(top_n),
-        max_visible_bars=int(max_visible),
-        png_compress_level=int(png_compress_level),
-        aggregate_other=aggregate_other,
-        category_styles=category_styles,
-        base_project_data=loaded_project_data,
+    preview_settings = _preview_controls(
+        csv_path,
+        year_column,
+        years=available_years,
     )
 
-    return project_data, project_file, preview_settings
+    return {
+        "fps": int(fps),
+        "steps": int(steps),
+        "motion_mode": motion_mode,
+        "frame_output_mode": frame_output_mode,
+        "png_compress_level": int(png_compress_level),
+        "output_file": output_file,
+        "frames_dir": frames_dir,
+        "project_file": project_file,
+        "preview_settings": preview_settings,
+    }
 
 
 def _project_values_for_csv(values, csv_path, loaded_project_data):
@@ -463,7 +1021,7 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
         with logo_action_column:
             apply_matched_logos = st.button(
                 "Apply matched logos",
-                use_container_width=True,
+                width="stretch",
                 disabled=not matched_logos,
                 key=_widget_key("apply_matched_logos"),
             )
@@ -585,14 +1143,210 @@ def _applied_logo_matches(match_context):
 def _clear_logo_session_overrides():
     st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
     st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
+    st.session_state.pop(CUSTOM_TEXTURE_PATH_STATE, None)
+    st.session_state.pop(BACKGROUND_IMAGE_PATH_STATE, None)
 
 
-def _preview_controls(csv_path, year_column):
-    try:
-        years = year_values(csv_path, year_column)
-    except (OSError, ValueError) as exc:
-        st.error(str(exc))
-        years = ()
+def _background_panel(values, theme_background_color):
+    mode_options = ("color", "image")
+    current_mode = values.get("background_mode", "color")
+
+    if current_mode not in mode_options:
+        current_mode = "color"
+
+    current_color = (
+        values.get("background_color_override")
+        or theme_background_color
+    )
+
+    if not (
+        isinstance(current_color, str)
+        and len(current_color) == 7
+        and current_color.startswith("#")
+        and all(
+            character in "0123456789abcdefABCDEF"
+            for character in current_color[1:]
+        )
+    ):
+        current_color = theme_background_color
+    current_image_path = (
+        st.session_state.get(BACKGROUND_IMAGE_PATH_STATE)
+        or values.get("background_image_path")
+        or ""
+    )
+
+    with st.expander("Background"):
+        mode = st.segmented_control(
+            "Background type",
+            options=mode_options,
+            default=current_mode,
+            format_func=lambda value: {
+                "color": "Color",
+                "image": "Image",
+            }[value],
+            key=_widget_key("background_mode"),
+        ) or current_mode
+        color = st.color_picker(
+            "Background color",
+            value=current_color,
+            help="Used directly in Color mode and behind image margins or transparency.",
+            key=_widget_key("background_color"),
+        )
+        image_fit = st.selectbox(
+            "Image fit",
+            options=("cover", "contain", "stretch"),
+            index=_option_index(
+                ("cover", "contain", "stretch"),
+                values.get("background_image_fit", "cover"),
+            ),
+            format_func=lambda value: {
+                "cover": "Cover",
+                "contain": "Contain",
+                "stretch": "Stretch",
+            }[value],
+            disabled=mode != "image",
+            key=_widget_key("background_image_fit"),
+        )
+
+        if mode == "image":
+            image_path_widget_key = _widget_key("background_image_path")
+            uploaded_background = st.file_uploader(
+                "Upload background image",
+                type=["png", "jpg", "jpeg", "webp"],
+                key=_widget_key("background_image_upload"),
+            )
+
+            if uploaded_background is not None:
+                source_name = Path(uploaded_background.name).name
+                suffix = Path(source_name).suffix.lower()
+                safe_stem = (
+                    _safe_filename_key(Path(source_name).stem)
+                    or "background"
+                )
+                background_dir = ROOT_DIR / "backgrounds"
+                background_dir.mkdir(parents=True, exist_ok=True)
+                background_path = background_dir / f"{safe_stem}{suffix}"
+                background_path.write_bytes(uploaded_background.getbuffer())
+                current_image_path = _project_relative_path(background_path)
+                st.session_state[BACKGROUND_IMAGE_PATH_STATE] = current_image_path
+                st.session_state[image_path_widget_key] = current_image_path
+
+            image_path_input_kwargs = {"key": image_path_widget_key}
+
+            if image_path_widget_key not in st.session_state:
+                image_path_input_kwargs["value"] = current_image_path
+
+            current_image_path = st.text_input(
+                "Background image path",
+                **image_path_input_kwargs,
+            ).strip()
+
+            if current_image_path:
+                st.caption(f"Background image: {current_image_path}")
+                preview_path = Path(current_image_path)
+
+                if not preview_path.is_absolute():
+                    preview_path = ROOT_DIR / preview_path
+
+                if preview_path.is_file():
+                    st.image(str(preview_path), width=320)
+                else:
+                    st.warning("The selected background image could not be found.")
+            else:
+                st.info("Upload an image or enter its path.")
+        elif current_image_path:
+            st.caption("The selected image is preserved for switching back to Image mode.")
+
+    return {
+        "mode": mode,
+        "color": color,
+        "image_path": current_image_path or None,
+        "image_fit": image_fit,
+    }
+
+
+def _show_video_duration_estimate(
+    *,
+    period_count,
+    fps,
+    steps_per_transition,
+    motion_mode,
+):
+    estimate = estimate_video_duration(
+        period_count=period_count,
+        steps_per_transition=steps_per_transition,
+        fps=fps,
+        continuous_motion=motion_mode == "continuous",
+    )
+    st.metric(
+        "Estimated video duration",
+        format_video_duration(estimate.duration_seconds),
+    )
+
+    if estimate.transition_count == 0:
+        st.caption("At least two time periods are required to create a video.")
+        return estimate
+
+    st.caption(
+        f"{estimate.period_count:,} periods · "
+        f"{estimate.transition_count:,} transitions · "
+        f"{estimate.frame_count:,} frames at {estimate.fps:,} FPS. "
+        "This is video runtime, not rendering time."
+    )
+    return estimate
+
+
+def _bar_style_settings(values):
+    settings = {field: values[field] for field in BAR_STYLE_FIELDS}
+    custom_texture_path = st.session_state.get(CUSTOM_TEXTURE_PATH_STATE)
+
+    if custom_texture_path:
+        settings["bar_texture_custom_image"] = custom_texture_path
+
+    return settings
+
+
+def _custom_texture_upload(bar_style):
+    if (
+        bar_style["bar_appearance_mode"] != "advanced"
+        or bar_style["bar_texture_preset"] != "custom_image"
+    ):
+        st.session_state.pop(CUSTOM_TEXTURE_PATH_STATE, None)
+        return bar_style
+
+    uploaded_texture = st.file_uploader(
+        "Upload custom bar texture",
+        type=["png", "jpg", "jpeg", "webp"],
+        key=_widget_key("custom_bar_texture_upload"),
+    )
+
+    if uploaded_texture is not None:
+        source_name = Path(uploaded_texture.name).name
+        suffix = Path(source_name).suffix.lower()
+        safe_stem = _safe_filename_key(Path(source_name).stem) or "bar_texture"
+        texture_dir = ROOT_DIR / "textures"
+        texture_dir.mkdir(parents=True, exist_ok=True)
+        texture_path = texture_dir / f"{safe_stem}{suffix}"
+        texture_path.write_bytes(uploaded_texture.getbuffer())
+        relative_path = _project_relative_path(texture_path)
+        st.session_state[CUSTOM_TEXTURE_PATH_STATE] = relative_path
+        bar_style["bar_texture_custom_image"] = relative_path
+        st.caption(f"Custom texture: {relative_path}")
+    elif st.session_state.get(CUSTOM_TEXTURE_PATH_STATE):
+        bar_style["bar_texture_custom_image"] = st.session_state[
+            CUSTOM_TEXTURE_PATH_STATE
+        ]
+
+    return bar_style
+
+
+def _preview_controls(csv_path, year_column, years=None):
+    if years is None:
+        try:
+            years = year_values(csv_path, year_column)
+        except (OSError, ValueError) as exc:
+            st.error(str(exc))
+            years = ()
 
     if not years:
         return {
@@ -657,7 +1411,7 @@ def _render_preview(project_file, preview_settings):
         st.error(str(exc))
         return
 
-    st.image(preview_path, use_container_width=True)
+    st.image(preview_path, width="stretch")
 
 
 def _render_video(project_file):
@@ -676,7 +1430,7 @@ def _render_video(project_file):
             dataset_config=preset.dataset_config,
             progress_callback=progress_callback,
         ).run()
-    except (ProjectFileError, ValueError, OSError, CalledProcessError) as exc:
+    except (ProjectFileError, ValueError, OSError, RuntimeError, CalledProcessError) as exc:
         progress_bar.empty()
         st.error(str(exc))
         return
@@ -710,11 +1464,11 @@ def _show_render_profile(result):
         _profile_row("Clean frames", profile.cleanup_seconds, total_seconds),
         _profile_row("Precompute sprites", profile.precompute_sprites_seconds, total_seconds),
         _profile_row("Draw frames", profile.draw_frames_seconds, total_seconds),
-        _profile_row("Save PNG frames", profile.save_frames_seconds, total_seconds),
+        _profile_row("Extract / save frames", profile.save_frames_seconds, total_seconds),
         _profile_row("Render overhead", render_overhead_seconds, total_seconds),
         _profile_row("Export MP4", profile.export_video_seconds, total_seconds),
     )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def _profile_row(stage, seconds, total_seconds):
@@ -892,6 +1646,30 @@ def _positive_int_or_default(value, default):
         return default
 
     return value if value >= 1 else default
+
+
+def _font_size_input(label, value, default, key):
+    return st.number_input(
+        label,
+        min_value=1,
+        max_value=500,
+        value=_int_in_range_or_default(value, default, 1, 500),
+        step=1,
+        key=key,
+    )
+
+
+def _color_or_default(value, default):
+    value = str(value or "").strip()
+
+    if (
+        len(value) == 7
+        and value.startswith("#")
+        and all(character in "0123456789abcdefABCDEF" for character in value[1:])
+    ):
+        return value.upper()
+
+    return default
 
 
 def _int_in_range_or_default(value, default, minimum, maximum):

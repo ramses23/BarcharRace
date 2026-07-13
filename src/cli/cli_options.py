@@ -37,6 +37,7 @@ class CliOptions:
     video_crf: int | None = None
     video_bitrate: str | None = None
     ffmpeg_preset: str | None = None
+    frame_output_mode: str | None = None
 
 
 def build_argument_parser():
@@ -174,6 +175,11 @@ def build_argument_parser():
         "--ffmpeg-preset",
         help="Override FFmpeg encoder preset, for example slow.",
     )
+    parser.add_argument(
+        "--frame-output-mode",
+        choices=("png_sequence", "ffmpeg_stream"),
+        help="Write PNG frames or stream raw RGBA frames directly to FFmpeg.",
+    )
 
     return parser
 
@@ -215,6 +221,7 @@ def parse_cli_args(argv):
         video_crf=namespace.video_crf,
         video_bitrate=namespace.video_bitrate,
         ffmpeg_preset=namespace.ffmpeg_preset,
+        frame_output_mode=namespace.frame_output_mode,
     )
 
 
@@ -298,6 +305,9 @@ def apply_cli_overrides(preset, options):
 
     if options.ffmpeg_preset is not None:
         chart_updates["ffmpeg_preset"] = options.ffmpeg_preset
+
+    if options.frame_output_mode is not None:
+        chart_updates["frame_output_mode"] = options.frame_output_mode
 
     if chart_updates:
         chart_config = replace(chart_config, **chart_updates)

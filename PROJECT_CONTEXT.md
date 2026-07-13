@@ -41,13 +41,27 @@ The project is a usable MVP:
 - Title, subtitle, and source labels fit to both configured max widths and
   remaining canvas width.
 - Themes.
+- Per-project color or image backgrounds, with PNG/JPEG/WebP upload and cover,
+  contain, or stretch fitting. Background images are prepared once per render.
 - Reusable layout presets.
 - Auto-fit visible bars to the vertical capacity of the active layout.
 - Configurable typography weights and max widths for title, subtitle, time
   label, and source label.
 - Reusable typography presets.
-- Configurable bar shadows.
-- Configurable bar gradients.
+- Four configurable bar shapes: rectangle, rounded, capsule, and lollipop.
+- Configurable bar borders, shadows, and gradients, exposed through a live
+  appearance editor in Project Studio.
+- Bar appearance has a backward-compatible `simple` mode and an `advanced`
+  material mode. Advanced mode supports multi-direction two/three-color fills,
+  procedural or custom textures, bevel, inner shadow/glow, top/bottom depth,
+  outer glow, shine, row tracks, and independent logo/label/value placement.
+  Logos can be outside-left, inside-left, inside-right, or hidden, with adaptive,
+  circular, rounded, or square masks plus independent padding, background, and
+  border. Lollipop inside-left logos add a circular start socket; inside-right
+  logos occupy the endpoint circle. Legacy `outside`/`inside` values are still
+  accepted. Category label alignment is independent from its position and can
+  be automatic, left, centered, or right within the allocated label area.
+- Projected shadow remains a separate layer from bevel, inner shadow, and glow.
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
@@ -65,7 +79,19 @@ The project is a usable MVP:
   across transitions.
 - Basic per-stage render profiling for larger-dataset tuning, shown in CLI output and Project Studio after video renders.
 - Renderer caches logos already resized to `ChartConfig.logo_size` to avoid repeatedly resampling large image assets per frame.
-- `BarRenderer` reuses a single Matplotlib figure/axis during a render job and clears it between frames to reduce per-frame setup overhead.
+- `BarRenderer` reuses a single Matplotlib figure/axis and a bounded set of bar,
+  shadow, logo, and text artists. Frames update artist properties instead of
+  clearing the axis and rebuilding every artist.
+- Gradient bars are rendered as one reusable `PolyCollection` with a 64-segment
+  baseline per visible bar plus localized curve detail, avoiding a separate
+  bicubic `AxesImage` resample for every bar on every frame.
+- Advanced materials use one persistent clipped `AxesImage` per visible slot.
+  The 256x64 RGBA material is cached by category color, while track, projected
+  shadow, glow, border, logo, and text artists remain reusable. Do not route
+  simple projects through this path; the simple `PolyCollection` is faster.
+  A repeated eight-bar 1080p check measured about 0.0852s/frame for Simple,
+  0.1516s/frame for Advanced Fill, and 0.1672s/frame for the fully layered
+  Advanced sample. Treat the extra cost as an explicit quality tradeoff.
 - Render profiling separates frame drawing time from PNG save time to guide further renderer or exporter optimization.
 - PNG frame save compression is configurable through
   `ChartConfig.png_compress_level` from 0 to 9; the default is 1 to prioritize
@@ -73,8 +99,13 @@ The project is a usable MVP:
   dataset, level 1 produced runs around 149.7s to 159.4s total, with PNG save
   time still around 121.9s to 128.6s. Level 0 produced about 161.0s total with
   130.1s in PNG saving. Treat PNG compression changes as a non-solution for
-  this workload; the next meaningful optimization should bypass per-frame PNG
-  file writing, likely by streaming rendered frames directly to FFmpeg.
+  this workload.
+- `ChartConfig.frame_output_mode="ffmpeg_stream"` bypasses temporary PNG files
+  and sends raw RGBA frames to FFmpeg stdin. On the real 456-frame national-team
+  dataset, streaming reduced the measured total from 151.918s to 114.556s.
+  Reusing Matplotlib artists reduced the same streaming render to 92.622s,
+  and batching gradient bars into a segmented collection reduced it further to
+  54.172s (456 frames at 1920x1080 and 24 FPS).
 - `RenderJob` supports an optional progress callback for UI progress updates.
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
@@ -82,11 +113,38 @@ The project is a usable MVP:
 - Project Studio can create new project JSON files and open/edit existing
   `projects/*.json` files while preserving advanced fields that are not exposed
   in the form yet.
+- Project Studio groups its form into four workflow tabs: `Data & content`,
+  `Canvas & text`, `Bars & categories`, and `Animation & output`. Project and
+  CSV loading live in the sidebar, while dataset previews and advanced panels
+  remain collapsed until needed. The redundant `Theme` and `Typography`
+  selectors are hidden, but their stored values remain compatible with older
+  project files.
 - For new projects, Project Studio derives the title, project name, project JSON
   path, output MP4 path, and frames directory from the selected CSV filename.
 - Project Studio can render selected-year previews and transition-point
   previews before generating the full video.
+- Project Studio exposes font-family selectors for title, subtitle, category
+  labels, values, date, source, and ranking. The selectors use a curated list
+  of up to 30 common installed fonts and render each option in its own family.
+  Each element falls back to the active theme font when its family is null.
+- Project Studio exposes point-size controls for title, subtitle, category,
+  value, date, source, and ranking text. A visual layout editor lets users drag
+  title, subtitle, date, and source on a scaled canvas, nudge with arrow keys,
+  align horizontally, and reset to preset positions. X/Y coordinates remain
+  the persisted format. Unset title/subtitle X coordinates inherit
+  `ChartConfig.left_margin` for backward compatibility.
+- Project Studio exposes independent text colors for title, subtitle, category,
+  value, date, source, and ranking. The optional `*_text_color` fields inherit
+  the legacy theme colors when absent, preserving older project rendering.
+- `AnimationConfig.motion_mode` supports `transition_easing` (legacy default)
+  and `continuous`. Continuous mode uses bounded Catmull-Rom interpolation with
+  neighboring annual keyframes, keeps velocity continuous for persistent bars,
+  preserves eased fades for entries/exits, and emits year-boundary frames once.
 - Project Studio shows render progress while launching a final video render.
+- Project Studio shows the estimated playback duration, transition count, and
+  frame count live from the dataset periods, steps per transition, motion mode,
+  and FPS. The estimate is playback length, not render completion time, and
+  shares its frame-count formula with `RenderJob`.
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
   directly to the output frame.
@@ -125,9 +183,8 @@ JSON project file or ProjectPreset
         -> MotionEngine
         -> Scene
         -> BarRenderer
-        -> PNG frames
-        -> VideoExporter
-        -> MP4
+        -> PNG frames -> VideoExporter -> MP4 (png_sequence, optional fallback)
+        -> RGBA memory -> FFmpeg stdin -> MP4 (ffmpeg_stream, default)
 ```
 
 Important boundaries:
@@ -145,7 +202,8 @@ Important boundaries:
 - `Scene` is the renderer input.
 - `BarRenderer` receives a `Scene`; it should not fetch data or build timeline
   state.
-- `VideoExporter` only exports frames to video.
+- `VideoExporter` exports PNG sequences or opens a raw RGBA FFmpeg stream.
+- `ChartConfig.frame_output_mode` selects `png_sequence` or `ffmpeg_stream`.
 
 ## Model Meanings
 

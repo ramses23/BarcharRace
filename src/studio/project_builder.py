@@ -2,10 +2,21 @@ import copy
 import json
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import pandas as pd
+
+from config.chart_config import ChartConfig
+
+
+_DEFAULT_CHART_CONFIG = ChartConfig()
+BAR_STYLE_FIELDS = tuple(
+    field.name
+    for field in fields(ChartConfig)
+    if field.name.startswith("bar_")
+    and field.name not in ("bar_height", "bar_gap")
+)
 
 
 @dataclass(frozen=True)
@@ -133,6 +144,10 @@ def build_project_data(
     frames_dir,
     layout_preset,
     theme,
+    background_mode="color",
+    background_color_override=None,
+    background_image_path=None,
+    background_image_fit="cover",
     typography_preset,
     value_format,
     fps,
@@ -140,6 +155,49 @@ def build_project_data(
     top_n,
     max_visible_bars,
     png_compress_level=1,
+    frame_output_mode="ffmpeg_stream",
+    bar_shape=None,
+    bar_gradient_enabled=None,
+    bar_gradient_lighten=None,
+    bar_border_enabled=None,
+    bar_border_color=None,
+    bar_border_width=None,
+    bar_shadow_enabled=None,
+    bar_shadow_color=None,
+    bar_shadow_alpha=None,
+    bar_shadow_offset_x=None,
+    bar_shadow_offset_y=None,
+    bar_style=None,
+    title_font_family=None,
+    subtitle_font_family=None,
+    label_font_family=None,
+    value_font_family=None,
+    time_label_font_family=None,
+    source_font_family=None,
+    rank_label_font_family=None,
+    title_text_color=None,
+    subtitle_text_color=None,
+    label_text_color=None,
+    value_text_color=None,
+    time_label_text_color=None,
+    source_text_color=None,
+    rank_label_text_color=None,
+    title_font_size=None,
+    subtitle_font_size=None,
+    label_font_size=None,
+    value_font_size=None,
+    time_label_font_size=None,
+    source_font_size=None,
+    rank_label_font_size=None,
+    title_x=None,
+    title_y=None,
+    subtitle_x=None,
+    subtitle_y=None,
+    time_label_x=None,
+    time_label_y=None,
+    source_x=None,
+    source_y=None,
+    motion_mode=None,
     aggregate_other=False,
     category_styles=None,
     base_project_data=None,
@@ -161,7 +219,12 @@ def build_project_data(
                 "value_label_gap": 16,
                 "value_label_min_x": None,
                 "auto_fit_bar_count": True,
+                "bar_shape": "rectangle",
+                "bar_border_enabled": False,
+                "bar_border_color": "#FFFFFF",
+                "bar_border_width": 1.5,
                 "bar_shadow_enabled": True,
+                "bar_shadow_color": "#000000",
                 "bar_shadow_alpha": 0.12,
                 "bar_shadow_offset_x": 5,
                 "bar_shadow_offset_y": 4,
@@ -169,10 +232,15 @@ def build_project_data(
                 "bar_gradient_lighten": 0.22,
             }
         )
+        chart.update({
+            field: getattr(_DEFAULT_CHART_CONFIG, field)
+            for field in BAR_STYLE_FIELDS
+        })
         project_data["animation"] = {
             "easing": "ease_out_cubic",
             "enter_exit": True,
             "value_smoothing": True,
+            "motion_mode": "transition_easing",
         }
         selection.update(
             {
@@ -188,11 +256,23 @@ def build_project_data(
             "frames_dir": frames_dir,
             "layout_preset": layout_preset,
             "theme": theme,
+            "background_mode": background_mode,
+            "background_color_override": background_color_override,
+            "background_image_path": background_image_path,
+            "background_image_fit": background_image_fit,
             "value_format": value_format,
             "typography_preset": typography_preset,
+            "title_font_family": title_font_family,
+            "subtitle_font_family": subtitle_font_family,
+            "label_font_family": label_font_family,
+            "value_font_family": value_font_family,
+            "time_label_font_family": time_label_font_family,
+            "source_font_family": source_font_family,
+            "rank_label_font_family": rank_label_font_family,
             "fps": fps,
             "steps_per_transition": steps_per_transition,
             "max_visible_bars": max_visible_bars,
+            "frame_output_mode": frame_output_mode,
             "png_compress_level": _bounded_int_or_default(
                 png_compress_level,
                 default=1,
@@ -201,6 +281,56 @@ def build_project_data(
             ),
         }
     )
+    chart.update({
+        key: value
+        for key, value in {
+            "bar_shape": bar_shape,
+            "bar_gradient_enabled": bar_gradient_enabled,
+            "bar_gradient_lighten": bar_gradient_lighten,
+            "bar_border_enabled": bar_border_enabled,
+            "bar_border_color": bar_border_color,
+            "bar_border_width": bar_border_width,
+            "bar_shadow_enabled": bar_shadow_enabled,
+            "bar_shadow_color": bar_shadow_color,
+            "bar_shadow_alpha": bar_shadow_alpha,
+            "bar_shadow_offset_x": bar_shadow_offset_x,
+            "bar_shadow_offset_y": bar_shadow_offset_y,
+            "title_text_color": title_text_color,
+            "subtitle_text_color": subtitle_text_color,
+            "label_text_color": label_text_color,
+            "value_text_color": value_text_color,
+            "time_label_text_color": time_label_text_color,
+            "source_text_color": source_text_color,
+            "rank_label_text_color": rank_label_text_color,
+            "title_font_size": title_font_size,
+            "subtitle_font_size": subtitle_font_size,
+            "label_font_size": label_font_size,
+            "value_font_size": value_font_size,
+            "time_label_font_size": time_label_font_size,
+            "source_font_size": source_font_size,
+            "rank_label_font_size": rank_label_font_size,
+            "title_x": title_x,
+            "title_y": title_y,
+            "subtitle_x": subtitle_x,
+            "subtitle_y": subtitle_y,
+            "time_label_x": time_label_x,
+            "time_label_y": time_label_y,
+            "source_x": source_x,
+            "source_y": source_y,
+        }.items()
+        if value is not None
+    })
+
+    if isinstance(bar_style, dict):
+        chart.update({
+            key: value
+            for key, value in bar_style.items()
+            if key in BAR_STYLE_FIELDS
+        })
+    animation = project_data.setdefault("animation", {})
+
+    if motion_mode is not None:
+        animation["motion_mode"] = motion_mode
     selection.update(
         {
             "top_n": top_n,
@@ -260,6 +390,7 @@ def project_form_values(project_data=None):
     data_source = _section(project_data, "data_source")
     dataset = _section(project_data, "dataset")
     selection = _section(project_data, "selection")
+    animation = _section(project_data, "animation")
 
     title = chart.get("title", "Electricity by Source")
     project_name = project_data.get("name") or project_name_from_title(title)
@@ -281,13 +412,53 @@ def project_form_values(project_data=None):
         "value_column": dataset.get("value_column", "value"),
         "layout_preset": chart.get("layout_preset", "youtube_1080p"),
         "theme": chart.get("theme", "clean_report"),
+        "background_mode": chart.get("background_mode", "color"),
+        "background_color_override": chart.get("background_color_override"),
+        "background_image_path": chart.get("background_image_path"),
+        "background_image_fit": chart.get("background_image_fit", "cover"),
         "typography_preset": chart.get("typography_preset", "editorial"),
+        "title_font_family": chart.get("title_font_family"),
+        "subtitle_font_family": chart.get("subtitle_font_family"),
+        "label_font_family": chart.get("label_font_family"),
+        "value_font_family": chart.get("value_font_family"),
+        "time_label_font_family": chart.get("time_label_font_family"),
+        "source_font_family": chart.get("source_font_family"),
+        "rank_label_font_family": chart.get("rank_label_font_family"),
+        "title_text_color": chart.get("title_text_color"),
+        "subtitle_text_color": chart.get("subtitle_text_color"),
+        "label_text_color": chart.get("label_text_color"),
+        "value_text_color": chart.get("value_text_color"),
+        "time_label_text_color": chart.get("time_label_text_color"),
+        "source_text_color": chart.get("source_text_color"),
+        "rank_label_text_color": chart.get("rank_label_text_color"),
+        "title_font_size": chart.get("title_font_size"),
+        "subtitle_font_size": chart.get("subtitle_font_size"),
+        "label_font_size": chart.get("label_font_size"),
+        "value_font_size": chart.get("value_font_size"),
+        "time_label_font_size": chart.get("time_label_font_size"),
+        "source_font_size": chart.get("source_font_size"),
+        "rank_label_font_size": chart.get("rank_label_font_size"),
+        "title_x": chart.get("title_x"),
+        "title_y": chart.get("title_y"),
+        "subtitle_x": chart.get("subtitle_x"),
+        "subtitle_y": chart.get("subtitle_y"),
+        "time_label_x": chart.get("time_label_x"),
+        "time_label_y": chart.get("time_label_y"),
+        "source_x": chart.get("source_x"),
+        "source_y": chart.get("source_y"),
         "value_format": chart.get("value_format", "decimal"),
+        "dpi": chart.get("dpi", 150),
         "fps": chart.get("fps", 24),
         "steps_per_transition": chart.get("steps_per_transition", 24),
         "top_n": selection.get("top_n", 8),
         "max_visible_bars": chart.get("max_visible_bars", 8),
         "png_compress_level": chart.get("png_compress_level", 1),
+        "frame_output_mode": chart.get("frame_output_mode", "ffmpeg_stream"),
+        **{
+            field: chart.get(field, getattr(_DEFAULT_CHART_CONFIG, field))
+            for field in BAR_STYLE_FIELDS
+        },
+        "motion_mode": animation.get("motion_mode", "transition_easing"),
         "aggregate_other": selection.get("aggregate_other", False),
         "output_file": chart.get("output_file", paths["output_file"]),
         "frames_dir": chart.get("frames_dir", paths["frames_dir"]),

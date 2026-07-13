@@ -47,6 +47,7 @@ class RenderJobIntegrationTest(unittest.TestCase):
                 steps_per_transition=2,
                 frames_dir=str(frames_dir),
                 output_file=str(output_file),
+                frame_output_mode="png_sequence",
                 title="Integration",
                 title_font_size=10,
                 subtitle_font_size=7,

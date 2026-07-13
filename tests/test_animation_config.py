@@ -20,6 +20,10 @@ class AnimationConfigTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.easing_function()
 
+    def test_identifies_continuous_motion_mode(self):
+        self.assertTrue(AnimationConfig(motion_mode="continuous").continuous_motion)
+        self.assertFalse(AnimationConfig().continuous_motion)
+
 
 if __name__ == "__main__":
     unittest.main()

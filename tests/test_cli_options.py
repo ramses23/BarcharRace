@@ -89,6 +89,8 @@ class CliOptionsTest(unittest.TestCase):
                 "8M",
                 "--ffmpeg-preset",
                 "slow",
+                "--frame-output-mode",
+                "ffmpeg_stream",
             ]
         )
 
@@ -107,6 +109,7 @@ class CliOptionsTest(unittest.TestCase):
         self.assertEqual(updated.chart_config.video_crf, 22)
         self.assertEqual(updated.chart_config.video_bitrate, "8M")
         self.assertEqual(updated.chart_config.ffmpeg_preset, "slow")
+        self.assertEqual(updated.chart_config.frame_output_mode, "ffmpeg_stream")
         self.assertEqual(updated.data_source_config, preset.data_source_config)
         self.assertEqual(updated.dataset_config, preset.dataset_config)
 

@@ -8,6 +8,7 @@ from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
+from utils.video_duration import estimate_video_duration
 from exporters.video_exporter import VideoExporter
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
@@ -69,6 +70,11 @@ class RenderJob:
         self.progress_callback = progress_callback
 
     def run(self):
+        if self.config.frame_output_mode not in ("png_sequence", "ffmpeg_stream"):
+            raise ValueError(
+                "frame_output_mode must be 'png_sequence' or 'ffmpeg_stream'."
+            )
+
         total_started_at = perf_counter()
         timings = {}
 
@@ -100,17 +106,22 @@ class RenderJob:
         motion = MotionEngine(animation_config=self.config.animation)
         renderer = BarRenderer(output_dir=self.config.frames_dir, config=self.config)
         exporter = VideoExporter(config=self.config)
+        stream_mode = self.config.frame_output_mode == "ffmpeg_stream"
 
-        self._emit_progress("cleanup", "Cleaning previous frames", 0.22)
-        removed_frames = self._measure_stage(
-            timings,
-            "cleanup",
-            lambda: clean_frame_directory(
-                self.config.frames_dir,
-                pattern=self.config.frame_file_pattern,
-            ),
-        )
-        print(f"Frames anteriores eliminados: {removed_frames}")
+        if stream_mode:
+            timings["cleanup"] = 0.0
+            removed_frames = 0
+        else:
+            self._emit_progress("cleanup", "Cleaning previous frames", 0.22)
+            removed_frames = self._measure_stage(
+                timings,
+                "cleanup",
+                lambda: clean_frame_directory(
+                    self.config.frames_dir,
+                    pattern=self.config.frame_file_pattern,
+                ),
+            )
+            print(f"Frames anteriores eliminados: {removed_frames}")
 
         self._emit_progress("precompute_sprites", "Preparing chart layout", 0.28)
         sprites_by_year = self._measure_stage(
@@ -126,10 +137,12 @@ class RenderJob:
 
         frame_id = 0
         transitions_rendered = 0
-        total_frame_count = max(
-            1,
-            (len(years) - 1) * self.config.steps_per_transition,
-        )
+        total_frame_count = max(1, estimate_video_duration(
+            period_count=len(years),
+            steps_per_transition=self.config.steps_per_transition,
+            fps=self.config.fps,
+            continuous_motion=self.config.animation.continuous_motion,
+        ).frame_count)
 
         render_started_at = perf_counter()
         self._emit_progress(
@@ -139,39 +152,73 @@ class RenderJob:
             current=0,
             total=total_frame_count,
         )
-        for i in range(len(years) - 1):
-            year_a = years[i]
-            year_b = years[i + 1]
+        stream_process = exporter.open_stream() if stream_mode else None
 
-            print(f"Transicion {year_a} -> {year_b}")
+        try:
+            for i in range(len(years) - 1):
+                year_a = years[i]
+                year_b = years[i + 1]
 
-            start_sprites = sprites_by_year[year_a]
-            end_sprites = sprites_by_year[year_b]
+                print(f"Transicion {year_a} -> {year_b}")
 
-            frames = motion.interpolate_sprites(
-                start_sprites,
-                end_sprites,
-                steps=self.config.steps_per_transition,
-            )
+                start_sprites = sprites_by_year[year_a]
+                end_sprites = sprites_by_year[year_b]
 
-            for step_index, frame_sprites in enumerate(frames):
-                scene = self._build_scene(
-                    year_a=year_a,
-                    year_b=year_b,
-                    step_index=step_index,
-                    total_steps=len(frames),
-                    bars=frame_sprites,
-                )
+                if self.config.animation.continuous_motion:
+                    previous_year = years[i - 1] if i > 0 else year_a
+                    next_year = years[i + 2] if i + 2 < len(years) else year_b
+                    include_start = i == 0
+                    frames = motion.interpolate_sprites_continuous(
+                        sprites_by_year[previous_year],
+                        start_sprites,
+                        end_sprites,
+                        sprites_by_year[next_year],
+                        steps=self.config.steps_per_transition,
+                        include_start=include_start,
+                    )
+                else:
+                    include_start = True
+                    frames = motion.interpolate_sprites(
+                        start_sprites,
+                        end_sprites,
+                        steps=self.config.steps_per_transition,
+                    )
 
-                renderer.render(
-                    scene,
-                    filename=self.config.frame_filename(frame_id),
-                )
+                for step_index, frame_sprites in enumerate(frames):
+                    if self.config.animation.continuous_motion:
+                        progress = (
+                            step_index
+                            if include_start
+                            else step_index + 1
+                        ) / self.config.steps_per_transition
+                    else:
+                        progress = None
 
-                frame_id += 1
-                self._emit_render_frame_progress(frame_id, total_frame_count)
+                    scene = self._build_scene(
+                        year_a=year_a,
+                        year_b=year_b,
+                        step_index=step_index,
+                        total_steps=len(frames),
+                        bars=frame_sprites,
+                        progress=progress,
+                    )
 
-            transitions_rendered += 1
+                    if stream_mode:
+                        stream_process.stdin.write(renderer.render_rgba(scene))
+                    else:
+                        renderer.render(
+                            scene,
+                            filename=self.config.frame_filename(frame_id),
+                        )
+
+                    frame_id += 1
+                    self._emit_render_frame_progress(frame_id, total_frame_count)
+
+                transitions_rendered += 1
+        except Exception:
+            if stream_process is not None:
+                exporter.abort_stream(stream_process)
+            raise
 
         timings["draw_frames"] = self._renderer_seconds(renderer, "draw_seconds")
         timings["save_frames"] = self._renderer_seconds(renderer, "save_seconds")
@@ -179,7 +226,14 @@ class RenderJob:
         timings["render_frames"] = perf_counter() - render_started_at
 
         self._emit_progress("export_video", "Exporting MP4", 0.92)
-        self._measure_stage(timings, "export_video", exporter.export)
+        if stream_process is not None:
+            self._measure_stage(
+                timings,
+                "export_video",
+                lambda: exporter.finish_stream(stream_process),
+            )
+        else:
+            self._measure_stage(timings, "export_video", exporter.export)
 
         profile = self._build_profile(
             timings=timings,
@@ -276,8 +330,17 @@ class RenderJob:
 
         return sprites_by_year
 
-    def _build_scene(self, year_a, year_b, step_index, total_steps, bars):
-        progress = step_index / (total_steps - 1) if total_steps > 1 else 1
+    def _build_scene(
+        self,
+        year_a,
+        year_b,
+        step_index,
+        total_steps,
+        bars,
+        progress=None,
+    ):
+        if progress is None:
+            progress = step_index / (total_steps - 1) if total_steps > 1 else 1
         display_year = year_a + (year_b - year_a) * progress
 
         return Scene(

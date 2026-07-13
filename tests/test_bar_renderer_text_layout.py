@@ -4,6 +4,7 @@ from pathlib import Path
 
 import _test_path
 import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
 from config.chart_config import ChartConfig
 from models.bar_sprite import BarSprite
@@ -80,6 +81,185 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertIsNone(renderer._figure)
         self.assertIsNone(renderer._axis)
+
+    def test_reuses_scene_artists_between_rgba_frames(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=320,
+                height=180,
+                dpi=72,
+                left_margin=100,
+                right_margin=20,
+                top_margin=40,
+                bottom_margin=20,
+                logos_enabled=False,
+            )
+        )
+        first_scene = Scene(
+            title="Race",
+            subtitle="2000 -> 2001",
+            time_label="2000",
+            bars=[
+                BarSprite(
+                    name="USA",
+                    value=100,
+                    color="#123456",
+                    x=100,
+                    y=70,
+                    width=180,
+                    height=30,
+                    rank=1,
+                )
+            ],
+        )
+        second_scene = Scene(
+            title="Race",
+            subtitle="2000 -> 2001",
+            time_label="2001",
+            bars=[
+                BarSprite(
+                    name="USA",
+                    value=110,
+                    color="#123456",
+                    x=100,
+                    y=65,
+                    width=195,
+                    height=30,
+                    rank=1,
+                )
+            ],
+        )
+
+        try:
+            first_rgba = renderer.render_rgba(first_scene)
+            first_artists = renderer._bar_artists[0]
+            first_gradient_artist = renderer._gradient_artist
+            artist_counts = (
+                len(renderer._axis.texts),
+                len(renderer._axis.images),
+                len(renderer._axis.patches),
+            )
+
+            second_rgba = renderer.render_rgba(second_scene)
+
+            self.assertIs(renderer._bar_artists[0], first_artists)
+            self.assertIs(renderer._gradient_artist, first_gradient_artist)
+            self.assertEqual(len(renderer._gradient_artist.get_paths()), 64)
+            self.assertEqual(len(renderer._gradient_artist.get_facecolors()), 64)
+            self.assertEqual(
+                (
+                    len(renderer._axis.texts),
+                    len(renderer._axis.images),
+                    len(renderer._axis.patches),
+                ),
+                artist_counts,
+            )
+            self.assertNotEqual(first_rgba, second_rgba)
+        finally:
+            renderer.close()
+
+    def test_applies_font_family_per_scene_element(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=320,
+                height=180,
+                dpi=72,
+                left_margin=100,
+                right_margin=20,
+                title_font_family="DejaVu Serif",
+                subtitle_font_family="DejaVu Sans Mono",
+                time_label_font_family="DejaVu Serif",
+                source_font_family="DejaVu Sans Mono",
+                label_font_family="DejaVu Serif",
+                value_font_family="DejaVu Sans Mono",
+                rank_label_font_family="DejaVu Serif",
+                title_text_color="#101112",
+                subtitle_text_color="#202122",
+                label_text_color="#303132",
+                value_text_color="#404142",
+                time_label_text_color="#505152",
+                source_text_color="#606162",
+                rank_label_text_color="#707172",
+                title_font_size=41,
+                subtitle_font_size=22,
+                time_label_font_size=55,
+                source_font_size=13,
+                label_font_size=17,
+                value_font_size=15,
+                rank_label_font_size=12,
+                title_x=25,
+                title_y=20,
+                subtitle_x=35,
+                subtitle_y=42,
+                time_label_x=280,
+                time_label_y=150,
+                source_x=30,
+                source_y=165,
+                logos_enabled=False,
+            )
+        )
+        scene = Scene(
+            title="Race",
+            subtitle="Subtitle",
+            time_label="2024",
+            source_label="Source: Test",
+            bars=[
+                BarSprite(
+                    name="Mexico",
+                    value=100,
+                    color="#123456",
+                    x=100,
+                    y=70,
+                    width=180,
+                    height=30,
+                    rank=1,
+                )
+            ],
+        )
+
+        try:
+            renderer.render_rgba(scene)
+            bar_artists = renderer._bar_artists[0]
+
+            self.assertEqual(renderer._title_artist.get_fontfamily(), ["DejaVu Serif"])
+            self.assertEqual(
+                renderer._subtitle_artist.get_fontfamily(),
+                ["DejaVu Sans Mono"],
+            )
+            self.assertEqual(
+                renderer._time_label_artist.get_fontfamily(),
+                ["DejaVu Serif"],
+            )
+            self.assertEqual(
+                renderer._source_artist.get_fontfamily(),
+                ["DejaVu Sans Mono"],
+            )
+            self.assertEqual(bar_artists.name_label.get_fontfamily(), ["DejaVu Serif"])
+            self.assertEqual(
+                bar_artists.value_label.get_fontfamily(),
+                ["DejaVu Sans Mono"],
+            )
+            self.assertEqual(bar_artists.rank_label.get_fontfamily(), ["DejaVu Serif"])
+            self.assertEqual(renderer._title_artist.get_position(), (25, 20))
+            self.assertEqual(renderer._subtitle_artist.get_position(), (35, 42))
+            self.assertEqual(renderer._time_label_artist.get_position(), (280, 150))
+            self.assertEqual(renderer._source_artist.get_position(), (30, 165))
+            self.assertEqual(renderer._title_artist.get_fontsize(), 41)
+            self.assertEqual(renderer._subtitle_artist.get_fontsize(), 22)
+            self.assertEqual(renderer._time_label_artist.get_fontsize(), 55)
+            self.assertEqual(renderer._source_artist.get_fontsize(), 13)
+            self.assertEqual(bar_artists.name_label.get_fontsize(), 17)
+            self.assertEqual(bar_artists.value_label.get_fontsize(), 15)
+            self.assertEqual(bar_artists.rank_label.get_fontsize(), 12)
+            self.assertEqual(renderer._title_artist.get_color(), "#101112")
+            self.assertEqual(renderer._subtitle_artist.get_color(), "#202122")
+            self.assertEqual(bar_artists.name_label.get_color(), "#303132")
+            self.assertEqual(bar_artists.value_label.get_color(), "#404142")
+            self.assertEqual(renderer._time_label_artist.get_color(), "#505152")
+            self.assertEqual(renderer._source_artist.get_color(), "#606162")
+            self.assertEqual(bar_artists.rank_label.get_color(), "#707172")
+        finally:
+            renderer.close()
 
     def test_canvas_axis_fills_entire_figure(self):
         renderer = BarRenderer(config=ChartConfig())
@@ -536,6 +716,478 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(axis.text_calls[1]["text"], "Source:...")
         self.assertEqual(axis.text_calls[1]["fontweight"], "medium")
         self.assertEqual(axis.text_calls[1]["zorder"], 5)
+
+
+    def test_renders_all_bar_shapes_with_reused_gradient_artists(self):
+        scene = Scene(
+            title="Shapes",
+            bars=[
+                BarSprite(
+                    name="Example",
+                    value=100,
+                    color="#4E79A7",
+                    x=100,
+                    y=90,
+                    width=160,
+                    height=36,
+                    rank=1,
+                )
+            ],
+        )
+
+        for shape in ("rectangle", "rounded", "capsule", "lollipop"):
+            with self.subTest(shape=shape):
+                renderer = BarRenderer(config=ChartConfig(
+                    width=320,
+                    height=180,
+                    dpi=72,
+                    left_margin=100,
+                    right_margin=20,
+                    top_margin=40,
+                    bottom_margin=20,
+                    logos_enabled=False,
+                    bar_shape=shape,
+                    bar_gradient_enabled=True,
+                    bar_border_enabled=True,
+                    bar_border_color="#FFFFFF",
+                    bar_border_width=2.5,
+                ))
+
+                try:
+                    rgba = renderer.render_rgba(scene)
+                    artists = renderer._bar_artists[0]
+
+                    self.assertEqual(len(rgba), 320 * 180 * 4)
+                    self.assertTrue(artists.border.get_visible())
+                    self.assertEqual(artists.border.get_linewidth(), 2.5)
+                    self.assertGreater(len(artists.border.get_path().vertices), 0)
+                    self.assertGreaterEqual(
+                        len(renderer._gradient_artist.get_paths()),
+                        64,
+                    )
+                finally:
+                    renderer.close()
+
+    def test_capsule_gradient_tapers_at_rounded_ends(self):
+        renderer = BarRenderer(config=ChartConfig(bar_shape="capsule"))
+        sprite = BarSprite(
+            name="Example",
+            value=100,
+            color="#4E79A7",
+            x=100,
+            y=90,
+            width=160,
+            height=36,
+        )
+
+        left_top, left_bottom = renderer._bar_vertical_bounds(sprite, sprite.x)
+        middle_top, middle_bottom = renderer._bar_vertical_bounds(
+            sprite,
+            sprite.x + (sprite.width / 2),
+        )
+
+        self.assertAlmostEqual(left_top, sprite.y)
+        self.assertAlmostEqual(left_bottom, sprite.y)
+        self.assertEqual(middle_top, sprite.y - (sprite.height / 2))
+        self.assertEqual(middle_bottom, sprite.y + (sprite.height / 2))
+
+    def test_lollipop_value_never_moves_inside_the_circle(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=640,
+            value_label_edge_padding=24,
+            bar_shape="lollipop",
+        ))
+        sprite = BarSprite(
+            name="Example",
+            value=125,
+            color="#4E79A7",
+            x=210,
+            y=90,
+            width=360,
+            height=42,
+        )
+
+        layout = renderer._value_label_layout(sprite, "125.0")
+
+        self.assertEqual(layout["ha"], "right")
+        self.assertEqual(layout["x"], 616)
+
+    def test_solid_lollipop_uses_circle_endpoint_and_offset_shadow(self):
+        renderer = BarRenderer(config=ChartConfig(
+            bar_shape="lollipop",
+            bar_gradient_enabled=False,
+            bar_shadow_offset_x=7,
+            bar_shadow_offset_y=3,
+        ))
+        sprite = BarSprite(
+            name="Example",
+            value=100,
+            color="#4E79A7",
+            x=100,
+            y=90,
+            width=160,
+            height=36,
+        )
+        figure, axis = renderer._figure_axis()
+        renderer._setup_canvas(figure, axis)
+        renderer._initialize_scene_artists(axis)
+        renderer._ensure_bar_artist_capacity(axis, 1)
+        artists = renderer._bar_artists[0]
+
+        try:
+            renderer._update_bar_artists(artists, sprite)
+            bar_extents = artists.bar.get_path().get_extents()
+            shadow_extents = artists.shadow.get_path().get_extents()
+
+            self.assertAlmostEqual(bar_extents.xmax, sprite.x + sprite.width)
+            self.assertAlmostEqual(bar_extents.height, sprite.height)
+            self.assertAlmostEqual(shadow_extents.xmin - bar_extents.xmin, 7)
+            self.assertAlmostEqual(shadow_extents.ymin - bar_extents.ymin, 3)
+        finally:
+            renderer.close()
+
+    def test_advanced_appearance_layers_are_independent_and_reused(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=320,
+            height=180,
+            dpi=72,
+            left_margin=100,
+            right_margin=20,
+            top_margin=40,
+            bottom_margin=20,
+            logos_enabled=False,
+            bar_appearance_mode="advanced",
+            bar_shape="capsule",
+            bar_fill_type="gradient",
+            bar_texture_enabled=True,
+            bar_texture_preset="brushed_metal",
+            bar_bevel_enabled=True,
+            bar_inner_shadow_opacity=0.2,
+            bar_outer_glow_enabled=True,
+            bar_glow_opacity=0.3,
+            bar_glow_blur=6,
+            bar_track_enabled=True,
+            bar_track_opacity=0.2,
+            bar_border_enabled=True,
+        ))
+        scene = Scene(
+            title="Advanced",
+            bars=[
+                BarSprite(
+                    name="Example",
+                    value=100,
+                    color="#4E79A7",
+                    x=100,
+                    y=90,
+                    width=160,
+                    height=36,
+                    rank=1,
+                )
+            ],
+        )
+
+        try:
+            first_rgba = renderer.render_rgba(scene)
+            artists = renderer._bar_artists[0]
+            cached_fill = renderer._advanced_fill_cache["#4e79a7"]
+            second_rgba = renderer.render_rgba(scene)
+
+            self.assertEqual(len(first_rgba), 320 * 180 * 4)
+            self.assertEqual(len(second_rgba), 320 * 180 * 4)
+            self.assertIsNone(renderer._gradient_artist)
+            self.assertTrue(artists.track.get_visible())
+            self.assertTrue(artists.fill_image.get_visible())
+            self.assertTrue(artists.fill_clip.get_visible())
+            self.assertTrue(all(glow.get_visible() for glow in artists.glow))
+            self.assertTrue(artists.shadow.get_visible())
+            self.assertIs(
+                renderer._advanced_fill_cache["#4e79a7"],
+                cached_fill,
+            )
+            self.assertEqual(len(renderer._advanced_fill_cache), 1)
+        finally:
+            renderer.close()
+
+    def test_advanced_gradient_direction_changes_fill_axis(self):
+        common = {
+            "bar_appearance_mode": "advanced",
+            "bar_fill_type": "gradient",
+            "bar_fill_use_category_color": False,
+            "bar_fill_color_start": "#000000",
+            "bar_fill_color_center": "#808080",
+            "bar_fill_color_end": "#FFFFFF",
+            "bar_highlight_position": 0.5,
+        }
+        horizontal = BarRenderer(config=ChartConfig(
+            **common,
+            bar_gradient_direction="horizontal",
+        ))._advanced_fill_image("#123456")
+        vertical = BarRenderer(config=ChartConfig(
+            **common,
+            bar_gradient_direction="vertical",
+        ))._advanced_fill_image("#123456")
+
+        self.assertFalse(np.allclose(horizontal[32, 0], horizontal[32, -1]))
+        self.assertTrue(np.allclose(horizontal[0, 128], horizontal[-1, 128]))
+        self.assertFalse(np.allclose(vertical[0, 128], vertical[-1, 128]))
+        self.assertTrue(np.allclose(vertical[32, 0], vertical[32, -1]))
+
+    def test_advanced_texture_presets_generate_finite_fill(self):
+        for preset in (
+            "noise",
+            "brushed_metal",
+            "grunge",
+            "paper",
+            "carbon",
+        ):
+            with self.subTest(preset=preset):
+                renderer = BarRenderer(config=ChartConfig(
+                    bar_appearance_mode="advanced",
+                    bar_fill_type="texture",
+                    bar_texture_enabled=True,
+                    bar_texture_preset=preset,
+                    bar_texture_intensity=0.5,
+                    bar_texture_contrast=1.3,
+                ))
+                image = renderer._advanced_fill_image("#4E79A7")
+
+                self.assertEqual(image.shape, (64, 256, 4))
+                self.assertTrue(np.isfinite(image).all())
+                self.assertGreater(float(np.std(image[:, :, :3])), 0.01)
+
+    def test_advanced_custom_texture_image_is_loaded_and_tiled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            texture_path = Path(temp_dir) / "texture.png"
+            texture = Image.new("RGB", (4, 4), "white")
+            texture.putpixel((0, 0), (0, 0, 0))
+            texture.putpixel((2, 2), (30, 90, 180))
+            texture.save(texture_path)
+            renderer = BarRenderer(config=ChartConfig(
+                bar_appearance_mode="advanced",
+                bar_fill_type="texture",
+                bar_texture_enabled=True,
+                bar_texture_preset="custom_image",
+                bar_texture_custom_image=str(texture_path),
+                bar_texture_intensity=0.7,
+                bar_texture_scale=2.0,
+            ))
+
+            image = renderer._advanced_fill_image("#4E79A7")
+
+        self.assertEqual(image.shape, (64, 256, 4))
+        self.assertGreater(float(np.std(image[:, :, :3])), 0.01)
+
+    def test_advanced_content_positions_and_value_effects(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=500,
+            bar_appearance_mode="advanced",
+            bar_label_position="inside",
+            bar_value_position="above",
+            bar_value_use_theme_color=False,
+            bar_value_color="#ABCDEF",
+            bar_value_border_enabled=True,
+            bar_value_border_width=1.5,
+            bar_value_shadow_enabled=True,
+        ))
+        sprite = BarSprite(
+            name="Example",
+            value=100,
+            color="#4E79A7",
+            x=100,
+            y=90,
+            width=200,
+            height=40,
+        )
+        label_layout = renderer._bar_label_layout(sprite)
+        value_layout = renderer._value_label_layout(sprite, "100")
+        figure, axis = renderer._figure_axis()
+        renderer._setup_canvas(figure, axis)
+        renderer._initialize_scene_artists(axis)
+        renderer._ensure_bar_artist_capacity(axis, 1)
+
+        try:
+            self.assertEqual(label_layout["ha"], "left")
+            self.assertGreater(label_layout["x"], sprite.x)
+            self.assertEqual(value_layout["va"], "bottom")
+            self.assertLess(value_layout["y"], sprite.y)
+            self.assertEqual(value_layout["color"], "#ABCDEF")
+            self.assertEqual(
+                len(renderer._bar_artists[0].value_label.get_path_effects()),
+                3,
+            )
+        finally:
+            renderer.close()
+
+    def test_lollipop_inside_left_logo_adds_a_circular_socket(self):
+        renderer = BarRenderer(config=ChartConfig(
+            bar_shape="lollipop",
+            bar_logo_position="inside_left",
+        ))
+        sprite = BarSprite(
+            name="Example",
+            value=100,
+            color="#4E79A7",
+            x=100,
+            y=90,
+            width=160,
+            height=36,
+            logo_path="logo.png",
+        )
+        radius = sprite.height / 2
+        left_center = sprite.x + radius
+        middle = sprite.x + (sprite.width / 2)
+        right_center = sprite.x + sprite.width - radius
+
+        left_top, left_bottom = renderer._bar_vertical_bounds(sprite, left_center)
+        middle_top, middle_bottom = renderer._bar_vertical_bounds(sprite, middle)
+        right_top, right_bottom = renderer._bar_vertical_bounds(sprite, right_center)
+
+        self.assertAlmostEqual(left_top, sprite.y - radius)
+        self.assertAlmostEqual(left_bottom, sprite.y + radius)
+        self.assertGreater(middle_top, sprite.y - radius)
+        self.assertLess(middle_bottom, sprite.y + radius)
+        self.assertAlmostEqual(right_top, sprite.y - radius)
+        self.assertAlmostEqual(right_bottom, sprite.y + radius)
+
+    def test_logo_inside_right_uses_adaptive_circle_background_and_border(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (30, 20), "#E15759").save(logo_path)
+            renderer = BarRenderer(config=ChartConfig(
+                width=320,
+                height=180,
+                dpi=72,
+                bar_shape="capsule",
+                bar_logo_position="inside_right",
+                bar_logo_shape="adaptive",
+                bar_logo_padding=3,
+                bar_logo_border_enabled=True,
+                bar_logo_border_color="#FFFFFF",
+                bar_logo_border_width=2,
+                bar_logo_background_enabled=True,
+                bar_logo_background_color="#101010",
+                bar_logo_background_opacity=0.8,
+                bar_gradient_enabled=False,
+            ))
+            sprite = BarSprite(
+                name="Example",
+                value=100,
+                color="#4E79A7",
+                x=100,
+                y=90,
+                width=160,
+                height=36,
+                logo_path=str(logo_path),
+            )
+            figure, axis = renderer._figure_axis()
+            renderer._setup_canvas(figure, axis)
+            renderer._initialize_scene_artists(axis)
+            renderer._ensure_bar_artist_capacity(axis, 1)
+            artists = renderer._bar_artists[0]
+
+            try:
+                renderer._update_bar_artists(artists, sprite)
+                layout = renderer._logo_layout(sprite)
+                path_extents = artists.logo_clip.get_path().get_extents()
+
+                self.assertAlmostEqual(layout["right"], sprite.x + sprite.width - 3)
+                self.assertTrue(artists.logo.get_visible())
+                self.assertIsNotNone(artists.logo.get_clip_path())
+                self.assertTrue(artists.logo_background.get_visible())
+                self.assertTrue(artists.logo_border.get_visible())
+                self.assertGreater(len(artists.logo_clip.get_path().vertices), 20)
+                self.assertAlmostEqual(path_extents.width, layout["size"])
+                self.assertAlmostEqual(path_extents.height, layout["size"])
+            finally:
+                renderer.close()
+
+    def test_inside_logo_slots_reserve_label_and_value_space(self):
+        sprite = BarSprite(
+            name="A very long category",
+            value=100,
+            color="#4E79A7",
+            x=100,
+            y=90,
+            width=220,
+            height=40,
+            logo_path="logo.png",
+        )
+        left_renderer = BarRenderer(config=ChartConfig(
+            bar_appearance_mode="advanced",
+            bar_logo_position="inside_left",
+            bar_label_position="inside",
+        ))
+        right_renderer = BarRenderer(config=ChartConfig(
+            bar_appearance_mode="advanced",
+            bar_logo_position="inside_right",
+            bar_value_position="inside",
+        ))
+
+        left_layout = left_renderer._logo_layout(sprite)
+        label_layout = left_renderer._bar_label_layout(sprite)
+        right_layout = right_renderer._logo_layout(sprite)
+        value_layout = right_renderer._value_label_layout(sprite, "100")
+
+        self.assertGreater(label_layout["x"], left_layout["right"])
+        self.assertLess(value_layout["x"], right_layout["left"])
+
+    def test_category_alignment_uses_the_existing_label_area(self):
+        sprite = BarSprite(
+            name="Category",
+            value=100,
+            color="#4E79A7",
+            x=200,
+            y=90,
+            width=160,
+            height=36,
+        )
+        expected = {
+            "left": (40, "left"),
+            "center": (112, "center"),
+            "right": (184, "right"),
+        }
+
+        for alignment, (expected_x, expected_ha) in expected.items():
+            with self.subTest(alignment=alignment):
+                renderer = BarRenderer(config=ChartConfig(
+                    label_min_x=40,
+                    bar_label_alignment=alignment,
+                ))
+                layout = renderer._bar_label_layout(sprite)
+
+                self.assertEqual(layout["x"], expected_x)
+                self.assertEqual(layout["ha"], expected_ha)
+
+    def test_background_image_contain_uses_selected_margin_color(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            background_path = Path(temp_dir) / "background.png"
+            Image.new("RGB", (80, 20), "#FF0000").save(background_path)
+            renderer = BarRenderer(config=ChartConfig(
+                width=80,
+                height=80,
+                dpi=72,
+                background_mode="image",
+                background_color_override="#123456",
+                background_image_path=str(background_path),
+                background_image_fit="contain",
+            ))
+
+            prepared = renderer._prepare_background_image(background_path)
+            scene = Scene(title="Background")
+
+            try:
+                renderer.render_rgba(scene)
+
+                self.assertEqual(prepared.shape, (80, 80, 4))
+                self.assertEqual(tuple(prepared[0, 0, :3]), (18, 52, 86))
+                self.assertEqual(tuple(prepared[40, 40, :3]), (255, 0, 0))
+                self.assertIsNotNone(renderer._background_image_artist)
+                self.assertEqual(
+                    tuple(renderer._background_image_artist.get_extent()),
+                    (0, 80, 80, 0),
+                )
+            finally:
+                renderer.close()
 
 
 class FakeAxis:

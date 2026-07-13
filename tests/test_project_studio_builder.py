@@ -55,6 +55,10 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             frames_dir="output/electricity_frames",
             layout_preset="youtube_1080p",
             theme="clean_report",
+            background_mode="image",
+            background_color_override="#102030",
+            background_image_path="backgrounds/studio.png",
+            background_image_fit="contain",
             typography_preset="editorial",
             value_format="decimal",
             fps=24,
@@ -62,6 +66,44 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             top_n=8,
             max_visible_bars=8,
             png_compress_level=0,
+            bar_shape="lollipop",
+            bar_gradient_enabled=False,
+            bar_border_enabled=True,
+            bar_border_color="#123456",
+            bar_border_width=2.5,
+            bar_shadow_enabled=True,
+            bar_shadow_color="#111111",
+            bar_shadow_alpha=0.25,
+            bar_shadow_offset_x=6,
+            bar_shadow_offset_y=3,
+            title_font_family="DejaVu Serif",
+            label_font_family="DejaVu Sans Mono",
+            time_label_font_family="DejaVu Serif",
+            source_font_family="DejaVu Sans",
+            rank_label_font_family="DejaVu Sans Mono",
+            title_text_color="#101112",
+            subtitle_text_color="#202122",
+            label_text_color="#303132",
+            value_text_color="#404142",
+            time_label_text_color="#505152",
+            source_text_color="#606162",
+            rank_label_text_color="#707172",
+            title_font_size=42,
+            subtitle_font_size=24,
+            label_font_size=21,
+            value_font_size=19,
+            time_label_font_size=128,
+            source_font_size=15,
+            rank_label_font_size=17,
+            title_x=300,
+            title_y=90,
+            subtitle_x=310,
+            subtitle_y=160,
+            time_label_x=1500,
+            time_label_y=900,
+            source_x=300,
+            source_y=1000,
+            motion_mode="continuous",
             category_styles={
                 "Coal": {
                     "label": "Carbon",
@@ -82,6 +124,40 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["data_source"]["source_label_override"], "Source: Test")
         self.assertEqual(loaded["dataset"]["value_column"], "value")
         self.assertEqual(loaded["chart"]["png_compress_level"], 0)
+        self.assertEqual(loaded["chart"]["background_mode"], "image")
+        self.assertEqual(
+            loaded["chart"]["background_image_path"],
+            "backgrounds/studio.png",
+        )
+        self.assertEqual(loaded["chart"]["background_image_fit"], "contain")
+        self.assertEqual(loaded["chart"]["bar_shape"], "lollipop")
+        self.assertFalse(loaded["chart"]["bar_gradient_enabled"])
+        self.assertTrue(loaded["chart"]["bar_border_enabled"])
+        self.assertEqual(loaded["chart"]["bar_border_color"], "#123456")
+        self.assertEqual(loaded["chart"]["bar_border_width"], 2.5)
+        self.assertEqual(loaded["chart"]["bar_shadow_alpha"], 0.25)
+        self.assertEqual(loaded["chart"]["title_font_family"], "DejaVu Serif")
+        self.assertEqual(loaded["chart"]["label_font_family"], "DejaVu Sans Mono")
+        self.assertEqual(loaded["chart"]["time_label_font_family"], "DejaVu Serif")
+        self.assertEqual(loaded["chart"]["source_font_family"], "DejaVu Sans")
+        self.assertEqual(
+            loaded["chart"]["rank_label_font_family"],
+            "DejaVu Sans Mono",
+        )
+        self.assertEqual(loaded["chart"]["title_text_color"], "#101112")
+        self.assertEqual(loaded["chart"]["subtitle_text_color"], "#202122")
+        self.assertEqual(loaded["chart"]["label_text_color"], "#303132")
+        self.assertEqual(loaded["chart"]["value_text_color"], "#404142")
+        self.assertEqual(loaded["chart"]["time_label_text_color"], "#505152")
+        self.assertEqual(loaded["chart"]["source_text_color"], "#606162")
+        self.assertEqual(loaded["chart"]["rank_label_text_color"], "#707172")
+        self.assertEqual(loaded["chart"]["title_font_size"], 42)
+        self.assertEqual(loaded["chart"]["rank_label_font_size"], 17)
+        self.assertEqual(loaded["chart"]["title_x"], 300)
+        self.assertEqual(loaded["chart"]["subtitle_x"], 310)
+        self.assertEqual(loaded["chart"]["time_label_y"], 900)
+        self.assertEqual(loaded["chart"]["source_y"], 1000)
+        self.assertEqual(loaded["animation"]["motion_mode"], "continuous")
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
         self.assertEqual(loaded["categories"]["Coal"]["logo"], "logos/coal.png")
@@ -102,6 +178,62 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             values = category_values(csv_path, "country")
 
         self.assertEqual(values, ("Coal", "Solar"))
+
+    def test_persists_advanced_bar_appearance_and_restores_form_values(self):
+        bar_style = {
+            "bar_appearance_mode": "advanced",
+            "bar_shape": "capsule",
+            "bar_fill_type": "texture",
+            "bar_gradient_direction": "diagonal",
+            "bar_gradient_color_count": 2,
+            "bar_fill_use_category_color": False,
+            "bar_fill_color_start": "#112233",
+            "bar_fill_color_center": "#445566",
+            "bar_fill_color_end": "#778899",
+            "bar_texture_enabled": True,
+            "bar_texture_preset": "carbon",
+            "bar_texture_blend_mode": "soft_light",
+            "bar_bevel_enabled": True,
+            "bar_inner_shadow_opacity": 0.25,
+            "bar_outer_glow_enabled": True,
+            "bar_track_enabled": True,
+            "bar_logo_position": "inside_right",
+            "bar_logo_shape": "circle",
+            "bar_logo_padding": 5,
+            "bar_logo_border_enabled": True,
+            "bar_logo_background_enabled": True,
+            "bar_label_position": "inside",
+            "bar_label_alignment": "left",
+            "bar_value_position": "above",
+        }
+        project_data = build_project_data(
+            name="advanced",
+            csv_path="data/advanced.csv",
+            year_column="year",
+            name_column="name",
+            value_column="value",
+            title="Advanced",
+            source_label="Source: Test",
+            output_file="output/advanced.mp4",
+            frames_dir="output/advanced_frames",
+            layout_preset="youtube_1080p",
+            theme="clean_report",
+            typography_preset="editorial",
+            value_format="decimal",
+            fps=24,
+            steps_per_transition=24,
+            top_n=8,
+            max_visible_bars=8,
+            bar_style=bar_style,
+        )
+        values = project_form_values(project_data)
+
+        for key, value in bar_style.items():
+            self.assertEqual(project_data["chart"][key], value)
+            self.assertEqual(values[key], value)
+
+        self.assertIn("bar_shine_width", project_data["chart"])
+        self.assertIn("bar_value_shadow_color", project_data["chart"])
 
     def test_extracts_all_category_values_without_limit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -201,10 +333,35 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "steps_per_transition": 6,
                     "max_visible_bars": 5,
                     "png_compress_level": 3,
+                    "title_font_family": "DejaVu Serif",
+                    "label_font_family": "DejaVu Sans Mono",
+                    "time_label_font_family": "DejaVu Serif",
+                    "source_font_family": "DejaVu Sans",
+                    "rank_label_font_family": "DejaVu Sans Mono",
+                    "title_text_color": "#101112",
+                    "subtitle_text_color": "#202122",
+                    "label_text_color": "#303132",
+                    "value_text_color": "#404142",
+                    "time_label_text_color": "#505152",
+                    "source_text_color": "#606162",
+                    "rank_label_text_color": "#707172",
+                    "title_font_size": 42,
+                    "rank_label_font_size": 17,
+                    "title_x": 300,
+                    "title_y": 90,
+                    "subtitle_x": 310,
+                    "subtitle_y": 160,
+                    "time_label_x": 1500,
+                    "time_label_y": 900,
+                    "source_x": 300,
+                    "source_y": 1000,
                 },
                 "selection": {
                     "top_n": 5,
                     "aggregate_other": True,
+                },
+                "animation": {
+                    "motion_mode": "continuous",
                 },
                 "data_source": {
                     "csv_path": "data/custom.csv",
@@ -241,6 +398,29 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["top_n"], 5)
         self.assertEqual(values["max_visible_bars"], 5)
         self.assertEqual(values["png_compress_level"], 3)
+        self.assertEqual(values["title_font_family"], "DejaVu Serif")
+        self.assertEqual(values["label_font_family"], "DejaVu Sans Mono")
+        self.assertEqual(values["time_label_font_family"], "DejaVu Serif")
+        self.assertEqual(values["source_font_family"], "DejaVu Sans")
+        self.assertEqual(values["rank_label_font_family"], "DejaVu Sans Mono")
+        self.assertEqual(values["title_text_color"], "#101112")
+        self.assertEqual(values["subtitle_text_color"], "#202122")
+        self.assertEqual(values["label_text_color"], "#303132")
+        self.assertEqual(values["value_text_color"], "#404142")
+        self.assertEqual(values["time_label_text_color"], "#505152")
+        self.assertEqual(values["source_text_color"], "#606162")
+        self.assertEqual(values["rank_label_text_color"], "#707172")
+        self.assertEqual(values["title_font_size"], 42)
+        self.assertEqual(values["rank_label_font_size"], 17)
+        self.assertEqual(values["title_x"], 300)
+        self.assertEqual(values["title_y"], 90)
+        self.assertEqual(values["subtitle_x"], 310)
+        self.assertEqual(values["subtitle_y"], 160)
+        self.assertEqual(values["time_label_x"], 1500)
+        self.assertEqual(values["time_label_y"], 900)
+        self.assertEqual(values["source_x"], 300)
+        self.assertEqual(values["source_y"], 1000)
+        self.assertEqual(values["motion_mode"], "continuous")
         self.assertTrue(values["aggregate_other"])
         self.assertEqual(values["output_file"], "output/custom.mp4")
         self.assertEqual(values["frames_dir"], "output/custom_frames")
@@ -260,6 +440,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             "animation": {
                 "easing": "linear",
                 "enter_exit": False,
+                "motion_mode": "continuous",
             },
             "selection": {
                 "top_n": 5,
@@ -308,6 +489,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(project_data["chart"]["bar_shadow_alpha"], 0.2)
         self.assertEqual(project_data["animation"]["easing"], "linear")
         self.assertFalse(project_data["animation"]["enter_exit"])
+        self.assertEqual(project_data["animation"]["motion_mode"], "continuous")
         self.assertEqual(project_data["selection"]["top_n"], 8)
         self.assertEqual(project_data["selection"]["other_label"], "Rest")
         self.assertEqual(project_data["data_source"]["csv_path"], "data/new.csv")

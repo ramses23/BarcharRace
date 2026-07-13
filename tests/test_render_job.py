@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import _test_path
 from config.bar_selection_config import BarSelectionConfig
+from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
@@ -13,6 +14,83 @@ from pipeline.render_job import RenderJob
 
 
 class RenderJobTest(unittest.TestCase):
+    def test_continuous_motion_renders_boundary_once_and_includes_final_year(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            csv_path = temp_path / "sample.csv"
+            csv_path.write_text(
+                "year,country,value\n2000,USA,100\n2001,USA,120\n",
+                encoding="utf-8",
+            )
+            config = ChartConfig(
+                frames_dir=str(temp_path / "frames"),
+                output_file=str(temp_path / "video.mp4"),
+                steps_per_transition=2,
+                frame_output_mode="png_sequence",
+                animation=AnimationConfig(motion_mode="continuous"),
+            )
+
+            with patch("pipeline.render_job.BarRenderer") as renderer_class:
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        result = RenderJob(
+                            config=config,
+                            data_source_config=DataSourceConfig(
+                                source_type="csv",
+                                csv_path=str(csv_path),
+                            ),
+                            dataset_config=DatasetConfig(),
+                        ).run()
+
+            self.assertEqual(result.frames_rendered, 3)
+            self.assertEqual(renderer_class.return_value.render.call_count, 3)
+
+    def test_streams_rgba_frames_without_cleaning_or_exporting_pngs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            csv_path = temp_path / "sample.csv"
+            csv_path.write_text(
+                "year,country,value\n2000,USA,100\n2001,USA,110\n",
+                encoding="utf-8",
+            )
+            chart_config = ChartConfig(
+                frames_dir=str(temp_path / "frames"),
+                output_file=str(temp_path / "video.mp4"),
+                steps_per_transition=2,
+                frame_output_mode="ffmpeg_stream",
+            )
+            data_source_config = DataSourceConfig(
+                source_type="csv",
+                csv_path=str(csv_path),
+            )
+
+            with patch("pipeline.render_job.clean_frame_directory") as clean:
+                with patch("pipeline.render_job.BarRenderer") as renderer_class:
+                    with patch("pipeline.render_job.VideoExporter") as exporter_class:
+                        with patch("builtins.print"):
+                            renderer = renderer_class.return_value
+                            renderer.render_rgba.side_effect = [b"frame-0", b"frame-1"]
+                            exporter = exporter_class.return_value
+                            process = exporter.open_stream.return_value
+
+                            result = RenderJob(
+                                config=chart_config,
+                                data_source_config=data_source_config,
+                                dataset_config=DatasetConfig(),
+                            ).run()
+
+            self.assertEqual(result.frames_rendered, 2)
+            self.assertEqual(result.removed_frames, 0)
+            clean.assert_not_called()
+            renderer.render.assert_not_called()
+            self.assertEqual(renderer.render_rgba.call_count, 2)
+            self.assertEqual(
+                [call.args[0] for call in process.stdin.write.call_args_list],
+                [b"frame-0", b"frame-1"],
+            )
+            exporter.finish_stream.assert_called_once_with(process)
+            exporter.export.assert_not_called()
+
     def test_runs_pipeline_and_returns_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -40,6 +118,7 @@ class RenderJobTest(unittest.TestCase):
                 frames_dir=str(frames_dir),
                 output_file=str(output_file),
                 steps_per_transition=2,
+                frame_output_mode="png_sequence",
             )
             data_source_config = DataSourceConfig(
                 source_type="csv",
@@ -119,6 +198,7 @@ class RenderJobTest(unittest.TestCase):
                 frames_dir=str(frames_dir),
                 output_file=str(output_file),
                 steps_per_transition=2,
+                frame_output_mode="png_sequence",
                 selection=BarSelectionConfig(
                     top_n=1,
                     aggregate_other=True,
@@ -173,6 +253,7 @@ class RenderJobTest(unittest.TestCase):
                 frames_dir=str(frames_dir),
                 output_file=str(output_file),
                 steps_per_transition=2,
+                frame_output_mode="png_sequence",
             )
             data_source_config = DataSourceConfig(
                 source_type="csv",
@@ -222,6 +303,7 @@ class RenderJobTest(unittest.TestCase):
                 frames_dir=str(frames_dir),
                 output_file=str(output_file),
                 steps_per_transition=2,
+                frame_output_mode="png_sequence",
             )
             data_source_config = DataSourceConfig(
                 source_type="csv",
@@ -280,6 +362,7 @@ class RenderJobTest(unittest.TestCase):
                 frames_dir=str(frames_dir),
                 output_file=str(output_file),
                 steps_per_transition=2,
+                frame_output_mode="png_sequence",
             )
             data_source_config = DataSourceConfig(
                 source_type="csv",

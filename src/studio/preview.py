@@ -111,13 +111,31 @@ def _transition_sprites(
 ):
     start_sprites = _sprites_for_year(timeline, selector, layout, year_a)
     end_sprites = _sprites_for_year(timeline, selector, layout, year_b)
-    frames = MotionEngine(
-        animation_config=animation_config
-    ).interpolate_sprites(
-        start_sprites,
-        end_sprites,
-        steps=101,
-    )
+    motion = MotionEngine(animation_config=animation_config)
+
+    if animation_config.continuous_motion:
+        years = timeline.get_years()
+        start_index = years.index(year_a)
+        previous_year = years[start_index - 1] if start_index > 0 else year_a
+        next_year = (
+            years[start_index + 2]
+            if start_index + 2 < len(years)
+            else year_b
+        )
+        frames = motion.interpolate_sprites_continuous(
+            _sprites_for_year(timeline, selector, layout, previous_year),
+            start_sprites,
+            end_sprites,
+            _sprites_for_year(timeline, selector, layout, next_year),
+            steps=100,
+            include_start=True,
+        )
+    else:
+        frames = motion.interpolate_sprites(
+            start_sprites,
+            end_sprites,
+            steps=101,
+        )
     frame_index = round(_clamped_progress(progress) * (len(frames) - 1))
 
     return frames[frame_index]

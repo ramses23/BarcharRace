@@ -26,8 +26,9 @@ charts, animated scatter plots, and timeline animations.
 - Apply configurable font weights and max widths to title, subtitle, time
   label, and source label.
 - Apply reusable typography presets.
-- Render configurable soft shadows behind bars.
-- Render configurable horizontal gradients on bars.
+- Render rectangle, rounded, capsule, and lollipop bar shapes.
+- Render independent projected shadows, borders, gradients, textures, depth,
+  glow, shine, and background tracks through Simple or Advanced appearance.
 - Resolve and render optional logos for bars.
 - Export PNG frames to MP4 with configurable FFmpeg quality options.
 - Report render progress through a reusable `RenderJob` callback.
@@ -181,6 +182,20 @@ frame, and launch the final video render with visible progress. When it
 edits an existing file, it preserves advanced JSON fields that are not exposed
 in the form yet.
 
+The editor is organized as a short workflow instead of one long form:
+`Data & content`, `Canvas & text`, `Bars & categories`, and
+`Animation & output`. Project loading stays in the sidebar, while dataset
+previews, generated JSON, and advanced controls are collapsed until needed.
+The old `Theme` and `Typography` selectors are intentionally hidden because
+their individual visual properties can be adjusted in the following sections;
+existing values are still preserved in saved project files for compatibility.
+
+The render settings show a live estimated video duration calculated from the
+CSV's distinct time periods, steps per transition, motion mode, and FPS. The
+same shared calculation supplies the pipeline's expected frame count, so the
+displayed runtime matches the generated timeline. It describes final playback
+length, not how long rendering will take.
+
 Example:
 
 ```json
@@ -212,7 +227,13 @@ Example:
     "value_label_min_x": null,
     "auto_fit_bar_count": true,
     "max_visible_bars": null,
+    "bar_shape": "capsule",
+    "bar_appearance_mode": "simple",
+    "bar_border_enabled": true,
+    "bar_border_color": "#FFFFFF",
+    "bar_border_width": 1.5,
     "bar_shadow_enabled": true,
+    "bar_shadow_color": "#000000",
     "bar_shadow_alpha": 0.12,
     "bar_shadow_offset_x": 5,
     "bar_shadow_offset_y": 4,
@@ -431,8 +452,23 @@ max_visible_bars
 `auto_fit_bar_count` is enabled by default. `max_visible_bars` can apply an
 additional manual cap, or stay `null` to use only the layout capacity.
 
-Bars can render a subtle configurable shadow behind the main rectangle. This is
-controlled in `ChartConfig` or in external project files:
+Bars support four reusable shapes without changing the underlying race layout:
+
+- `rectangle` keeps the classic square bar.
+- `rounded` adds restrained corner rounding.
+- `capsule` rounds both ends completely.
+- `lollipop` uses a thin stem ending in a circle.
+
+Set the shape with `bar_shape`. A configurable outline works with every shape:
+
+```text
+bar_border_enabled
+bar_border_color
+bar_border_width
+```
+
+Bars can also render a subtle configurable shadow behind the selected shape.
+This is controlled in `ChartConfig` or in external project files:
 
 ```text
 bar_shadow_enabled
@@ -451,7 +487,8 @@ bar_gradient_enabled
 bar_gradient_lighten
 ```
 
-When disabled, bars fall back to the original solid rectangle rendering.
+When disabled, bars fall back to a solid fill while preserving the selected
+shape, border, and shadow.
 
 Title, subtitle, time label, and source label typography can be tuned from
 `ChartConfig` or a project file:
@@ -588,6 +625,13 @@ Themes control:
 - muted text color
 - base font family
 - bar color palette
+
+Each project can override the theme background from Project Studio's
+`Background` panel. `Color` mode stores a custom canvas color. `Image` mode can
+upload PNG, JPEG, or WebP files into `backgrounds/` and supports `Cover`,
+`Contain`, and `Stretch` fitting. The selected color remains behind transparent
+pixels and the margins produced by `Contain`. The image is resized once when
+the renderer initializes and is then reused for every animation frame.
 
 Themes are defined in:
 
@@ -756,6 +800,132 @@ from main import run_preset
 
 result = run_preset("sqlite_population")
 print(result)
+```
+
+### Frame output modes
+
+`chart.frame_output_mode` controls how rendered frames reach FFmpeg:
+
+- `ffmpeg_stream` (default and recommended) draws RGBA frames in memory and
+  writes them directly to FFmpeg stdin, avoiding PNG encoding and temporary
+  frame files.
+- `png_sequence` preserves the PNG-frame pipeline as an optional fallback when
+  individual frames need to be inspected or reused.
+
+`png_compress_level` only applies to `png_sequence`. Level `0` saves faster and
+uses more disk space, while level `9` produces smaller intermediate files more
+slowly. It does not change the MP4 image quality.
+
+The renderer keeps its Matplotlib figure and artists alive for the full job;
+subsequent frames update bars, borders, shadows, logos, labels, and headers in
+place. Enabled bar gradients are batched into one reusable color-segment
+collection instead of creating and resampling one bicubic image per visible
+bar. Curved shapes add detail only around their rounded regions.
+
+The `Bar appearance` panel in Project Studio combines shape cards with a live
+preview and controls for gradient, border, shadow color, opacity, width, and
+offset. The selected values are stored in the project JSON.
+
+`Bar appearance` has two modes:
+
+- `Simple` preserves the optimized solid/gradient renderer and the original
+  border and projected-shadow controls.
+- `Advanced` renders a cached RGBA material per category and clips it to the
+  selected animated shape. It exposes independent tabs for Fill, Texture,
+  Depth, Effects, Track, Content, and Border & shadow.
+
+Advanced Fill supports solid, gradient, or textured materials; horizontal,
+vertical, and diagonal gradients; two or three color stops; movable highlight;
+and edge darkening. Category colors can remain authoritative or be replaced by
+custom start, center, and end colors.
+
+Texture presets include noise, brushed metal, grunge, paper, carbon, and a
+custom image path. Texture intensity, scale, contrast, and Overlay, Multiply,
+Screen, or Soft Light blending are configurable. Relative custom paths are
+resolved from the directory where BarChartStudio is launched. Project Studio
+can also upload PNG, JPEG, or WebP textures into the local `textures/` folder.
+
+Depth and lighting are separate layers:
+
+```text
+bar_bevel_enabled
+bar_bevel_size
+bar_bevel_highlight_opacity
+bar_inner_shadow_opacity
+bar_inner_shadow_size
+bar_top_highlight_opacity
+bar_bottom_shade_opacity
+bar_outer_glow_enabled
+bar_glow_color
+bar_glow_opacity
+bar_glow_blur
+bar_inner_glow_opacity
+bar_shine_enabled
+bar_shine_position
+bar_shine_width
+bar_shine_opacity
+```
+
+The projected `bar_shadow_*` controls remain exclusively responsible for the
+shadow behind the bar. They do not modify bevel, inner shadow, or glow.
+
+Advanced materials intentionally cost more to rasterize. In a repeated
+eight-bar 1920x1080 check, Simple averaged `0.0852s/frame`, Advanced Fill
+`0.1516s/frame`, and the fully layered Advanced sample `0.1672s/frame`.
+Use Simple for maximum render speed and Advanced when the additional finish is
+worth the roughly 1.8x-2.0x drawing cost.
+
+Advanced Track can draw a full-width background bar behind each value. Content
+controls can place logos outside-left, inside-left, inside-right, or hide them.
+Logo masks can follow the bar automatically or use circle, rounded, or square
+shapes, with independent padding, background, opacity, border color, and border
+width. Capsule and lollipop logos use circular adaptive masks; an inside-left
+lollipop logo adds a circular socket at the start of the stem, while an
+inside-right logo occupies its endpoint circle. Legacy `outside` and `inside`
+project values remain supported and are migrated by the editor. Category
+labels can be placed left, inside, above, or outside, and values automatically,
+outside, inside, or above. Inside labels and values reserve the selected logo
+slot. Category text alignment is independent from position and supports Auto,
+Left, Center, and Right within the category's existing text area. Value color,
+outline, and shadow are configurable, while font family and size remain
+synchronized with the existing text controls.
+
+Project Studio offers up to 30 curated common font families installed on the
+current system and allows independent selection for the title, subtitle,
+category labels, values, date, source, and ranking. Each dropdown renders its
+font name and `Aa 123` sample using that family. `Project default` inherits the
+base font retained by the project.
+
+The `Text colors` panel provides independent color controls for the title,
+subtitle, category labels, values, date, source, and ranking. Older projects
+without these fields continue to inherit their original theme colors. An
+explicit category or value color also applies when that text is placed inside
+a bar; the automatic contrast color remains active when no override exists.
+
+The `Text sizes` panel exposes independent point sizes for all seven text
+elements. The visual text-layout editor lets users drag title, subtitle, date,
+and source directly on a scaled canvas. It supports arrow-key nudging,
+horizontal alignment, safe-area guides, and preset reset while persisting X/Y
+coordinates internally.
+
+### Motion modes
+
+Project Studio exposes two animation modes:
+
+- `Per-year easing` preserves the original independent easing for every pair
+  of years.
+- `Continuous` uses neighboring yearly keyframes to keep bar positions,
+  widths, rankings, and smoothed values moving through year boundaries without
+  restarting velocity. Boundary frames are emitted once instead of duplicated.
+
+The source data remains annual; continuous mode only changes interpolation and
+does not invent monthly observations.
+
+The streaming mode can also be selected from Project Studio or overridden from
+the CLI:
+
+```powershell
+python src/main.py --project projects/example.json --frame-output-mode ffmpeg_stream
 ```
 
 ## Data Format
