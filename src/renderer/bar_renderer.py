@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from pathlib import Path as FilePath
 from time import perf_counter
@@ -11,10 +12,11 @@ import matplotlib.colors as mcolors
 import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.artist import Artist
 from matplotlib.collections import PolyCollection
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 
 from config.chart_config import ChartConfig
 from utils.text_fit import estimate_text_width, fit_text_to_width
@@ -57,12 +59,85 @@ class _BarArtists:
         ) if artist is not None)
 
 
+class _StaticImageArtist(Artist):
+
+    def __init__(self, image, *, left, top, canvas_height):
+        super().__init__()
+        self.image = np.array(
+            np.asarray(image)[::-1],
+            dtype=np.uint8,
+            copy=True,
+            order="C",
+        )
+        self.left = int(left)
+        self.top = int(top)
+        self.canvas_height = int(canvas_height)
+
+    def get_extent(self):
+        return (
+            self.left,
+            self.left + self.image.shape[1],
+            self.top + self.image.shape[0],
+            self.top,
+        )
+
+    def draw(self, renderer):
+        if not self.get_visible():
+            return
+
+        graphics_context = renderer.new_gc()
+
+        try:
+            renderer.draw_image(
+                graphics_context,
+                self.left,
+                self.canvas_height - self.top - self.image.shape[0],
+                self.image,
+            )
+        finally:
+            graphics_context.restore()
+
+        self.stale = False
+
+
+class _ImageCommandsArtist(Artist):
+
+    def __init__(self, canvas_height):
+        super().__init__()
+        self.canvas_height = canvas_height
+        self.commands = ()
+
+    def set_commands(self, commands):
+        self.commands = tuple(commands)
+        self.set_visible(bool(self.commands))
+        self.stale = True
+
+    def draw(self, renderer):
+        if not self.get_visible():
+            return
+
+        graphics_context = renderer.new_gc()
+
+        try:
+            for image, left, top in self.commands:
+                renderer.draw_image(
+                    graphics_context,
+                    int(left),
+                    int(self.canvas_height - top - image.shape[0]),
+                    image,
+                )
+        finally:
+            graphics_context.restore()
+
+        self.stale = False
+
+
 class BarRenderer:
 
     def __init__(self, output_dir="output", config=None):
         self.output_dir = output_dir
         self.config = config or ChartConfig()
-        self.logo_cache = {}
+        self.logo_cache = OrderedDict()
         self._figure = None
         self._axis = None
         self._scene_artists_initialized = False
@@ -73,8 +148,20 @@ class BarRenderer:
         self._background_image_artist = None
         self._background_image_cache = None
         self._gradient_artist = None
+        self._advanced_composite_artist = None
+        self._logo_composite_artist = None
+        self._advanced_track_collection = None
+        self._advanced_shadow_collection = None
+        self._advanced_glow_collection = None
         self._bar_artists = []
-        self._advanced_fill_cache = {}
+        self._advanced_fill_cache = OrderedDict()
+        self._advanced_material_cache = OrderedDict()
+        self._advanced_resized_fill_cache = OrderedDict()
+        self._advanced_shape_mask_cache = OrderedDict()
+        self._advanced_border_mask_cache = OrderedDict()
+        self._logo_sprite_cache = OrderedDict()
+        self._logo_shape_mask_cache = OrderedDict()
+        self._logo_border_mask_cache = OrderedDict()
         self.draw_seconds = 0.0
         self.save_seconds = 0.0
         os.makedirs(self.output_dir, exist_ok=True)
@@ -125,8 +212,21 @@ class BarRenderer:
             self._background_image_artist = None
             self._background_image_cache = None
             self._gradient_artist = None
+            self._advanced_composite_artist = None
+            self._logo_composite_artist = None
+            self._advanced_track_collection = None
+            self._advanced_shadow_collection = None
+            self._advanced_glow_collection = None
             self._bar_artists = []
-            self._advanced_fill_cache = {}
+            self.logo_cache.clear()
+            self._advanced_fill_cache.clear()
+            self._advanced_material_cache.clear()
+            self._advanced_resized_fill_cache.clear()
+            self._advanced_shape_mask_cache.clear()
+            self._advanced_border_mask_cache.clear()
+            self._logo_sprite_cache.clear()
+            self._logo_shape_mask_cache.clear()
+            self._logo_border_mask_cache.clear()
 
     def _initialize_scene_artists(self, ax):
         self._initialize_background_artist(ax)
@@ -188,6 +288,29 @@ class BarRenderer:
                 zorder=2,
             )
             ax.add_collection(self._gradient_artist)
+        elif self._uses_advanced_appearance():
+            self._advanced_track_collection = self._create_advanced_collection(
+                ax,
+                zorder=0.8,
+            )
+            self._advanced_shadow_collection = self._create_advanced_collection(
+                ax,
+                zorder=1,
+            )
+            self._advanced_glow_collection = self._create_advanced_collection(
+                ax,
+                zorder=1.5,
+                facecolors="none",
+            )
+            self._advanced_composite_artist = _ImageCommandsArtist(
+                self.config.height,
+            )
+            self._advanced_composite_artist.set_zorder(2)
+            ax.add_artist(self._advanced_composite_artist)
+
+        self._logo_composite_artist = _ImageCommandsArtist(self.config.height)
+        self._logo_composite_artist.set_zorder(3)
+        ax.add_artist(self._logo_composite_artist)
         self._scene_artists_initialized = True
 
     def _initialize_background_artist(self, ax):
@@ -204,13 +327,14 @@ class BarRenderer:
         if image is None:
             return
 
-        self._background_image_artist = ax.imshow(
+        self._background_image_artist = _StaticImageArtist(
             image,
-            extent=(0, self.config.width, self.config.height, 0),
-            aspect="auto",
-            interpolation="bilinear",
-            zorder=-10,
+            left=0,
+            top=0,
+            canvas_height=self.config.height,
         )
+        self._background_image_artist.set_zorder(-10)
+        ax.add_artist(self._background_image_artist)
 
     def _load_background_image(self):
         if self._background_image_cache is not None:
@@ -284,6 +408,12 @@ class BarRenderer:
 
         self._ensure_bar_artist_capacity(ax, len(scene.bars))
 
+        if self._uses_advanced_appearance():
+            self._update_advanced_underlay_collections(scene.bars)
+            self._update_advanced_composite(scene.bars)
+
+        self._update_logo_composite(scene.bars)
+
         for artists, sprite in zip(self._bar_artists, scene.bars):
             self._update_bar_artists(artists, sprite)
 
@@ -294,8 +424,11 @@ class BarRenderer:
             self._set_bar_artists_visible(artists, False)
 
     def _set_text_artist(self, artist, text, visible):
-        artist.set_text(text)
-        artist.set_visible(visible)
+        if artist.get_text() != text:
+            artist.set_text(text)
+
+        if artist.get_visible() != visible:
+            artist.set_visible(visible)
 
     def _uses_advanced_appearance(self):
         return self.config.bar_appearance_mode == "advanced"
@@ -306,6 +439,20 @@ class BarRenderer:
             and self.config.bar_gradient_enabled
         )
 
+    @staticmethod
+    def _create_advanced_collection(ax, *, zorder, facecolors=None):
+        collection = PolyCollection(
+            [],
+            closed=True,
+            edgecolors="none",
+            facecolors=facecolors,
+            antialiaseds=True,
+            zorder=zorder,
+        )
+        ax.add_collection(collection)
+        collection.set_visible(False)
+        return collection
+
     def _ensure_bar_artist_capacity(self, ax, count):
         while len(self._bar_artists) < count:
             self._bar_artists.append(self._create_bar_artists(ax))
@@ -313,59 +460,28 @@ class BarRenderer:
     def _create_bar_artists(self, ax):
         empty_path = Path(np.empty((0, 2)))
         track = None
+        shadow = None
         glow = ()
+        bar = None
         fill_clip = None
         fill_image = None
+        border = None
 
-        if self._uses_advanced_appearance():
-            track = PathPatch(empty_path, edgecolor="none", zorder=0.8)
-            ax.add_patch(track)
+        if not self._uses_advanced_appearance():
+            shadow = PathPatch(empty_path, edgecolor="none", zorder=1)
+            ax.add_patch(shadow)
 
-        shadow = PathPatch(empty_path, edgecolor="none", zorder=1)
-        ax.add_patch(shadow)
+            if not self.config.bar_gradient_enabled:
+                bar = PathPatch(empty_path, edgecolor="none", zorder=2)
+                ax.add_patch(bar)
 
-        if self._uses_advanced_appearance():
-            bar = None
-            glow = tuple(
-                PathPatch(
-                    empty_path,
-                    facecolor="none",
-                    edgecolor="none",
-                    zorder=1.5 + (index * 0.01),
-                )
-                for index in range(3)
-            )
-            for glow_artist in glow:
-                ax.add_patch(glow_artist)
-
-            fill_clip = PathPatch(
+            border = PathPatch(
                 empty_path,
                 facecolor="none",
                 edgecolor="none",
-                zorder=2,
+                zorder=2.5,
             )
-            ax.add_patch(fill_clip)
-            fill_image = ax.imshow(
-                np.zeros((2, 2, 4), dtype=np.float32),
-                extent=(0, 0, 0, 0),
-                aspect="auto",
-                interpolation="bilinear",
-                zorder=2,
-            )
-            fill_image.set_clip_path(fill_clip)
-        elif self.config.bar_gradient_enabled:
-            bar = None
-        else:
-            bar = PathPatch(empty_path, edgecolor="none", zorder=2)
-            ax.add_patch(bar)
-
-        border = PathPatch(
-            empty_path,
-            facecolor="none",
-            edgecolor="none",
-            zorder=2.5,
-        )
-        ax.add_patch(border)
+            ax.add_patch(border)
 
         rank_label = ax.text(
             self._rank_label_x(),
@@ -379,33 +495,10 @@ class BarRenderer:
             color=self.config.resolved_rank_label_text_color,
             zorder=4,
         )
-        logo_background = PathPatch(
-            empty_path,
-            facecolor="none",
-            edgecolor="none",
-            zorder=2.9,
-        )
-        ax.add_patch(logo_background)
-        logo_clip = PathPatch(
-            empty_path,
-            facecolor="none",
-            edgecolor="none",
-            zorder=3,
-        )
-        ax.add_patch(logo_clip)
-        logo = ax.imshow(
-            np.zeros((1, 1, 4), dtype=np.uint8),
-            extent=(0, 0, 0, 0),
-            zorder=3,
-        )
-        logo.set_clip_path(logo_clip)
-        logo_border = PathPatch(
-            empty_path,
-            facecolor="none",
-            edgecolor="none",
-            zorder=3.2,
-        )
-        ax.add_patch(logo_border)
+        logo_background = None
+        logo_clip = None
+        logo = None
+        logo_border = None
         name_label = ax.text(
             0,
             0,
@@ -457,27 +550,17 @@ class BarRenderer:
         rgba = mcolors.to_rgba(sprite.color, alpha * opacity)
         bar_path = None
 
-        if (
-            self._uses_advanced_appearance()
-            or not self.config.bar_gradient_enabled
+        if not self._uses_advanced_appearance() and (
+            not self.config.bar_gradient_enabled
             or self.config.bar_border_enabled
         ):
             bar_path = self._bar_shape_path(sprite)
 
-        self._update_track_artist(artists.track, sprite, opacity)
-        self._update_shadow_artist(artists.shadow, sprite, opacity)
-        self._update_glow_artists(artists.glow, bar_path, opacity)
-        self._update_advanced_fill_artists(
-            artists.fill_clip,
-            artists.fill_image,
-            sprite,
-            bar_path,
-            alpha * opacity,
-        )
-        self._update_bar_artist(artists.bar, bar_path, rgba)
-        self._update_border_artist(artists.border, bar_path, opacity)
+        if not self._uses_advanced_appearance():
+            self._update_shadow_artist(artists.shadow, sprite, opacity)
+            self._update_bar_artist(artists.bar, bar_path, rgba)
+            self._update_border_artist(artists.border, bar_path, opacity)
         self._update_rank_artist(artists.rank_label, sprite, opacity)
-        self._update_logo_artists(artists, sprite, opacity)
 
         name_layout = self._bar_label_layout(sprite)
         artists.name_label.set_position((name_layout["x"], name_layout["y"]))
@@ -519,78 +602,408 @@ class BarRenderer:
             shadow_alpha * opacity,
         ))
 
-    def _update_track_artist(self, artist, sprite, opacity):
-        if artist is None:
-            return
+    def _update_advanced_composite(self, sprites):
+        commands = []
 
-        visible = self.config.bar_track_enabled and self.config.bar_track_opacity > 0
-        artist.set_visible(visible)
+        for sprite in sprites:
+            if self._opacity(sprite) <= 0 or sprite.width <= 0 or sprite.height <= 0:
+                continue
+
+            composite, extent = self._compose_advanced_sprite(sprite)
+            commands.append((
+                np.array(composite, dtype=np.uint8, copy=True, order="C"),
+                extent[0],
+                extent[3],
+            ))
+
+        self._advanced_composite_artist.set_commands(commands)
+
+    def _update_advanced_underlay_collections(self, sprites):
+        visible_sprites = [
+            sprite
+            for sprite in sprites
+            if self._opacity(sprite) > 0 and sprite.width > 0 and sprite.height > 0
+        ]
+        self._update_advanced_track_collection(visible_sprites)
+        self._update_advanced_shadow_collection(visible_sprites)
+        self._update_advanced_glow_collection(visible_sprites)
+
+    def _update_advanced_track_collection(self, sprites):
+        visible = (
+            self.config.bar_track_enabled
+            and self.config.bar_track_opacity > 0
+            and bool(sprites)
+        )
+        self._advanced_track_collection.set_visible(visible)
 
         if not visible:
+            self._advanced_track_collection.set_verts([])
             return
 
-        track_sprite = replace(sprite, width=self.config.max_bar_width)
-        artist.set_path(self._bar_shape_path(track_sprite))
-        artist.set_facecolor(mcolors.to_rgba(
-            self.config.bar_track_color,
-            self.config.bar_track_opacity * opacity,
-        ))
+        vertices = []
+        colors = []
 
-    def _update_glow_artists(self, artists, bar_path, opacity):
-        if not artists:
+        for sprite in sprites:
+            track_sprite = replace(sprite, width=self.config.max_bar_width)
+            vertices.append(self._bar_shape_path(track_sprite).vertices)
+            colors.append(mcolors.to_rgba(
+                self.config.bar_track_color,
+                self.config.bar_track_opacity * self._opacity(sprite),
+            ))
+
+        self._advanced_track_collection.set_verts(vertices, closed=True)
+        self._advanced_track_collection.set_facecolors(colors)
+
+    def _update_advanced_shadow_collection(self, sprites):
+        visible = (
+            self.config.bar_shadow_enabled
+            and self.config.bar_shadow_alpha > 0
+            and bool(sprites)
+        )
+        self._advanced_shadow_collection.set_visible(visible)
+
+        if not visible:
+            self._advanced_shadow_collection.set_verts([])
             return
 
+        vertices = []
+        colors = []
+
+        for sprite in sprites:
+            vertices.append(self._bar_shape_path(
+                sprite,
+                offset_x=self.config.bar_shadow_offset_x,
+                offset_y=self.config.bar_shadow_offset_y,
+            ).vertices)
+            colors.append(mcolors.to_rgba(
+                self.config.bar_shadow_color,
+                self.config.bar_shadow_alpha * self._opacity(sprite),
+            ))
+
+        self._advanced_shadow_collection.set_verts(vertices, closed=True)
+        self._advanced_shadow_collection.set_facecolors(colors)
+
+    def _update_advanced_glow_collection(self, sprites):
         visible = (
             self.config.bar_outer_glow_enabled
             and self.config.bar_glow_opacity > 0
             and self.config.bar_glow_blur > 0
+            and bool(sprites)
         )
+        self._advanced_glow_collection.set_visible(visible)
 
-        for index, artist in enumerate(artists):
-            artist.set_visible(visible)
-
-            if not visible:
-                continue
-
-            spread = self.config.bar_glow_blur * ((index + 1) / len(artists))
-            alpha = (
-                self.config.bar_glow_opacity
-                * opacity
-                * (0.52 - (index * 0.13))
-            )
-            artist.set_path(bar_path)
-            artist.set_linewidth(max(1.0, spread))
-            artist.set_edgecolor(mcolors.to_rgba(
-                self.config.bar_glow_color,
-                max(0.0, alpha),
-            ))
-
-    def _update_advanced_fill_artists(
-        self,
-        clip_artist,
-        image_artist,
-        sprite,
-        bar_path,
-        opacity,
-    ):
-        if not self._uses_advanced_appearance():
+        if not visible:
+            self._advanced_glow_collection.set_verts([])
             return
 
-        clip_artist.set_path(bar_path)
-        clip_artist.set_visible(True)
-        image_artist.set_data(self._advanced_fill_image(sprite.color))
-        image_artist.set_extent((
-            sprite.x,
-            sprite.x + sprite.width,
-            sprite.y + (sprite.height / 2),
-            sprite.y - (sprite.height / 2),
+        vertices = []
+        colors = []
+        widths = []
+
+        for sprite in sprites:
+            path_vertices = self._bar_shape_path(sprite).vertices
+
+            for index in range(3):
+                spread = self.config.bar_glow_blur * ((index + 1) / 3)
+                alpha = (
+                    self.config.bar_glow_opacity
+                    * self._opacity(sprite)
+                    * (0.52 - (index * 0.13))
+                )
+                vertices.append(path_vertices)
+                colors.append(mcolors.to_rgba(
+                    self.config.bar_glow_color,
+                    max(0.0, alpha),
+                ))
+                widths.append(max(1.0, spread))
+
+        self._advanced_glow_collection.set_verts(vertices, closed=True)
+        self._advanced_glow_collection.set_facecolors("none")
+        self._advanced_glow_collection.set_edgecolors(colors)
+        self._advanced_glow_collection.set_linewidths(widths)
+
+    def _compose_advanced_sprite(self, sprite):
+        left = max(0, int(np.floor(sprite.x)))
+        right = min(
+            self.config.width,
+            int(np.ceil(sprite.x + sprite.width)),
+        )
+        top = max(0, int(np.floor(sprite.y - (sprite.height / 2))))
+        bottom = min(
+            self.config.height,
+            int(np.ceil(sprite.y + (sprite.height / 2))),
+        )
+        canvas = Image.new(
+            "RGBA",
+            (max(1, right - left), max(1, bottom - top)),
+            (0, 0, 0, 0),
+        )
+        self._composite_advanced_fill(canvas, sprite, left, top)
+
+        if (
+            self.config.bar_border_enabled
+            and self.config.bar_border_width > 0
+        ):
+            self._composite_advanced_border(canvas, sprite, left, top)
+
+        return (
+            np.asarray(canvas, dtype=np.uint8),
+            (left, right, bottom, top),
+        )
+
+    def _composite_advanced_fill(self, canvas, sprite, origin_x, origin_y):
+        geometry = self._advanced_sprite_geometry(sprite)
+
+        if geometry is None:
+            return
+
+        left, top, width, height, mask = geometry
+        material = self._advanced_resized_material(
+            sprite.color,
+            width,
+            height,
+        ).copy()
+        width_alpha = min(
+            1.0,
+            max(0.25, sprite.width / self.config.max_bar_width),
+        )
+        material.putalpha(self._scaled_alpha_mask(
+            mask,
+            width_alpha * self._opacity(sprite),
         ))
-        image_artist.set_alpha(opacity)
-        image_artist.set_visible(True)
+        self._alpha_composite_at(
+            canvas,
+            material,
+            left - origin_x,
+            top - origin_y,
+        )
+
+    def _composite_advanced_border(self, canvas, sprite, origin_x, origin_y):
+        geometry = self._advanced_sprite_geometry(sprite)
+
+        if geometry is None:
+            return
+
+        left, top, width, height, _ = geometry
+        border_mask = self._advanced_border_mask(
+            width,
+            height,
+            self._lollipop_has_left_socket(sprite),
+        )
+        layer = self._solid_advanced_layer(
+            (width, height),
+            self.config.bar_border_color,
+            border_mask,
+            self._opacity(sprite),
+        )
+        self._alpha_composite_at(
+            canvas,
+            layer,
+            left - origin_x,
+            top - origin_y,
+        )
+
+    def _advanced_sprite_geometry(self, sprite):
+        if sprite.width <= 0 or sprite.height <= 0:
+            return None
+
+        pixel_width = max(1, int(round(sprite.width)))
+        pixel_height = max(1, int(round(sprite.height)))
+        left = int(round(sprite.x))
+        top = int(round(sprite.y - (sprite.height / 2)))
+        mask = self._advanced_shape_mask(
+            pixel_width,
+            pixel_height,
+            self._lollipop_has_left_socket(sprite),
+        )
+        return left, top, pixel_width, pixel_height, mask
+
+    def _advanced_shape_mask(self, width, height, left_socket):
+        key = (self.config.bar_shape, width, height, bool(left_socket))
+        cached = self._lru_get(self._advanced_shape_mask_cache, key)
+
+        if cached is not None:
+            return cached
+
+        scale = 2
+        mask = Image.new("L", (width * scale, height * scale), 0)
+        points = self._advanced_shape_points(
+            width,
+            height,
+            left_socket,
+            scale=scale,
+        )
+        ImageDraw.Draw(mask).polygon(points, fill=255)
+        mask = mask.resize((width, height), Image.Resampling.LANCZOS)
+        self._lru_put(self._advanced_shape_mask_cache, key, mask, limit=384)
+        return mask
+
+    def _advanced_border_mask(self, width, height, left_socket):
+        line_width = max(0.5, float(self.config.bar_border_width))
+        key = (
+            self.config.bar_shape,
+            width,
+            height,
+            bool(left_socket),
+            round(line_width, 3),
+        )
+        cached = self._lru_get(self._advanced_border_mask_cache, key)
+
+        if cached is not None:
+            return cached
+
+        scale = 2
+        mask = Image.new("L", (width * scale, height * scale), 0)
+        points = self._advanced_shape_points(
+            width,
+            height,
+            left_socket,
+            scale=scale,
+        )
+        ImageDraw.Draw(mask).line(
+            [*points, points[0]],
+            fill=255,
+            width=max(1, int(round(line_width * scale))),
+            joint="curve",
+        )
+        mask = mask.resize((width, height), Image.Resampling.LANCZOS)
+        self._lru_put(self._advanced_border_mask_cache, key, mask, limit=256)
+        return mask
+
+    def _advanced_shape_points(self, width, height, left_socket, *, scale):
+        shape_width = max(1.0, float(width - 1))
+        shape_height = max(1.0, float(height - 1))
+
+        if self.config.bar_shape == "lollipop":
+            vertices = self._lollipop_vertices(
+                0,
+                shape_height / 2,
+                shape_width,
+                shape_height,
+                include_left_socket=bool(left_socket),
+            )
+        else:
+            radius = self._bar_corner_radius(shape_width, shape_height)
+            vertices = self._rounded_rectangle_vertices(
+                0,
+                0,
+                shape_width,
+                shape_height,
+                radius,
+            )
+
+        return [
+            (int(round(x * scale)), int(round(y * scale)))
+            for x, y in vertices
+        ]
+
+    def _advanced_resized_material(self, category_color, width, height):
+        color_key = str(category_color).lower()
+        key = (color_key, width, height)
+        cached = self._lru_get(self._advanced_resized_fill_cache, key)
+
+        if cached is not None:
+            return cached
+
+        material = self._advanced_material_image(color_key).resize(
+            (width, height),
+            Image.Resampling.BILINEAR,
+        )
+        self._lru_put(
+            self._advanced_resized_fill_cache,
+            key,
+            material,
+            limit=192,
+        )
+        return material
+
+    def _advanced_material_image(self, category_color):
+        cached = self._lru_get(self._advanced_material_cache, category_color)
+
+        if cached is not None:
+            return cached
+
+        rgba = self._advanced_fill_image(category_color)
+
+        if np.issubdtype(rgba.dtype, np.floating):
+            rgba = np.uint8(np.clip(rgba, 0.0, 1.0) * 255)
+        else:
+            rgba = np.asarray(rgba, dtype=np.uint8)
+
+        material = Image.fromarray(rgba, mode="RGBA")
+        self._lru_put(
+            self._advanced_material_cache,
+            category_color,
+            material,
+            limit=96,
+        )
+        return material
+
+    def _solid_advanced_layer(self, size, color, mask, opacity):
+        layer = Image.new("RGBA", size, self._rgba8(color))
+        layer.putalpha(self._scaled_alpha_mask(mask, opacity))
+        return layer
+
+    def _scaled_alpha_mask(self, mask, opacity):
+        opacity = min(1.0, max(0.0, float(opacity)))
+
+        if opacity >= 0.999:
+            return mask
+
+        return mask.point([
+            int(round(alpha * opacity))
+            for alpha in range(256)
+        ])
+
+    def _alpha_composite_at(self, canvas, layer, left, top):
+        right = min(canvas.width, left + layer.width)
+        bottom = min(canvas.height, top + layer.height)
+        destination_left = max(0, left)
+        destination_top = max(0, top)
+
+        if right <= destination_left or bottom <= destination_top:
+            return
+
+        source_box = (
+            destination_left - left,
+            destination_top - top,
+            right - left,
+            bottom - top,
+        )
+        source = (
+            layer
+            if source_box == (0, 0, layer.width, layer.height)
+            else layer.crop(source_box)
+        )
+        canvas.alpha_composite(source, (destination_left, destination_top))
+
+    @staticmethod
+    def _rgba8(color):
+        return tuple(
+            int(round(channel * 255))
+            for channel in mcolors.to_rgba(color)
+        )
+
+    @staticmethod
+    def _lru_get(cache, key):
+        value = cache.get(key)
+
+        if value is not None:
+            cache.move_to_end(key)
+
+        return value
+
+    @staticmethod
+    def _lru_put(cache, key, value, *, limit):
+        cache[key] = value
+        cache.move_to_end(key)
+
+        while len(cache) > limit:
+            cache.popitem(last=False)
 
     def _advanced_fill_image(self, category_color):
         cache_key = str(category_color).lower()
-        cached = self._advanced_fill_cache.get(cache_key)
+        cached = self._lru_get(self._advanced_fill_cache, cache_key)
 
         if cached is not None:
             return cached
@@ -612,7 +1025,12 @@ class BarRenderer:
         fill = self._apply_advanced_depth(fill, x, y)
         rgba = np.ones((height, width, 4), dtype=np.float32)
         rgba[:, :, :3] = np.clip(fill, 0.0, 1.0)
-        self._advanced_fill_cache[cache_key] = rgba
+        self._lru_put(
+            self._advanced_fill_cache,
+            cache_key,
+            rgba,
+            limit=128,
+        )
         return rgba
 
     def _advanced_base_fill(self, category_color, x, y):
@@ -1200,69 +1618,256 @@ class BarRenderer:
         artist.set_text(self._format_rank(sprite.rank))
         artist.set_alpha(opacity)
 
-    def _update_logo_artists(self, artists, sprite, opacity):
-        if not sprite.logo_path or self._logo_position() == "hidden":
-            self._set_logo_artists_visible(artists, False)
-            return
+    def _update_logo_composite(self, sprites):
+        commands = []
+
+        if self.config.logos_enabled and self._logo_position() != "hidden":
+            for sprite in sprites:
+                command = self._logo_composite_command(sprite)
+
+                if command is not None:
+                    commands.append(command)
+
+        self._logo_composite_artist.set_commands(commands)
+
+    def _logo_composite_command(self, sprite):
+        opacity = self._opacity(sprite)
+
+        if not sprite.logo_path or opacity <= 0:
+            return None
 
         image = self._load_logo(sprite.logo_path)
         layout = self._logo_layout(sprite)
 
         if image is None or layout is None:
-            self._set_logo_artists_visible(artists, False)
-            return
+            return None
 
-        logo_path = self._logo_shape_path(sprite, layout)
-        artists.logo_clip.set_path(logo_path)
-        artists.logo_clip.set_visible(True)
-
-        artists.logo.set_data(image)
-        artists.logo.set_extent((
-            layout["left"],
-            layout["right"],
-            layout["bottom"],
-            layout["top"],
-        ))
-        artists.logo.set_alpha(opacity)
-        artists.logo.set_visible(True)
-
-        background_opacity = max(
-            0.0,
-            min(1.0, float(self.config.bar_logo_background_opacity)),
+        pixel_size = max(1, int(round(layout["size"])))
+        logo_sprite, padding = self._cached_logo_sprite(
+            sprite.logo_path,
+            image,
+            pixel_size,
         )
-        background_visible = (
+
+        if opacity < 0.999:
+            logo_sprite = logo_sprite.copy()
+            logo_sprite[:, :, 3] = np.uint8(
+                np.asarray(logo_sprite[:, :, 3], dtype=np.float32) * opacity
+            )
+
+        return (
+            logo_sprite,
+            int(round(layout["left"])) - padding,
+            int(round(layout["top"])) - padding,
+        )
+
+    def _cached_logo_sprite(self, logo_path, image, size):
+        shape = self._resolved_logo_shape()
+        background_enabled = (
             self.config.bar_logo_background_enabled
-            and background_opacity > 0
+            and self.config.bar_logo_background_opacity > 0
         )
-        artists.logo_background.set_visible(background_visible)
-
-        if background_visible:
-            artists.logo_background.set_path(logo_path)
-            artists.logo_background.set_facecolor(mcolors.to_rgba(
-                self.config.bar_logo_background_color,
-                background_opacity * opacity,
-            ))
-
-        border_width = max(0.0, float(self.config.bar_logo_border_width))
-        border_visible = (
+        border_enabled = (
             self.config.bar_logo_border_enabled
-            and border_width > 0
+            and self.config.bar_logo_border_width > 0
         )
-        artists.logo_border.set_visible(border_visible)
+        cache_key = (
+            str(logo_path),
+            int(self.config.logo_size),
+            int(size),
+            shape,
+            bool(background_enabled),
+            str(self.config.bar_logo_background_color).lower(),
+            round(float(self.config.bar_logo_background_opacity), 3),
+            bool(border_enabled),
+            str(self.config.bar_logo_border_color).lower(),
+            round(float(self.config.bar_logo_border_width), 3),
+        )
+        cached = self._lru_get(self._logo_sprite_cache, cache_key)
 
-        if border_visible:
-            artists.logo_border.set_path(logo_path)
-            artists.logo_border.set_edgecolor(mcolors.to_rgba(
+        if cached is not None:
+            return cached
+
+        logo_sprite = self._compose_logo_sprite(
+            image,
+            size=size,
+            shape=shape,
+            background_enabled=background_enabled,
+            border_enabled=border_enabled,
+        )
+        self._lru_put(
+            self._logo_sprite_cache,
+            cache_key,
+            logo_sprite,
+            limit=384,
+        )
+        return logo_sprite
+
+    def _compose_logo_sprite(
+        self,
+        image,
+        *,
+        size,
+        shape,
+        background_enabled,
+        border_enabled,
+    ):
+        border_width = max(0.0, float(self.config.bar_logo_border_width))
+        padding = (
+            max(1, int(np.ceil(border_width / 2)) + 1)
+            if border_enabled
+            else 0
+        )
+        canvas_size = size + (padding * 2)
+        canvas = Image.new(
+            "RGBA",
+            (canvas_size, canvas_size),
+            (0, 0, 0, 0),
+        )
+        shape_mask = self._logo_shape_mask(shape, size)
+
+        if background_enabled:
+            background = self._solid_advanced_layer(
+                (size, size),
+                self.config.bar_logo_background_color,
+                shape_mask,
+                self.config.bar_logo_background_opacity,
+            )
+            canvas.alpha_composite(background, (padding, padding))
+
+        logo = Image.fromarray(np.asarray(image, dtype=np.uint8)).resize(
+            (size, size),
+            Image.Resampling.LANCZOS,
+        )
+        logo_alpha = np.asarray(logo.getchannel("A"), dtype=np.uint16)
+        shape_alpha = np.asarray(shape_mask, dtype=np.uint16)
+        clipped_alpha = np.uint8(
+            ((logo_alpha * shape_alpha) + 127) // 255
+        )
+        logo.putalpha(Image.fromarray(clipped_alpha))
+        canvas.alpha_composite(logo, (padding, padding))
+
+        if border_enabled:
+            border_mask = self._logo_border_mask(
+                shape,
+                size,
+                padding,
+                border_width,
+            )
+            border = self._solid_advanced_layer(
+                canvas.size,
                 self.config.bar_logo_border_color,
-                opacity,
-            ))
-            artists.logo_border.set_linewidth(border_width)
+                border_mask,
+                1.0,
+            )
+            canvas.alpha_composite(border)
 
-    def _set_logo_artists_visible(self, artists, visible):
-        artists.logo_background.set_visible(visible)
-        artists.logo_clip.set_visible(visible)
-        artists.logo.set_visible(visible)
-        artists.logo_border.set_visible(visible)
+        render_image = np.array(
+            np.asarray(canvas)[::-1],
+            dtype=np.uint8,
+            copy=True,
+            order="C",
+        )
+        return render_image, padding
+
+    def _resolved_logo_shape(self):
+        shape = self.config.bar_logo_shape
+
+        if shape != "adaptive":
+            return shape
+
+        if self._logo_position() == "outside_left":
+            return "square"
+
+        if self.config.bar_shape in ("capsule", "lollipop"):
+            return "circle"
+
+        if self.config.bar_shape == "rounded":
+            return "rounded"
+
+        return "square"
+
+    def _logo_shape_mask(self, shape, size):
+        cache_key = (shape, int(size))
+        cached = self._lru_get(self._logo_shape_mask_cache, cache_key)
+
+        if cached is not None:
+            return cached
+
+        scale = 4
+        mask = Image.new("L", (size * scale, size * scale), 0)
+        radius = self._logo_shape_radius(shape, size)
+        vertices = self._rounded_rectangle_vertices(
+            0,
+            0,
+            max(1.0, float(size - 1)),
+            max(1.0, float(size - 1)),
+            radius,
+        )
+        ImageDraw.Draw(mask).polygon(
+            [
+                (int(round(x * scale)), int(round(y * scale)))
+                for x, y in vertices
+            ],
+            fill=255,
+        )
+        mask = mask.resize((size, size), Image.Resampling.LANCZOS)
+        self._lru_put(self._logo_shape_mask_cache, cache_key, mask, limit=256)
+        return mask
+
+    def _logo_border_mask(self, shape, size, padding, border_width):
+        cache_key = (
+            shape,
+            int(size),
+            int(padding),
+            round(float(border_width), 3),
+        )
+        cached = self._lru_get(self._logo_border_mask_cache, cache_key)
+
+        if cached is not None:
+            return cached
+
+        scale = 4
+        canvas_size = size + (padding * 2)
+        mask = Image.new(
+            "L",
+            (canvas_size * scale, canvas_size * scale),
+            0,
+        )
+        radius = self._logo_shape_radius(shape, size)
+        vertices = self._rounded_rectangle_vertices(
+            padding,
+            padding,
+            max(1.0, float(size - 1)),
+            max(1.0, float(size - 1)),
+            radius,
+        )
+        points = [
+            (int(round(x * scale)), int(round(y * scale)))
+            for x, y in vertices
+        ]
+        ImageDraw.Draw(mask).line(
+            [*points, points[0]],
+            fill=255,
+            width=max(1, int(round(border_width * scale))),
+            joint="curve",
+        )
+        mask = mask.resize(
+            (canvas_size, canvas_size),
+            Image.Resampling.LANCZOS,
+        )
+        self._lru_put(self._logo_border_mask_cache, cache_key, mask, limit=256)
+        return mask
+
+    @staticmethod
+    def _logo_shape_radius(shape, size):
+        if shape == "circle":
+            return size / 2
+
+        if shape == "rounded":
+            return size * 0.2
+
+        return 0.0
 
     def _logo_position(self):
         return {
@@ -1328,26 +1933,9 @@ class BarRenderer:
         }
 
     def _logo_shape_path(self, sprite, layout):
-        shape = self.config.bar_logo_shape
-
-        if shape == "adaptive":
-            if self._logo_position() == "outside_left":
-                shape = "square"
-            elif self.config.bar_shape in ("capsule", "lollipop"):
-                shape = "circle"
-            elif self.config.bar_shape == "rounded":
-                shape = "rounded"
-            else:
-                shape = "square"
-
+        shape = self._resolved_logo_shape()
         size = layout["size"]
-
-        if shape == "circle":
-            radius = size / 2
-        elif shape == "rounded":
-            radius = size * 0.2
-        else:
-            radius = 0.0
+        radius = self._logo_shape_radius(shape, size)
 
         vertices = self._rounded_rectangle_vertices(
             layout["left"],
@@ -2012,13 +2600,18 @@ class BarRenderer:
     def _load_logo(self, logo_path):
         cache_key = (logo_path, self.config.logo_size)
 
-        if cache_key not in self.logo_cache:
-            try:
-                self.logo_cache[cache_key] = self._prepare_logo_image(logo_path)
-            except (OSError, ValueError):
-                self.logo_cache[cache_key] = None
+        if cache_key in self.logo_cache:
+            image = self.logo_cache[cache_key]
+            self.logo_cache.move_to_end(cache_key)
+            return image
 
-        return self.logo_cache[cache_key]
+        try:
+            image = self._prepare_logo_image(logo_path)
+        except (OSError, ValueError):
+            image = None
+
+        self._lru_put(self.logo_cache, cache_key, image, limit=256)
+        return image
 
     def _prepare_logo_image(self, logo_path):
         logo_size = max(1, int(self.config.logo_size))

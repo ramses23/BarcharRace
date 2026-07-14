@@ -830,9 +830,13 @@ offset. The selected values are stored in the project JSON.
 
 - `Simple` preserves the optimized solid/gradient renderer and the original
   border and projected-shadow controls.
-- `Advanced` renders a cached RGBA material per category and clips it to the
-  selected animated shape. It exposes independent tabs for Fill, Texture,
-  Depth, Effects, Track, Content, and Border & shadow.
+- `Advanced` builds a cached RGBA material per category and composites shape,
+  fill, texture, depth, shine, and border into compact per-bar sprites that are
+  sent directly to Agg through one reusable artist. Tracks, projected shadows,
+  and glow are batched into three global vector collections so their layer order
+  remains correct while bars cross. Text stays as an independent sharp layer;
+  logos use their own direct sprite compositor. It exposes tabs for Fill,
+  Texture, Depth, Effects, Track, Content, and Border & shadow.
 
 Advanced Fill supports solid, gradient, or textured materials; horizontal,
 vertical, and diagonal gradients; two or three color stops; movable highlight;
@@ -869,11 +873,35 @@ bar_shine_opacity
 The projected `bar_shadow_*` controls remain exclusively responsible for the
 shadow behind the bar. They do not modify bevel, inner shadow, or glow.
 
-Advanced materials intentionally cost more to rasterize. In a repeated
-eight-bar 1920x1080 check, Simple averaged `0.0852s/frame`, Advanced Fill
-`0.1516s/frame`, and the fully layered Advanced sample `0.1672s/frame`.
-Use Simple for maximum render speed and Advanced when the additional finish is
-worth the roughly 1.8x-2.0x drawing cost.
+Advanced materials intentionally cost more to rasterize, but the compositor
+reduces that cost for every Advanced combination. In the same repeated
+eight-bar 1920x1080 A/B check, Advanced Fill improved from `0.1367s/frame` to
+`0.0983s/frame` (about 28%), while the fully layered texture/depth/glow sample
+improved from `0.1570s/frame` to `0.1296s/frame` (about 17%). Materials, resized
+fills, antialiased shape masks, border masks, prepared logos, and composed logo
+sprites use bounded caches.
+
+On the real 457-frame national-team cumulative project with capsule bars,
+inside-right flags, projected shadows, and direct FFmpeg streaming, total time
+fell from `100.213s` to `57.146s`. Draw time fell from `96.494s` to `54.601s`,
+about a 43% reduction, while MP4 export remained below one second. Simple is
+still the fastest choice, but Advanced no longer creates one clipped
+Matplotlib image plus multiple effect patches for every visible bar.
+
+Static background images use a direct Agg artist after `cover`, `contain`, or
+`stretch` is resolved once at canvas size. This avoids sending the same full-HD
+image through Matplotlib's `AxesImage` resampler on every frame. With the same
+457-frame project, 316 matched logos, Advanced capsule bars, and a full-canvas
+JPEG background, total time fell from `206.162s` to `67.430s`; draw time fell
+from `202.250s` to `64.714s`, about a 68% reduction.
+
+Visible logos are also composed once per file, target size, mask, background,
+and border combination. One direct Agg command list replaces each logo's former
+Matplotlib image, clip patch, background patch, and border patch. This applies
+to Simple and Advanced modes and preserves outside-left, inside-left,
+inside-right, hidden, square, rounded, circle, and adaptive behavior. On the
+same 457-frame background-image project, this reduced total time again from
+`67.430s` to `57.022s` and draw time from `64.714s` to `54.297s`.
 
 Advanced Track can draw a full-width background bar behind each value. Content
 controls can place logos outside-left, inside-left, inside-right, or hide them.

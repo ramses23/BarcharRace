@@ -690,6 +690,181 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(str(image.dtype), "uint8")
         self.assertIs(image, cached_image)
 
+    def test_reused_logo_composite_uses_the_cached_sprite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(logo_path)
+            renderer = BarRenderer(config=ChartConfig(
+                width=320,
+                height=180,
+                dpi=72,
+                left_margin=100,
+                right_margin=20,
+                top_margin=40,
+                bottom_margin=20,
+                bar_appearance_mode="advanced",
+                logo_size=32,
+            ))
+            scene = Scene(
+                title="Logo",
+                bars=[
+                    BarSprite(
+                        name="Example",
+                        value=100,
+                        color="#4E79A7",
+                        x=100,
+                        y=90,
+                        width=160,
+                        height=36,
+                        rank=1,
+                        logo_path=str(logo_path),
+                    )
+                ],
+            )
+
+            try:
+                renderer.render_rgba(scene)
+                first_command = renderer._logo_composite_artist.commands[0]
+                sprite_cache_size = len(renderer._logo_sprite_cache)
+                renderer.render_rgba(scene)
+                second_command = renderer._logo_composite_artist.commands[0]
+
+                self.assertIs(first_command[0], second_command[0])
+                self.assertEqual(len(renderer._logo_sprite_cache), sprite_cache_size)
+                self.assertIsNone(renderer._bar_artists[0].logo)
+            finally:
+                renderer.close()
+
+    def test_logo_compositor_supports_modes_positions_and_shapes(self):
+        cases = (
+            ("outside_left", "adaptive", "rectangle", "square"),
+            ("inside_left", "adaptive", "lollipop", "circle"),
+            ("inside_right", "adaptive", "capsule", "circle"),
+            ("inside_right", "adaptive", "rounded", "rounded"),
+            ("inside_right", "square", "capsule", "square"),
+            ("hidden", "circle", "capsule", "circle"),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), (225, 40, 60, 255)).save(logo_path)
+            scene = Scene(
+                title="Logo",
+                bars=[
+                    BarSprite(
+                        name="Example",
+                        value=100,
+                        color="#4E79A7",
+                        x=100,
+                        y=90,
+                        width=160,
+                        height=36,
+                        rank=1,
+                        logo_path=str(logo_path),
+                    )
+                ],
+            )
+
+            for appearance_mode in ("simple", "advanced"):
+                for position, logo_shape, bar_shape, resolved_shape in cases:
+                    with self.subTest(
+                        appearance_mode=appearance_mode,
+                        position=position,
+                        logo_shape=logo_shape,
+                        bar_shape=bar_shape,
+                    ):
+                        renderer = BarRenderer(config=ChartConfig(
+                            width=320,
+                            height=180,
+                            dpi=72,
+                            left_margin=100,
+                            right_margin=20,
+                            top_margin=40,
+                            bottom_margin=20,
+                            bar_appearance_mode=appearance_mode,
+                            bar_logo_position=position,
+                            bar_logo_shape=logo_shape,
+                            bar_shape=bar_shape,
+                            logo_size=32,
+                        ))
+
+                        try:
+                            rgba = renderer.render_rgba(scene)
+                            commands = renderer._logo_composite_artist.commands
+
+                            self.assertEqual(len(rgba), 320 * 180 * 4)
+                            self.assertEqual(
+                                len(commands),
+                                0 if position == "hidden" else 1,
+                            )
+                            self.assertEqual(
+                                renderer._resolved_logo_shape(),
+                                resolved_shape,
+                            )
+
+                            if commands:
+                                self.assertGreater(int(commands[0][0][:, :, 3].max()), 0)
+                                self.assertTrue(commands[0][0].flags.c_contiguous)
+                        finally:
+                            renderer.close()
+
+    def test_logo_compositor_preserves_vertical_orientation_and_opacity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "oriented_logo.png"
+            logo = Image.new("RGBA", (32, 32), (255, 0, 0, 255))
+            logo.paste((0, 0, 255, 255), (0, 16, 32, 32))
+            logo.save(logo_path)
+            renderer = BarRenderer(config=ChartConfig(
+                width=240,
+                height=160,
+                dpi=72,
+                left_margin=100,
+                right_margin=20,
+                top_margin=30,
+                bottom_margin=20,
+                bar_logo_position="outside_left",
+                bar_logo_shape="square",
+                logo_size=32,
+                logo_gap=8,
+            ))
+            sprite = BarSprite(
+                name="Example",
+                value=100,
+                color="#4E79A7",
+                x=100,
+                y=80,
+                width=100,
+                height=32,
+                rank=1,
+                logo_path=str(logo_path),
+                opacity=0.5,
+            )
+
+            try:
+                rgba = np.frombuffer(
+                    renderer.render_rgba(Scene(title="", bars=[sprite])),
+                    dtype=np.uint8,
+                ).reshape((160, 240, 4))
+                layout = renderer._logo_layout(sprite)
+                center_x = int(round((layout["left"] + layout["right"]) / 2))
+                upper_y = int(round(layout["top"] + 8))
+                lower_y = int(round(layout["bottom"] - 8))
+
+                self.assertGreater(
+                    int(rgba[upper_y, center_x, 0]),
+                    int(rgba[upper_y, center_x, 2]) + 80,
+                )
+                self.assertGreater(
+                    int(rgba[lower_y, center_x, 2]),
+                    int(rgba[lower_y, center_x, 0]) + 80,
+                )
+                self.assertLessEqual(
+                    int(renderer._logo_composite_artist.commands[0][0][:, :, 3].max()),
+                    128,
+                )
+            finally:
+                renderer.close()
+
     def test_footer_uses_configured_font_weights_and_fits_source(self):
         renderer = BarRenderer(
             config=ChartConfig(
@@ -846,7 +1021,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         finally:
             renderer.close()
 
-    def test_advanced_appearance_layers_are_independent_and_reused(self):
+    def test_advanced_appearance_layers_are_composited_and_reused(self):
         renderer = BarRenderer(config=ChartConfig(
             width=320,
             height=180,
@@ -890,23 +1065,103 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             first_rgba = renderer.render_rgba(scene)
             artists = renderer._bar_artists[0]
             cached_fill = renderer._advanced_fill_cache["#4e79a7"]
+            first_command = renderer._advanced_composite_artist.commands[-1]
+            mask_cache_size = len(renderer._advanced_shape_mask_cache)
+            material_cache_size = len(renderer._advanced_material_cache)
             second_rgba = renderer.render_rgba(scene)
 
             self.assertEqual(len(first_rgba), 320 * 180 * 4)
             self.assertEqual(len(second_rgba), 320 * 180 * 4)
+            self.assertEqual(first_rgba, second_rgba)
             self.assertIsNone(renderer._gradient_artist)
-            self.assertTrue(artists.track.get_visible())
-            self.assertTrue(artists.fill_image.get_visible())
-            self.assertTrue(artists.fill_clip.get_visible())
-            self.assertTrue(all(glow.get_visible() for glow in artists.glow))
-            self.assertTrue(artists.shadow.get_visible())
+            self.assertIsNone(artists.track)
+            self.assertIsNone(artists.shadow)
+            self.assertIsNone(artists.fill_image)
+            self.assertIsNone(artists.fill_clip)
+            self.assertEqual(artists.glow, ())
+            self.assertTrue(renderer._advanced_track_collection.get_visible())
+            self.assertTrue(renderer._advanced_shadow_collection.get_visible())
+            self.assertTrue(renderer._advanced_glow_collection.get_visible())
+            self.assertEqual(
+                len(renderer._advanced_composite_artist.commands),
+                1,
+            )
+            self.assertEqual(first_command[0].dtype, np.uint8)
+            self.assertGreater(int(first_command[0][:, :, 3].max()), 0)
+            self.assertLess(first_command[0].shape[0], renderer.config.height)
+            self.assertLess(first_command[0].shape[1], renderer.config.width)
             self.assertIs(
                 renderer._advanced_fill_cache["#4e79a7"],
                 cached_fill,
             )
             self.assertEqual(len(renderer._advanced_fill_cache), 1)
+            self.assertEqual(
+                len(renderer._advanced_shape_mask_cache),
+                mask_cache_size,
+            )
+            self.assertEqual(
+                len(renderer._advanced_material_cache),
+                material_cache_size,
+            )
         finally:
             renderer.close()
+
+    def test_advanced_compositor_supports_every_bar_shape(self):
+        scene = Scene(
+            title="Advanced",
+            bars=[
+                BarSprite(
+                    name="Example",
+                    value=100,
+                    color="#4E79A7",
+                    x=100,
+                    y=90,
+                    width=160,
+                    height=36,
+                    rank=1,
+                )
+            ],
+        )
+
+        for shape in ("rectangle", "rounded", "capsule", "lollipop"):
+            with self.subTest(shape=shape):
+                renderer = BarRenderer(config=ChartConfig(
+                    width=320,
+                    height=180,
+                    dpi=72,
+                    left_margin=100,
+                    right_margin=20,
+                    top_margin=40,
+                    bottom_margin=20,
+                    logos_enabled=False,
+                    bar_appearance_mode="advanced",
+                    bar_shape=shape,
+                    bar_fill_type="texture",
+                    bar_texture_enabled=True,
+                    bar_texture_preset="carbon",
+                    bar_bevel_enabled=True,
+                    bar_inner_shadow_opacity=0.2,
+                    bar_outer_glow_enabled=True,
+                    bar_shine_enabled=True,
+                    bar_track_enabled=True,
+                    bar_border_enabled=True,
+                ))
+
+                try:
+                    rgba = renderer.render_rgba(scene)
+                    command_image = (
+                        renderer._advanced_composite_artist.commands[-1][0]
+                    )
+
+                    self.assertEqual(len(rgba), 320 * 180 * 4)
+                    self.assertEqual(
+                        len(renderer._advanced_composite_artist.commands),
+                        1,
+                    )
+                    self.assertGreater(int(command_image[:, :, 3].max()), 0)
+                    self.assertGreater(float(np.std(command_image[:, :, :3])), 0)
+                finally:
+                    renderer.close()
 
     def test_advanced_gradient_direction_changes_fill_axis(self):
         common = {
@@ -1082,22 +1337,31 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             figure, axis = renderer._figure_axis()
             renderer._setup_canvas(figure, axis)
             renderer._initialize_scene_artists(axis)
-            renderer._ensure_bar_artist_capacity(axis, 1)
-            artists = renderer._bar_artists[0]
 
             try:
-                renderer._update_bar_artists(artists, sprite)
+                renderer._update_logo_composite([sprite])
                 layout = renderer._logo_layout(sprite)
-                path_extents = artists.logo_clip.get_path().get_extents()
+                command_image, command_left, command_top = (
+                    renderer._logo_composite_artist.commands[0]
+                )
+                padding = int(np.ceil(renderer.config.bar_logo_border_width / 2)) + 1
 
                 self.assertAlmostEqual(layout["right"], sprite.x + sprite.width - 3)
-                self.assertTrue(artists.logo.get_visible())
-                self.assertIsNotNone(artists.logo.get_clip_path())
-                self.assertTrue(artists.logo_background.get_visible())
-                self.assertTrue(artists.logo_border.get_visible())
-                self.assertGreater(len(artists.logo_clip.get_path().vertices), 20)
-                self.assertAlmostEqual(path_extents.width, layout["size"])
-                self.assertAlmostEqual(path_extents.height, layout["size"])
+                self.assertEqual(renderer._resolved_logo_shape(), "circle")
+                self.assertEqual(len(renderer._logo_composite_artist.commands), 1)
+                self.assertEqual(
+                    command_image.shape[:2],
+                    (
+                        int(round(layout["size"])) + (padding * 2),
+                        int(round(layout["size"])) + (padding * 2),
+                    ),
+                )
+                self.assertEqual(command_left, int(round(layout["left"])) - padding)
+                self.assertEqual(command_top, int(round(layout["top"])) - padding)
+                self.assertEqual(int(command_image[0, 0, 3]), 0)
+                self.assertGreater(int(command_image[:, :, 3].max()), 0)
+                self.assertGreater(len(renderer._logo_shape_mask_cache), 0)
+                self.assertGreater(len(renderer._logo_border_mask_cache), 0)
             finally:
                 renderer.close()
 
@@ -1186,6 +1450,39 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                     tuple(renderer._background_image_artist.get_extent()),
                     (0, 80, 80, 0),
                 )
+            finally:
+                renderer.close()
+
+    def test_static_background_compositor_preserves_image_orientation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            background_path = Path(temp_dir) / "quadrants.png"
+            background = Image.new("RGB", (80, 80), "#000000")
+            background.paste("#FF0000", (0, 0, 40, 40))
+            background.paste("#00FF00", (40, 0, 80, 40))
+            background.paste("#0000FF", (0, 40, 40, 80))
+            background.paste("#FFFF00", (40, 40, 80, 80))
+            background.save(background_path)
+            renderer = BarRenderer(config=ChartConfig(
+                width=80,
+                height=80,
+                dpi=72,
+                background_mode="image",
+                background_image_path=str(background_path),
+                background_image_fit="stretch",
+                logos_enabled=False,
+            ))
+
+            try:
+                rgba = np.frombuffer(
+                    renderer.render_rgba(Scene(title="")),
+                    dtype=np.uint8,
+                ).reshape((80, 80, 4))
+
+                self.assertEqual(tuple(rgba[10, 10, :3]), (255, 0, 0))
+                self.assertEqual(tuple(rgba[10, 70, :3]), (0, 255, 0))
+                self.assertEqual(tuple(rgba[70, 10, :3]), (0, 0, 255))
+                self.assertEqual(tuple(rgba[70, 70, :3]), (255, 255, 0))
+                self.assertTrue(renderer._background_image_artist.image.flags.c_contiguous)
             finally:
                 renderer.close()
 

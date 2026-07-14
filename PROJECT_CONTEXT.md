@@ -80,18 +80,37 @@ The project is a usable MVP:
 - Basic per-stage render profiling for larger-dataset tuning, shown in CLI output and Project Studio after video renders.
 - Renderer caches logos already resized to `ChartConfig.logo_size` to avoid repeatedly resampling large image assets per frame.
 - `BarRenderer` reuses a single Matplotlib figure/axis and a bounded set of bar,
-  shadow, logo, and text artists. Frames update artist properties instead of
-  clearing the axis and rebuilding every artist.
+  shadow, and text artists. Frames update artist properties instead of clearing
+  the axis and rebuilding every artist; logos use a global sprite compositor.
 - Gradient bars are rendered as one reusable `PolyCollection` with a 64-segment
   baseline per visible bar plus localized curve detail, avoiding a separate
   bicubic `AxesImage` resample for every bar on every frame.
-- Advanced materials use one persistent clipped `AxesImage` per visible slot.
-  The 256x64 RGBA material is cached by category color, while track, projected
-  shadow, glow, border, logo, and text artists remain reusable. Do not route
-  simple projects through this path; the simple `PolyCollection` is faster.
-  A repeated eight-bar 1080p check measured about 0.0852s/frame for Simple,
-  0.1516s/frame for Advanced Fill, and 0.1672s/frame for the fully layered
-  Advanced sample. Treat the extra cost as an explicit quality tradeoff.
+- Advanced materials are assembled by a reusable custom Agg artist. The
+  renderer caches each 256x64 category material, resized fills, antialiased
+  shape masks, border masks, and logo sprites with bounded LRU stores. For every
+  frame it composites fill, texture, depth, shine, and border into compact
+  per-bar RGBA sprites and submits them directly to Agg. Track, projected
+  shadow, and glow are batched into three global vector collections to preserve
+  correct underlay ordering during rank crossings. Text remains a separate sharp
+  layer. Logos are clipped, backed, bordered, and faded inside cached compact
+  sprites submitted by one global direct Agg artist. This path supports every
+  Advanced shape/effect combination without falling back to the old
+  clipped-image stack.
+- In an identical repeated eight-bar 1080p A/B check, the compositor reduced
+  Advanced Fill from 0.1367s/frame to 0.0983s/frame and the fully layered sample
+  from 0.1570s/frame to 0.1296s/frame. On the real 457-frame cumulative
+  national-team project with inside-right flags, total time fell from 100.213s
+  to 57.146s, while draw time fell from 96.494s to 54.601s.
+- Static background images are fitted to the final canvas once and submitted
+  through a reusable direct Agg artist instead of a full-canvas `AxesImage` on
+  every frame. The 457-frame Advanced project with 316 matched logos and a JPEG
+  background fell from 206.162s total / 202.250s draw to 67.430s total /
+  64.714s draw, preserving `cover`, `contain`, and `stretch` behavior.
+- The general logo compositor replaces each visible logo's Matplotlib image and
+  three supporting patches in both Simple and Advanced modes. It preserves all
+  positions, adaptive/explicit shapes, opacity, background, and border controls.
+  On that same 457-frame project it reduced 67.430s total / 64.714s draw again
+  to 57.022s total / 54.297s draw.
 - Render profiling separates frame drawing time from PNG save time to guide further renderer or exporter optimization.
 - PNG frame save compression is configurable through
   `ChartConfig.png_compress_level` from 0 to 9; the default is 1 to prioritize

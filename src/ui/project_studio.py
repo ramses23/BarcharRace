@@ -981,6 +981,7 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 
     with st.expander("Categories"):
         upload_column, logo_folder_column, logo_action_column = st.columns([2, 2, 1])
+        logo_folder_widget_key = _widget_key("category_logo_folder")
 
         with upload_column:
             uploaded_logo_files = st.file_uploader(
@@ -997,17 +998,21 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 
                 if previous_logo_folder != logo_folder:
                     st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
-                    _refresh_form()
+                    st.session_state[logo_folder_widget_key] = logo_folder
                     st.rerun()
 
         with logo_folder_column:
-            logo_folder = st.text_input(
-                "Logo folder path",
-                value=st.session_state.get(
+            logo_folder_input_kwargs = {"key": logo_folder_widget_key}
+
+            if logo_folder_widget_key not in st.session_state:
+                logo_folder_input_kwargs["value"] = st.session_state.get(
                     LOGO_FOLDER_OVERRIDE_STATE,
                     DEFAULT_LOGO_FOLDER,
-                ),
-                key=_widget_key("category_logo_folder"),
+                )
+
+            logo_folder = st.text_input(
+                "Logo folder path",
+                **logo_folder_input_kwargs,
             )
 
         logo_files = _logo_files(logo_folder)
@@ -1040,19 +1045,24 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
                 "matches": matched_logos,
             }
             styles = apply_category_logo_matches(styles, matched_logos)
+            _set_matched_logo_widget_values(visible_categories, matched_logos)
 
         for index, raw_name in enumerate(visible_categories):
+            key = _safe_widget_key(raw_name, index)
+            logo_widget_key = _widget_key(f"category_logo_{key}")
             current_style = styles.get(raw_name, {})
             current_label = current_style.get("label", raw_name)
             current_color = current_style.get("color")
-            current_logo = current_style.get("logo") or matched_logos.get(raw_name, "")
+            current_logo = (
+                current_style.get("logo")
+                or st.session_state.get(logo_widget_key, "")
+            )
             default_color = (
                 current_color
                 or DEFAULT_CATEGORY_COLORS[index % len(DEFAULT_CATEGORY_COLORS)]
             )
 
             columns = st.columns([3, 1, 1, 2, 1])
-            key = _safe_widget_key(raw_name, index)
 
             with columns[0]:
                 label = st.text_input(
@@ -1079,12 +1089,21 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 
             with columns[3]:
                 logo_options = _logo_options(current_logo, logo_files)
+                logo_input_kwargs = {
+                    "format_func": lambda path: "No logo" if not path else path,
+                    "key": logo_widget_key,
+                }
+
+                if logo_widget_key not in st.session_state:
+                    logo_input_kwargs["index"] = _option_index(
+                        logo_options,
+                        current_logo,
+                    )
+
                 logo_path = st.selectbox(
                     "Logo",
                     logo_options,
-                    index=_option_index(logo_options, current_logo),
-                    format_func=lambda path: "No logo" if not path else path,
-                    key=_widget_key(f"category_logo_{key}"),
+                    **logo_input_kwargs,
                 )
 
             with columns[4]:
@@ -1138,6 +1157,18 @@ def _applied_logo_matches(match_context):
     matches = applied_logo_matches.get("matches", {})
 
     return matches if isinstance(matches, dict) else {}
+
+
+def _set_matched_logo_widget_values(visible_categories, matched_logos):
+    for index, raw_name in enumerate(visible_categories):
+        logo_path = matched_logos.get(raw_name)
+
+        if not logo_path:
+            continue
+
+        category_key = _safe_widget_key(raw_name, index)
+        widget_key = _widget_key(f"category_logo_{category_key}")
+        st.session_state[widget_key] = logo_path
 
 
 def _clear_logo_session_overrides():
