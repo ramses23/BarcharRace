@@ -3,14 +3,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 import _test_path
 from studio.project_builder import (
     apply_category_logo_matches,
     build_project_data,
     category_values,
+    category_values_from_dataframe,
     clean_category_styles,
     default_project_paths,
     inspect_csv,
+    inspect_dataframe,
     load_project_data,
     logo_match_key,
     match_category_logos,
@@ -20,6 +24,7 @@ from studio.project_builder import (
     project_name_from_title,
     save_project_data,
     year_values,
+    year_values_from_dataframe,
 )
 
 
@@ -41,6 +46,23 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(inspection.year_candidates, ("year",))
         self.assertEqual(inspection.name_candidates, ("country",))
         self.assertEqual(inspection.value_candidates, ("value",))
+
+    def test_inspects_an_already_loaded_dataframe(self):
+        dataframe = pd.DataFrame(
+            {
+                "period": [2020, 2021],
+                "category": ["A", "B"],
+                "amount": [10.5, 11.5],
+            }
+        )
+
+        inspection = inspect_dataframe(dataframe, path="data/demo.csv")
+
+        self.assertEqual(inspection.path, "data/demo.csv")
+        self.assertEqual(inspection.row_count, 2)
+        self.assertEqual(inspection.year_candidates, ("period",))
+        self.assertEqual(inspection.name_candidates, ("category",))
+        self.assertEqual(inspection.value_candidates, ("amount",))
 
     def test_builds_and_saves_project_data(self):
         project_data = build_project_data(
@@ -184,6 +206,15 @@ class ProjectStudioBuilderTest(unittest.TestCase):
 
         self.assertEqual(values, ("Coal", "Solar"))
 
+    def test_extracts_category_values_from_loaded_dataframe(self):
+        dataframe = pd.DataFrame(
+            {"country": [" Solar ", "Coal", None, "Coal", ""]}
+        )
+
+        values = category_values_from_dataframe(dataframe, "country")
+
+        self.assertEqual(values, ("Coal", "Solar"))
+
     def test_persists_advanced_bar_appearance_and_restores_form_values(self):
         bar_style = {
             "bar_appearance_mode": "advanced",
@@ -269,6 +300,24 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             values = year_values(csv_path, "year")
 
         self.assertEqual(values, (2020, 2021))
+
+    def test_extracts_year_values_from_loaded_dataframe(self):
+        dataframe = pd.DataFrame(
+            {"year": [2021, "not-a-year", 2020, 2021, 2020.5]}
+        )
+
+        values = year_values_from_dataframe(dataframe, "year")
+
+        self.assertEqual(values, (2020, 2021))
+
+    def test_loaded_dataframe_helpers_reject_missing_columns(self):
+        dataframe = pd.DataFrame({"year": [2020]})
+
+        with self.assertRaisesRegex(ValueError, "Column not found: country"):
+            category_values_from_dataframe(dataframe, "country")
+
+        with self.assertRaisesRegex(ValueError, "Column not found: period"):
+            year_values_from_dataframe(dataframe, "period")
 
     def test_matches_category_logos_by_file_name(self):
         matches = match_category_logos(

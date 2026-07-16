@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from uuid import uuid4
@@ -7,6 +8,50 @@ from streamlit.testing.v1 import AppTest
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_explicit_save_tracks_unsaved_changes(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / f"ui_save_test_{uuid4().hex}.json"
+            app = AppTest.from_file(str(app_path), default_timeout=30).run()
+            project_file = next(
+                control
+                for control in app.text_input
+                if control.label == "Project JSON"
+            )
+            project_file.set_value(str(project_path))
+            app.run()
+
+            save_project = next(
+                button
+                for button in app.button
+                if button.label == "Save project"
+            )
+            save_project.click()
+            app.run()
+
+            self.assertFalse(app.exception)
+            self.assertTrue(project_path.is_file())
+            self.assertTrue(
+                any("Saved" in caption.value for caption in app.caption)
+            )
+
+            title = next(
+                control
+                for control in app.text_input
+                if control.label == "Video title"
+            )
+            title.set_value(f"Changed {uuid4().hex}")
+            app.run()
+
+            self.assertFalse(app.exception)
+            self.assertTrue(
+                any(
+                    "Unsaved changes" in caption.value
+                    for caption in app.caption
+                )
+            )
+
     def test_logo_folder_and_apply_matches_preserve_unsaved_form_values(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"

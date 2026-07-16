@@ -33,6 +33,10 @@ class CsvInspection:
 def inspect_csv(csv_path):
     path = Path(csv_path)
     dataframe = pd.read_csv(path)
+    return inspect_dataframe(dataframe, path=path)
+
+
+def inspect_dataframe(dataframe, path=""):
     columns = tuple(str(column) for column in dataframe.columns)
     numeric_columns = tuple(
         column
@@ -56,6 +60,13 @@ def inspect_csv(csv_path):
 
 def category_values(csv_path, name_column, limit=80):
     dataframe = pd.read_csv(csv_path, usecols=[name_column])
+    return category_values_from_dataframe(dataframe, name_column, limit=limit)
+
+
+def category_values_from_dataframe(dataframe, name_column, limit=80):
+    if name_column not in dataframe.columns:
+        raise ValueError(f"Column not found: {name_column}")
+
     values = (
         dataframe[name_column]
         .dropna()
@@ -72,6 +83,13 @@ def category_values(csv_path, name_column, limit=80):
 
 def year_values(csv_path, year_column):
     dataframe = pd.read_csv(csv_path, usecols=[year_column])
+    return year_values_from_dataframe(dataframe, year_column)
+
+
+def year_values_from_dataframe(dataframe, year_column):
+    if year_column not in dataframe.columns:
+        raise ValueError(f"Column not found: {year_column}")
+
     years = pd.to_numeric(dataframe[year_column], errors="coerce").dropna()
     years = sorted({int(year) for year in years if float(year).is_integer()})
 

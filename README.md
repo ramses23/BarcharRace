@@ -182,6 +182,19 @@ frame, and launch the final video render with visible progress. When it
 edits an existing file, it preserves advanced JSON fields that are not exposed
 in the form yet.
 
+Project Studio keeps the current form as an in-memory draft. `Save project` is
+an explicit action, and the status below the action buttons reports whether the
+draft is saved or has unsaved changes. Rendering a preview or final video saves
+the current draft first so the renderer always consumes the same JSON that the
+editor displays. The latest preview stays visible across normal widget reruns
+and is marked as out of date when the draft changes.
+
+The active CSV is loaded through a bounded Streamlit data cache keyed by its
+resolved path, size, and modification time. Column inspection, period metrics,
+category editing, and the dataset table share that DataFrame instead of reading
+the file separately on every rerun. Replacing a CSV at the same path
+automatically invalidates the cached entry.
+
 The editor is organized as a short workflow instead of one long form:
 `Data & content`, `Canvas & text`, `Bars & categories`, and
 `Animation & output`. Project loading stays in the sidebar, while dataset
@@ -1128,5 +1141,8 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Continue Project Studio polish with publication-ready dataset-specific
-  project presets and easier visual tuning controls.
+- Scale category editing for large datasets and reduce whole-page reruns.
+- Add render preflight, cancellation, isolated background execution, and
+  atomic project writes.
+- Introduce a versioned project schema with migrations before expanding the
+  editor and renderer further.

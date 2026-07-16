@@ -1,3 +1,4 @@
+import copy
 import sys
 from pathlib import Path, PurePosixPath
 from subprocess import CalledProcessError
@@ -18,17 +19,19 @@ from config.theme_config import get_theme
 from config.typography_config import get_typography_preset
 from config.value_format_config import list_value_formats
 from pipeline.render_job import RenderJob
+from studio.preview import render_project_preview
+from studio.project_draft import ProjectDraft
+from ui.dataset_cache import load_csv_dataset
 from ui.bar_style_editor import bar_style_editor
 from ui.font_picker import font_family_picker
 from ui.text_layout_editor import text_layout_editor
-from studio.preview import render_project_preview
 from studio.project_builder import (
     BAR_STYLE_FIELDS,
     apply_category_logo_matches,
     build_project_data,
-    category_values,
+    category_values_from_dataframe,
     default_project_paths,
-    inspect_csv,
+    inspect_dataframe,
     load_project_data,
     match_category_logos,
     preferred_column,
@@ -37,6 +40,7 @@ from studio.project_builder import (
     project_name_from_title,
     save_project_data,
     year_values,
+    year_values_from_dataframe,
 )
 from config.project_file_loader import load_project_file
 from utils.video_duration import estimate_video_duration, format_video_duration
@@ -66,6 +70,9 @@ NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
 CUSTOM_TEXTURE_PATH_STATE = "custom_bar_texture_path"
 BACKGROUND_IMAGE_PATH_STATE = "background_image_path"
+SAVED_DRAFT_FINGERPRINT_STATE = "saved_project_draft_fingerprint"
+SAVED_DRAFT_PENDING_STATE = "saved_project_draft_pending"
+LAST_PREVIEW_STATE = "last_project_preview"
 
 
 st.set_page_config(
@@ -76,6 +83,7 @@ st.set_page_config(
 
 
 def main():
+    _initialize_studio_state()
     st.title("BarChartStudio")
     st.caption("Build, style, preview, and export animated bar chart races.")
 
@@ -95,14 +103,15 @@ def main():
     values = _project_values_for_csv(values, csv_path, loaded_project_data)
 
     try:
-        inspection = inspect_csv(csv_path)
+        dataset = load_csv_dataset(csv_path)
+        inspection = inspect_dataframe(dataset, path=csv_path)
     except (OSError, ValueError, pd.errors.ParserError) as exc:
         st.error(str(exc))
         return
 
     with st.expander("Dataset preview"):
         st.caption(f"{inspection.row_count:,} rows · {len(inspection.columns):,} columns")
-        preview_df = pd.read_csv(csv_path, nrows=12)
+        preview_df = dataset.head(12)
         st.dataframe(preview_df, width="stretch", hide_index=True)
 
     project_data, project_file, preview_settings = _project_form(
@@ -111,22 +120,109 @@ def main():
         values,
         loaded_project_data,
         loaded_project_path,
+        dataset,
     )
 
-    preview_column, render_column = st.columns(2)
-
-    with preview_column:
-        if st.button("Render preview", width="stretch"):
-            _save_project(project_data, project_file)
-            _render_preview(project_file, preview_settings)
-
-    with render_column:
-        if st.button("Render video", type="primary", width="stretch"):
-            _save_project(project_data, project_file)
-            _render_video(project_file)
+    draft = ProjectDraft.create(
+        project_data,
+        project_file,
+        preview_settings,
+    )
+    _initialize_saved_draft(draft, loaded_project_data)
+    _project_actions(draft)
+    _show_persistent_preview(draft)
 
     with st.expander("Generated project JSON"):
         st.json(project_data, expanded=True)
+
+
+def _initialize_studio_state():
+    st.session_state.setdefault("form_version", 0)
+    st.session_state.setdefault(SAVED_DRAFT_FINGERPRINT_STATE, None)
+    st.session_state.setdefault(SAVED_DRAFT_PENDING_STATE, False)
+    st.session_state.setdefault(LAST_PREVIEW_STATE, None)
+
+
+def _initialize_saved_draft(draft, loaded_project_data):
+    pending = st.session_state.get(SAVED_DRAFT_PENDING_STATE, False)
+
+    if pending or (
+        loaded_project_data
+        and st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE) is None
+    ):
+        st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = draft.fingerprint
+        st.session_state[SAVED_DRAFT_PENDING_STATE] = False
+
+
+def _project_actions(draft):
+    save_column, preview_column, render_column = st.columns(3)
+    save_project = save_column.button(
+        "Save project",
+        icon=":material/save:",
+        width="stretch",
+    )
+    render_preview = preview_column.button(
+        "Render preview",
+        icon=":material/visibility:",
+        width="stretch",
+    )
+    render_video = render_column.button(
+        "Render video",
+        icon=":material/movie:",
+        type="primary",
+        width="stretch",
+    )
+
+    if save_project:
+        _save_draft(draft)
+
+    if render_preview:
+        _save_draft(draft, show_success=False)
+        preview_path = _render_preview(
+            draft.project_file,
+            draft.preview_settings,
+        )
+
+        if preview_path is not None:
+            st.session_state[LAST_PREVIEW_STATE] = {
+                "path": str(preview_path),
+                "fingerprint": draft.fingerprint,
+            }
+
+    if render_video:
+        _save_draft(draft, show_success=False)
+        _render_video(draft.project_file)
+
+    saved_fingerprint = st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE)
+    if draft.is_dirty(saved_fingerprint):
+        st.caption(":orange-badge[Unsaved changes] Save before closing the app.")
+    else:
+        st.caption(f":green-badge[Saved] {draft.project_file}")
+
+
+def _show_persistent_preview(draft):
+    preview = st.session_state.get(LAST_PREVIEW_STATE)
+
+    if not isinstance(preview, dict):
+        return
+
+    preview_path = Path(str(preview.get("path", "")))
+
+    if not preview_path.is_file():
+        st.session_state[LAST_PREVIEW_STATE] = None
+        return
+
+    with st.container(border=True):
+        st.subheader("Latest preview")
+
+        if preview.get("fingerprint") != draft.fingerprint:
+            st.warning(
+                "This preview is out of date. Render it again to include "
+                "the current unsaved changes.",
+                icon=":material/update:",
+            )
+
+        st.image(str(preview_path), width="stretch")
 
 
 def _project_source_panel():
@@ -152,6 +248,9 @@ def _project_source_panel():
 
             st.session_state["loaded_project_data"] = project_data
             st.session_state["loaded_project_path"] = selected_project
+            st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
+            st.session_state[SAVED_DRAFT_PENDING_STATE] = True
+            st.session_state[LAST_PREVIEW_STATE] = None
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
             _clear_logo_session_overrides()
@@ -162,6 +261,9 @@ def _project_source_panel():
         if st.button("New project", width="stretch"):
             st.session_state.pop("loaded_project_data", None)
             st.session_state.pop("loaded_project_path", None)
+            st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
+            st.session_state[SAVED_DRAFT_PENDING_STATE] = False
+            st.session_state[LAST_PREVIEW_STATE] = None
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
             _clear_logo_session_overrides()
@@ -198,7 +300,14 @@ def _csv_source_panel(values, loaded_project_data):
     return st.text_input("CSV path", value=default_csv, key=_widget_key("csv_path"))
 
 
-def _project_form(csv_path, inspection, values, loaded_project_data, loaded_project_path):
+def _project_form(
+    csv_path,
+    inspection,
+    values,
+    loaded_project_data,
+    loaded_project_path,
+    dataset,
+):
     theme, theme_settings = _resolved_theme(values)
     typography_preset, typography_settings = _resolved_typography(values)
     data_tab, canvas_tab, bars_tab, animation_tab = st.tabs((
@@ -209,7 +318,12 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
     ))
 
     with data_tab:
-        data_settings = _data_content_section(csv_path, inspection, values)
+        data_settings = _data_content_section(
+            csv_path,
+            inspection,
+            values,
+            dataset,
+        )
 
     paths = default_project_paths(data_settings["project_name"])
 
@@ -229,6 +343,7 @@ def _project_form(csv_path, inspection, values, loaded_project_data, loaded_proj
             values=values,
             theme_settings=theme_settings,
             background_color=canvas_settings["background"]["color"],
+            dataset=dataset,
         )
 
     with animation_tab:
@@ -326,7 +441,7 @@ def _resolved_typography(values):
         return "editorial", get_typography_preset("editorial")
 
 
-def _data_content_section(csv_path, inspection, values):
+def _data_content_section(csv_path, inspection, values, dataset):
     st.caption("Name the project, map the CSV columns, and define source text.")
     title_column, name_column_widget = st.columns((2, 1))
 
@@ -402,7 +517,7 @@ def _data_content_section(csv_path, inspection, values):
     )
 
     try:
-        available_years = year_values(csv_path, year_column)
+        available_years = year_values_from_dataframe(dataset, year_column)
     except (OSError, ValueError) as exc:
         st.error(str(exc))
         available_years = ()
@@ -747,6 +862,7 @@ def _bars_categories_section(
     values,
     theme_settings,
     background_color,
+    dataset,
 ):
     st.caption("Control ranking, number formatting, bar materials, icons, and categories.")
     format_column, ranking_column, aggregate_column = st.columns(3)
@@ -794,6 +910,7 @@ def _bars_categories_section(
         csv_path=csv_path,
         name_column=name_column,
         existing_styles=values["categories"],
+        dataset=dataset,
     )
 
     return {
@@ -961,11 +1078,13 @@ def _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data):
     if previous_csv_path is not None and previous_csv_path != csv_path:
         st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
         st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
+        st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
+        st.session_state[LAST_PREVIEW_STATE] = None
         _refresh_form()
         st.rerun()
 
 
-def _category_styles_panel(csv_path, name_column, existing_styles):
+def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
     styles = {
         raw_name: dict(style)
         for raw_name, style in existing_styles.items()
@@ -973,7 +1092,11 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
     }
 
     try:
-        all_categories = category_values(csv_path, name_column, limit=None)
+        all_categories = category_values_from_dataframe(
+            dataset,
+            name_column,
+            limit=None,
+        )
     except (OSError, ValueError) as exc:
         st.error(str(exc))
         return styles
@@ -1282,9 +1405,25 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
     return styles
 
 
-def _save_project(project_data, project_file):
-    path = save_project_data(project_data, ROOT_DIR / project_file)
-    st.success(f"Saved {path.relative_to(ROOT_DIR)}")
+def _save_draft(draft, *, show_success=True):
+    path = save_project_data(
+        draft.project_data,
+        ROOT_DIR / draft.project_file,
+    )
+    st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = draft.fingerprint
+    st.session_state[SAVED_DRAFT_PENDING_STATE] = False
+    st.session_state["loaded_project_data"] = copy.deepcopy(draft.project_data)
+    st.session_state["loaded_project_path"] = draft.project_file
+
+    if show_success:
+        try:
+            display_path = path.resolve().relative_to(ROOT_DIR.resolve())
+        except ValueError:
+            display_path = path
+
+        st.success(f"Saved {display_path}")
+
+    return path
 
 
 def _logo_match_context(csv_path, name_column, logo_folder):
@@ -1602,9 +1741,9 @@ def _render_preview(project_file, preview_settings):
         )
     except (ProjectFileError, ValueError, OSError) as exc:
         st.error(str(exc))
-        return
+        return None
 
-    st.image(preview_path, width="stretch")
+    return preview_path
 
 
 def _render_video(project_file):

@@ -71,6 +71,11 @@ The project is a usable MVP:
 - Project-specific category logos through `categories.<raw_name>.logo`, with
   Project Studio support for uploading a logo folder, choosing individual
   logos, uploading individual logos, or auto-matching files by category name.
+- An optional second independent logo is stored in
+  `categories.<raw_name>.secondary_logo`. Project Studio can upload, match, and
+  place this second slot without changing the primary logo. The renderer
+  supports side-by-side, overlay, and badge-style compositions with independent
+  position and mask controls.
 - A user-provided electricity project exists at
   `projects/global_electricity_sources.json` with data in
   `data/datasets/global_electricity_sources.csv`.
@@ -132,6 +137,17 @@ The project is a usable MVP:
 - Project Studio can create new project JSON files and open/edit existing
   `projects/*.json` files while preserving advanced fields that are not exposed
   in the form yet.
+- Project Studio builds an immutable `ProjectDraft` snapshot from the form and
+  tracks a canonical fingerprint of both its JSON data and destination path.
+  `Save project` is explicit, saved/unsaved status is visible, and preview/video
+  actions save that exact snapshot before invoking the shared render pipeline.
+- The latest preview path and its draft fingerprint live in session state. The
+  preview therefore survives normal widget reruns and is visibly marked stale
+  after the user changes the draft.
+- The selected CSV is read through a bounded `st.cache_data` loader keyed by
+  resolved path, file size, and nanosecond modification time. Dataset preview,
+  inspection, periods, and categories share the cached DataFrame, while a file
+  replacement at the same path invalidates it.
 - Project Studio groups its form into four workflow tabs: `Data & content`,
   `Canvas & text`, `Bars & categories`, and `Animation & output`. Project and
   CSV loading live in the sidebar, while dataset previews and advanced panels
@@ -223,6 +239,11 @@ Important boundaries:
   state.
 - `VideoExporter` exports PNG sequences or opens a raw RGBA FFmpeg stream.
 - `ChartConfig.frame_output_mode` selects `png_sequence` or `ffmpeg_stream`.
+- Project Studio's form may create a `ProjectDraft`, but only
+  `save_project_data` persists it. The UI must not treat incidental widget
+  reruns as saves.
+- UI dataset caching belongs in `src/ui/dataset_cache.py`. Data importers and
+  the render pipeline remain independent of Streamlit.
 
 ## Model Meanings
 
@@ -412,13 +433,37 @@ The project has been using a pattern of:
 
 ## Near-Term Roadmap
 
-Recommended next steps:
+The current consolidation program precedes additional chart types. Complete it
+in verified, published checkpoints:
 
-1. Polish Project Studio with easier visual tuning controls.
-2. Polish the electricity project with actual logo assets, refined copy, or
-   source-specific visual adjustments if the user wants a more publication-ready
-   output.
-3. Add more chart types while preserving the same pipeline ideas.
+1. **Draft and rerun foundation — completed.** Use immutable draft snapshots,
+   explicit save/dirty status, persistent previews, and one bounded cached CSV
+   load shared by the editor.
+2. **Scalable category editor.** Add search/filtering and pagination or focused
+   editing so hundreds of categories do not create hundreds of active widgets;
+   use fragments or deliberate apply actions to reduce full-app reruns.
+3. **Reliable rendering workflow.** Add preflight validation, cancellation,
+   isolated/background execution, atomic project writes, and safe close/reload
+   behavior for unsaved changes.
+4. **Versioned configuration.** Define a project schema version, centralize
+   validation/defaults, and add migrations for older JSON files before adding
+   more fields.
+5. **Modern components.** Migrate custom Streamlit component v1 controls to the
+   supported v2 API and show controls contextually so simple projects remain
+   approachable.
+6. **Modular renderer and UI.** Split oversized modules at stable responsibility
+   boundaries and add deterministic/visual regression coverage for renderer
+   combinations.
+7. **Reproducible development.** Provide a reliable launcher and doctor command,
+   pin and document dependencies, add CI checks, and resolve the repository's
+   unrelated `main`/`master` history without risking active work.
+8. **Portable delivery.** Export/import complete project bundles, surface the
+   finished video cleanly in the UI, finish documentation, and run an integral
+   end-to-end verification.
+
+Do not collapse these into one large unverified rewrite. Each phase updates
+tests, README, and this context file, then is committed and pushed to the active
+GitHub branch.
 
 ## Non-Goals For Now
 
