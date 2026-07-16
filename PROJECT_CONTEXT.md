@@ -65,6 +65,11 @@ The project is a usable MVP:
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
+- External project files use `schema_version`; version 1 is current.
+  Unversioned/version-0 data is migrated in memory before validation and saved
+  back as version 1. The v0 migration moves legacy `chart.animation` and
+  `chart.selection` sections to the top level and normalizes legacy logo
+  positions. Future versions fail explicitly rather than silently falling back.
 - Project-specific source labels through `DataSourceConfig.source_label_override`.
 - Project-specific category labels and colors through the top-level
   `categories` section in external project files.
@@ -318,6 +323,9 @@ Current configuration layers:
 
 - Internal presets live in `src/config/project_preset.py`.
 - External reusable project files live in `projects/*.json`.
+- Project schema ownership lives in `src/config/project_schema.py`. Every new
+  schema version adds one sequential migration from the immediately preceding
+  version; migrations deep-copy their input and never mutate caller data.
 - CLI overrides can adjust output path, frames directory, title, theme, layout
   preset, value format, typography preset, fps, duration, size, and related
   FFmpeg export options.
@@ -365,6 +373,8 @@ When changing renderer behavior:
 When changing project JSON support:
 
 - Update `ProjectFileLoader`.
+- Increment `CURRENT_PROJECT_SCHEMA_VERSION` only for a persisted contract
+  change, and add a deterministic migration from the previous version.
 - Add tests for accepted and rejected JSON fields.
 - Update `projects/sample_project.json`.
 - Update README.
@@ -475,9 +485,9 @@ in verified, published checkpoints:
    logs/status, and confirmation for destructive in-app draft transitions are
    implemented. Browser/tab close cannot be intercepted reliably; the visible
    dirty indicator remains the close warning.
-4. **Versioned configuration.** Define a project schema version, centralize
-   validation/defaults, and add migrations for older JSON files before adding
-   more fields.
+4. **Versioned configuration — completed.** Schema version 1, sequential
+   migration infrastructure, legacy normalization, future-version rejection,
+   versioned builder/storage output, and a canonical sample are implemented.
 5. **Modern components.** Migrate custom Streamlit component v1 controls to the
    supported v2 API and show controls contextually so simple projects remain
    approachable.

@@ -8,6 +8,7 @@ from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.layout_config import apply_layout_preset, get_layout_preset
 from config.project_preset import ProjectPreset, get_preset
+from config.project_schema import ProjectSchemaError, migrate_project_data
 from config.theme_config import get_theme
 from config.typography_config import apply_typography_preset, get_typography_preset
 from config.value_format_config import get_value_format
@@ -18,6 +19,7 @@ class ProjectFileError(ValueError):
 
 
 PROJECT_FILE_SECTIONS = {
+    "schema_version",
     "name",
     "base_preset",
     "animation",
@@ -104,10 +106,10 @@ def _read_project_data(project_path):
             f"Invalid JSON in project file '{project_path}': {exc.msg}"
         ) from exc
 
-    if not isinstance(data, dict):
-        raise ProjectFileError("Project file must contain a JSON object.")
-
-    return data
+    try:
+        return migrate_project_data(data).data
+    except ProjectSchemaError as exc:
+        raise ProjectFileError(str(exc)) from exc
 
 
 def _base_preset(data, project_path):

@@ -174,6 +174,14 @@ Overrides can also be applied on top of an external project file:
 External project files are JSON documents. They let you create new videos
 without editing Python source files.
 
+The current project schema is version `1` and new files include
+`"schema_version": 1`. Existing unversioned files are schema `0`: they are
+migrated in memory when opened and written back as version 1 on the next save.
+The v0 migration moves historical `chart.animation` and `chart.selection`
+objects to their current top-level sections and normalizes legacy
+`inside`/`outside` logo positions. Files declaring a newer unsupported schema
+are rejected instead of being interpreted with potentially incorrect defaults.
+
 `Project Studio` is a local Streamlit interface for creating and editing these
 JSON files from a CSV. It can open existing files from `projects/*.json`,
 inspect columns, derive new-project names and output paths from the selected
@@ -236,6 +244,7 @@ Example:
 
 ```json
 {
+  "schema_version": 1,
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
@@ -1164,5 +1173,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Introduce a versioned project schema with migrations before expanding the
-  editor and renderer further.
+- Modernize the custom Streamlit controls and expose advanced fields only when
+  their parent feature is active.

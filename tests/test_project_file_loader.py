@@ -8,6 +8,40 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_migrates_legacy_nested_animation_and_logo_position(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "legacy_project.json"
+            project_path.write_text(
+                json.dumps({
+                    "chart": {
+                        "bar_logo_position": "inside",
+                        "animation": {"motion_mode": "continuous"},
+                        "selection": {"top_n": 4},
+                    }
+                }),
+                encoding="utf-8",
+            )
+
+            preset = load_project_file(project_path)
+
+        self.assertEqual(preset.chart_config.bar_logo_position, "inside_left")
+        self.assertEqual(preset.chart_config.animation.motion_mode, "continuous")
+        self.assertEqual(preset.chart_config.selection.top_n, 4)
+
+    def test_rejects_project_from_newer_schema(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "future_project.json"
+            project_path.write_text(
+                json.dumps({"schema_version": 999}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ProjectFileError,
+                "newer than supported",
+            ):
+                load_project_file(project_path)
+
     def test_loads_project_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "custom_project.json"

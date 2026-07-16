@@ -143,6 +143,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             loaded = json.loads(saved_path.read_text(encoding="utf-8"))
 
         self.assertEqual(loaded["name"], "electricity")
+        self.assertEqual(loaded["schema_version"], 1)
         self.assertEqual(loaded["chart"]["title"], "Electricity")
         self.assertEqual(loaded["data_source"]["source_label_override"], "Source: Test")
         self.assertEqual(loaded["dataset"]["value_column"], "value")

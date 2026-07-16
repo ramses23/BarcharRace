@@ -8,6 +8,10 @@ from pathlib import Path
 import pandas as pd
 
 from config.chart_config import ChartConfig
+from config.project_schema import (
+    CURRENT_PROJECT_SCHEMA_VERSION,
+    migrate_project_data,
+)
 from studio.project_storage import atomic_write_json
 
 
@@ -229,7 +233,12 @@ def build_project_data(
     category_styles=None,
     base_project_data=None,
 ):
-    project_data = copy.deepcopy(base_project_data) if base_project_data else {}
+    project_data = (
+        migrate_project_data(base_project_data).data
+        if base_project_data
+        else {"schema_version": CURRENT_PROJECT_SCHEMA_VERSION}
+    )
+    project_data["schema_version"] = CURRENT_PROJECT_SCHEMA_VERSION
     project_data["name"] = name
 
     chart = project_data.setdefault("chart", {})
@@ -391,17 +400,14 @@ def build_project_data(
 
 
 def save_project_data(project_data, project_path):
-    return atomic_write_json(project_data, project_path)
+    migration = migrate_project_data(project_data)
+    return atomic_write_json(migration.data, project_path)
 
 
 def load_project_data(project_path):
     path = Path(project_path)
     data = json.loads(path.read_text(encoding="utf-8"))
-
-    if not isinstance(data, dict):
-        raise ValueError("Project JSON must contain an object.")
-
-    return data
+    return migrate_project_data(data).data
 
 
 def project_form_values(project_data=None):
