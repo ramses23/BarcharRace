@@ -253,6 +253,22 @@ The project is a usable MVP:
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
   format.
 - Unit tests and a real FFmpeg integration test.
+- The automation workstream begins with a renderer-independent dataset layer in
+  `src/automation`. `DatasetBuilder` is the common structural contract and
+  `DatasetBuildResult` records immutable provenance, hashes, sizes, effective
+  parameters, warnings, and row statistics without retaining a DataFrame.
+- `NationalTeamGoalsDatasetBuilder` currently accepts only a local source CSV
+  plus an optional expected SHA-256. It builds deterministic annual or
+  cumulative `year,country,value` output, validates full match dates and
+  non-negative integer scores, explicitly rejects boolean scores, and never
+  overwrites an output. Publication currently uses a same-directory hardlink;
+  after the link succeeds, temporary-name cleanup is best effort and a residual
+  path is reported as a warning without invalidating the completed build.
+  Duplicate identity uses every available standard match field; `error` stops,
+  `warn` retains and reports, and `allow` retains silently.
+- Dataset automation still has no production CLI, `ProductionWorkspace`,
+  briefs, builder registry, logo workflow, automatic project JSON, or automatic
+  render. The current builder performs no network access or remote caching.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
@@ -292,6 +308,8 @@ Important boundaries:
 - `RenderJob` may report progress, but UI-specific rendering of that progress
   belongs outside the pipeline.
 - Importers load data only. They should not know about rendering.
+- Automation dataset builders transform explicit local inputs only. They must
+  remain independent from Streamlit, project assembly, logos, and `RenderJob`.
 - Validators validate data only. They should not know about rendering.
 - `Timeline` exposes frame data by period.
 - `LayoutEngine` converts business data into visual bar sprites.
