@@ -266,9 +266,19 @@ The project is a usable MVP:
   path is reported as a warning without invalidating the completed build.
   Duplicate identity uses every available standard match field; `error` stops,
   `warn` retains and reports, and `allow` retains silently.
-- Dataset automation still has no production CLI, `ProductionWorkspace`,
-  briefs, builder registry, logo workflow, automatic project JSON, or automatic
-  render. The current builder performs no network access or remote caching.
+- Dataset automation still has no production CLI, briefs, builder registry,
+  logo workflow, automatic project JSON, or automatic render. The current
+  builder performs no network access or remote caching.
+- `ProductionWorkspace` reserves one exclusive job directory under
+  `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
+  canonical artifact directories, and writes deterministic version-1 workspace
+  manifest and production-status JSON files. Workspace, production-status, and
+  project JSON schemas are independent. Failed initialization rolls back only
+  the job directory created by that attempt.
+- The workspace is path infrastructure only: it does not execute dataset
+  builders or renders. Production briefs, a builder registry, orchestration,
+  automatic logos, automatic project JSON, and a production CLI do not exist
+  yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
