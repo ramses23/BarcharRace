@@ -1,7 +1,6 @@
 import copy
 import sys
 from pathlib import Path, PurePosixPath
-from subprocess import CalledProcessError
 
 import pandas as pd
 import streamlit as st
@@ -18,9 +17,9 @@ from config.project_file_loader import ProjectFileError
 from config.theme_config import get_theme
 from config.typography_config import get_typography_preset
 from config.value_format_config import list_value_formats
-from pipeline.render_job import RenderJob
 from studio.preview import render_project_preview
 from studio.project_draft import ProjectDraft
+from studio.render_preflight import run_render_preflight
 from ui.category_editor import (
     CATEGORY_FILTERS,
     CATEGORY_PAGE_SIZES,
@@ -31,6 +30,10 @@ from ui.category_editor import (
 from ui.dataset_cache import load_csv_dataset
 from ui.bar_style_editor import bar_style_editor
 from ui.font_picker import font_family_picker
+from ui.render_controller import (
+    render_result_from_status,
+    start_background_render,
+)
 from ui.text_layout_editor import text_layout_editor
 from studio.project_builder import (
     BAR_STYLE_FIELDS,
@@ -49,7 +52,6 @@ from studio.project_builder import (
     year_values,
     year_values_from_dataframe,
 )
-from config.project_file_loader import load_project_file
 from utils.video_duration import estimate_video_duration, format_video_duration
 
 
@@ -80,6 +82,12 @@ SAVED_DRAFT_FINGERPRINT_STATE = "saved_project_draft_fingerprint"
 SAVED_DRAFT_PENDING_STATE = "saved_project_draft_pending"
 LAST_PREVIEW_STATE = "last_project_preview"
 CATEGORY_STYLE_DRAFT_STATE = "category_style_draft"
+CURRENT_DRAFT_FINGERPRINT_STATE = "current_project_draft_fingerprint"
+CURRENT_DRAFT_STATE = "current_project_draft"
+PENDING_PROJECT_ACTION_STATE = "pending_project_action"
+BACKGROUND_RENDER_STATE = "background_render"
+LAST_RENDER_STATUS_STATE = "last_render_status"
+LAST_PREFLIGHT_STATE = "last_render_preflight"
 
 
 st.set_page_config(
@@ -135,8 +143,14 @@ def main():
         project_file,
         preview_settings,
     )
-    _initialize_saved_draft(draft, loaded_project_data)
+    _initialize_saved_draft(draft)
+    st.session_state[CURRENT_DRAFT_FINGERPRINT_STATE] = draft.fingerprint
+    st.session_state[CURRENT_DRAFT_STATE] = {
+        "project_data": copy.deepcopy(draft.project_data),
+        "project_file": draft.project_file,
+    }
     _project_actions(draft)
+    _render_workflow_panel()
     _show_persistent_preview(draft)
 
     with st.expander("Generated project JSON"):
@@ -148,20 +162,27 @@ def _initialize_studio_state():
     st.session_state.setdefault(SAVED_DRAFT_FINGERPRINT_STATE, None)
     st.session_state.setdefault(SAVED_DRAFT_PENDING_STATE, False)
     st.session_state.setdefault(LAST_PREVIEW_STATE, None)
+    st.session_state.setdefault(CURRENT_DRAFT_FINGERPRINT_STATE, None)
+    st.session_state.setdefault(CURRENT_DRAFT_STATE, None)
+    st.session_state.setdefault(PENDING_PROJECT_ACTION_STATE, None)
+    st.session_state.setdefault(BACKGROUND_RENDER_STATE, None)
+    st.session_state.setdefault(LAST_RENDER_STATUS_STATE, None)
+    st.session_state.setdefault(LAST_PREFLIGHT_STATE, None)
 
 
-def _initialize_saved_draft(draft, loaded_project_data):
+def _initialize_saved_draft(draft):
     pending = st.session_state.get(SAVED_DRAFT_PENDING_STATE, False)
 
-    if pending or (
-        loaded_project_data
-        and st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE) is None
-    ):
+    if pending:
         st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = draft.fingerprint
         st.session_state[SAVED_DRAFT_PENDING_STATE] = False
 
 
 def _project_actions(draft):
+    background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
+    render_active = bool(
+        background_render is not None and background_render.is_running()
+    )
     save_column, preview_column, render_column = st.columns(3)
     save_project = save_column.button(
         "Save project",
@@ -178,6 +199,7 @@ def _project_actions(draft):
         icon=":material/movie:",
         type="primary",
         width="stretch",
+        disabled=render_active,
     )
 
     if save_project:
@@ -198,7 +220,7 @@ def _project_actions(draft):
 
     if render_video:
         _save_draft(draft, show_success=False)
-        _render_video(draft.project_file)
+        _start_render_with_preflight(draft.project_file)
 
     saved_fingerprint = st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE)
     if draft.is_dirty(saved_fingerprint):
@@ -234,6 +256,7 @@ def _show_persistent_preview(draft):
 
 def _project_source_panel():
     st.subheader("Project")
+    _pending_project_action_panel()
     project_files = _project_files()
     project_options = ("", *project_files)
     current_project = st.session_state.get("loaded_project_path", "")
@@ -244,48 +267,156 @@ def _project_source_panel():
         format_func=lambda path: "New project" if not path else path,
     )
     load_column, new_column = st.columns(2)
+    background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
+    render_active = bool(
+        background_render is not None and background_render.is_running()
+    )
 
     with load_column:
-        if st.button("Load project", width="stretch", disabled=not selected_project):
-            try:
-                project_data = load_project_data(ROOT_DIR / selected_project)
-            except (OSError, ValueError) as exc:
-                st.error(str(exc))
-                return
-
-            st.session_state["loaded_project_data"] = project_data
-            st.session_state["loaded_project_path"] = selected_project
-            st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
-            st.session_state[SAVED_DRAFT_PENDING_STATE] = True
-            st.session_state[LAST_PREVIEW_STATE] = None
-            st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
-            st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
-            st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
-            _clear_logo_session_overrides()
-            _refresh_form()
-            st.rerun()
+        if st.button(
+            "Load project",
+            width="stretch",
+            disabled=not selected_project or render_active,
+        ):
+            _request_project_action("load", project=selected_project)
 
     with new_column:
-        if st.button("New project", width="stretch"):
-            st.session_state.pop("loaded_project_data", None)
-            st.session_state.pop("loaded_project_path", None)
-            st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
-            st.session_state[SAVED_DRAFT_PENDING_STATE] = False
-            st.session_state[LAST_PREVIEW_STATE] = None
-            st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
-            st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
-            st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
-            _clear_logo_session_overrides()
-            _refresh_form()
-            st.rerun()
+        if st.button(
+            "New project",
+            width="stretch",
+            disabled=render_active,
+        ):
+            _request_project_action("new")
+
+    if render_active:
+        st.caption("Project switching is disabled while a render is active.")
 
     if st.session_state.get("loaded_project_path"):
         st.caption(f"Editing {st.session_state['loaded_project_path']}")
 
 
+def _request_project_action(action, **payload):
+    if _has_unsaved_draft():
+        st.session_state[PENDING_PROJECT_ACTION_STATE] = {
+            "action": action,
+            "draft": copy.deepcopy(
+                st.session_state.get(CURRENT_DRAFT_STATE)
+            ),
+            **payload,
+        }
+        st.rerun()
+
+    _execute_project_action({"action": action, **payload})
+
+
+def _pending_project_action_panel():
+    pending_action = st.session_state.get(PENDING_PROJECT_ACTION_STATE)
+    if not isinstance(pending_action, dict):
+        return
+
+    st.warning("You have unsaved changes. Save them before continuing, or discard them.")
+    discard_column, keep_column = st.columns(2)
+    if discard_column.button(
+        "Discard & continue",
+        type="primary",
+        width="stretch",
+        key="discard_pending_project_action",
+    ):
+        st.session_state[PENDING_PROJECT_ACTION_STATE] = None
+        _execute_project_action(pending_action)
+
+    if keep_column.button(
+        "Keep editing",
+        width="stretch",
+        key="cancel_pending_project_action",
+    ):
+        current_draft = pending_action.get("draft")
+        if isinstance(current_draft, dict) and isinstance(
+            current_draft.get("project_data"),
+            dict,
+        ):
+            st.session_state["loaded_project_data"] = copy.deepcopy(
+                current_draft["project_data"]
+            )
+            st.session_state[SAVED_DRAFT_PENDING_STATE] = False
+
+        if pending_action.get("action") == "change_csv":
+            previous_csv = pending_action.get("previous_csv", "")
+            st.session_state[_widget_key("csv_path")] = previous_csv
+            st.session_state[_widget_key("csv_upload")] = None
+            st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = previous_csv
+
+        st.session_state[PENDING_PROJECT_ACTION_STATE] = None
+        _refresh_form()
+        st.rerun()
+
+
+def _execute_project_action(action):
+    action_name = action.get("action")
+    if action_name == "load":
+        _load_selected_project(action.get("project", ""))
+    elif action_name == "new":
+        _start_new_project()
+    elif action_name == "change_csv":
+        _apply_new_project_csv_change(action.get("csv_path", ""))
+
+
+def _load_selected_project(selected_project):
+    try:
+        project_data = load_project_data(ROOT_DIR / selected_project)
+    except (OSError, ValueError) as exc:
+        st.error(str(exc))
+        return
+
+    st.session_state["loaded_project_data"] = project_data
+    st.session_state["loaded_project_path"] = selected_project
+    st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
+    st.session_state[SAVED_DRAFT_PENDING_STATE] = True
+    _reset_project_editor_state()
+    st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
+    st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
+    _refresh_form()
+    st.rerun()
+
+
+def _start_new_project():
+    st.session_state.pop("loaded_project_data", None)
+    st.session_state.pop("loaded_project_path", None)
+    st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
+    st.session_state[SAVED_DRAFT_PENDING_STATE] = False
+    _reset_project_editor_state()
+    st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
+    st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
+    _refresh_form()
+    st.rerun()
+
+
+def _reset_project_editor_state():
+    st.session_state[CURRENT_DRAFT_FINGERPRINT_STATE] = None
+    st.session_state[CURRENT_DRAFT_STATE] = None
+    st.session_state[LAST_PREVIEW_STATE] = None
+    st.session_state[LAST_PREFLIGHT_STATE] = None
+    st.session_state[LAST_RENDER_STATUS_STATE] = None
+    st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
+    _clear_logo_session_overrides()
+
+
+def _has_unsaved_draft():
+    current_fingerprint = st.session_state.get(CURRENT_DRAFT_FINGERPRINT_STATE)
+    saved_fingerprint = st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE)
+    return bool(
+        current_fingerprint
+        and current_fingerprint != saved_fingerprint
+    )
+
+
 def _csv_source_panel(values, loaded_project_data):
     st.subheader("Dataset")
-    uploaded_file = st.file_uploader("CSV file", type=["csv"])
+    uploaded_file = st.file_uploader(
+        "CSV file",
+        type=["csv"],
+        key=_widget_key("csv_upload"),
+    )
     default_csv = values["csv_path"]
 
     if not loaded_project_data:
@@ -1081,17 +1212,45 @@ def _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data):
         return
 
     previous_csv_path = st.session_state.get(NEW_PROJECT_CSV_PATH_STATE)
+    if previous_csv_path is None:
+        st.session_state[NEW_PROJECT_CSV_PATH_STATE] = csv_path
+        st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = csv_path
+        return
+
+    if previous_csv_path == csv_path:
+        return
+
+    if _has_unsaved_draft():
+        pending_action = st.session_state.get(PENDING_PROJECT_ACTION_STATE)
+        if (
+            isinstance(pending_action, dict)
+            and pending_action.get("action") == "change_csv"
+            and pending_action.get("csv_path") == csv_path
+        ):
+            return
+
+        st.session_state[PENDING_PROJECT_ACTION_STATE] = {
+            "action": "change_csv",
+            "csv_path": csv_path,
+            "previous_csv": previous_csv_path,
+            "draft": copy.deepcopy(
+                st.session_state.get(CURRENT_DRAFT_STATE)
+            ),
+        }
+        st.rerun()
+
+    _apply_new_project_csv_change(csv_path)
+
+
+def _apply_new_project_csv_change(csv_path):
     st.session_state[NEW_PROJECT_CSV_PATH_STATE] = csv_path
     st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = csv_path
-
-    if previous_csv_path is not None and previous_csv_path != csv_path:
-        st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
-        st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
-        st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
-        st.session_state[LAST_PREVIEW_STATE] = None
-        st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
-        _refresh_form()
-        st.rerun()
+    st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
+    st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
+    st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
+    _reset_project_editor_state()
+    _refresh_form()
+    st.rerun()
 
 
 def _clean_category_style_mapping(styles):
@@ -1884,30 +2043,134 @@ def _render_preview(project_file, preview_settings):
     return preview_path
 
 
-def _render_video(project_file):
-    progress_bar = st.progress(0.0)
-    status_message = st.empty()
+def _start_render_with_preflight(project_file):
+    project_path = ROOT_DIR / project_file
+    preflight = run_render_preflight(project_path, root_dir=ROOT_DIR)
+    st.session_state[LAST_PREFLIGHT_STATE] = preflight.as_dict()
 
-    try:
-        preset = load_project_file(ROOT_DIR / project_file)
-        progress_callback = _streamlit_progress_callback(
-            progress_bar,
-            status_message,
-        )
-        result = RenderJob(
-            config=preset.chart_config,
-            data_source_config=preset.data_source_config,
-            dataset_config=preset.dataset_config,
-            progress_callback=progress_callback,
-        ).run()
-    except (ProjectFileError, ValueError, OSError, RuntimeError, CalledProcessError) as exc:
-        progress_bar.empty()
-        st.error(str(exc))
+    if not preflight.ready:
+        st.error("Render preflight found errors. Review the checks below.")
         return
 
-    progress_bar.progress(1.0)
-    status_message.success(f"Rendered {result.output_file}")
-    _show_render_profile(result)
+    try:
+        background_render = start_background_render(
+            project_path,
+            root_dir=ROOT_DIR,
+        )
+    except OSError as exc:
+        st.error(f"Could not start the render process: {exc}")
+        return
+
+    st.session_state[BACKGROUND_RENDER_STATE] = background_render
+    st.session_state[LAST_RENDER_STATUS_STATE] = None
+    st.rerun()
+
+
+def _render_workflow_panel():
+    _show_preflight_results()
+    background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
+
+    if background_render is not None:
+        status = background_render.status()
+        if status.get("state") not in {"completed", "failed", "canceled"}:
+            _active_render_fragment()
+            return
+
+        _finish_background_render(status)
+
+    _show_last_render_status()
+
+
+@st.fragment(run_every=1.0)
+def _active_render_fragment():
+    background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
+    if background_render is None:
+        return
+
+    status = background_render.status()
+    state = status.get("state", "starting")
+    if state in {"completed", "failed", "canceled"}:
+        _finish_background_render(status)
+        st.rerun()
+
+    with st.container(border=True):
+        st.subheader("Video render")
+        progress = max(0.0, min(1.0, float(status.get("progress", 0.0))))
+        st.progress(progress)
+        message = status.get("message", "Rendering video")
+        current = int(status.get("current", 0))
+        total = int(status.get("total", 0))
+
+        if total:
+            message = f"{message}: {current:,}/{total:,}"
+
+        st.caption(message)
+        status_column, cancel_column = st.columns([3, 1])
+        status_column.caption(
+            f"Isolated process {background_render.pid} · "
+            f"log: {background_render.log_path}"
+        )
+        if cancel_column.button(
+            "Cancel render",
+            icon=":material/cancel:",
+            width="stretch",
+            key="cancel_background_render",
+        ):
+            canceled_status = background_render.cancel()
+            _finish_background_render(canceled_status)
+            st.rerun()
+
+
+def _finish_background_render(status):
+    st.session_state[LAST_RENDER_STATUS_STATE] = status
+    st.session_state[BACKGROUND_RENDER_STATE] = None
+
+
+def _show_preflight_results():
+    preflight = st.session_state.get(LAST_PREFLIGHT_STATE)
+    if not isinstance(preflight, dict):
+        return
+
+    label = "Render preflight passed" if preflight.get("ready") else "Render preflight"
+    with st.expander(label, expanded=not preflight.get("ready", False)):
+        for check in preflight.get("checks", []):
+            level = check.get("level")
+            icon = {"ok": "✓", "warning": "⚠", "error": "✕"}.get(level, "•")
+            st.markdown(
+                f"{icon} **{check.get('label', 'Check')}** — "
+                f"{check.get('message', '')}"
+            )
+
+
+def _show_last_render_status():
+    status = st.session_state.get(LAST_RENDER_STATUS_STATE)
+    if not isinstance(status, dict):
+        return
+
+    state = status.get("state")
+    with st.container(border=True):
+        if state == "completed":
+            output_file = status.get("output_file") or status.get(
+                "result", {}
+            ).get("output_file", "")
+            st.success(f"Rendered {output_file}")
+            result = render_result_from_status(status)
+            if result is not None:
+                _show_render_profile(result)
+        elif state == "canceled":
+            st.warning(status.get("message", "Render canceled."))
+        else:
+            st.error(status.get("error") or status.get("message", "Render failed."))
+            if status.get("log_path"):
+                st.caption(f"Log: {status['log_path']}")
+
+        if st.button(
+            "Dismiss render status",
+            icon=":material/close:",
+            key="dismiss_render_status",
+        ):
+            st.session_state[LAST_RENDER_STATUS_STATE] = None
+            st.rerun()
 
 
 def _show_render_profile(result):
@@ -1953,19 +2216,6 @@ def _profile_row(stage, seconds, total_seconds):
 
 def _format_seconds(seconds):
     return f"{seconds:.3f}s"
-
-
-def _streamlit_progress_callback(progress_bar, status_message):
-    def update(progress):
-        message = progress.message
-
-        if progress.total:
-            message = f"{message}: {progress.current}/{progress.total}"
-
-        progress_bar.progress(progress.progress)
-        status_message.caption(message)
-
-    return update
 
 
 def _column_index(columns, selected):

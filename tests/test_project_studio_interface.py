@@ -8,6 +8,53 @@ from streamlit.testing.v1 import AppTest
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_project_switch_requires_confirmation_for_unsaved_draft(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        title = next(
+            control
+            for control in app.text_input
+            if control.label == "Video title"
+        )
+        title.set_value("Unsaved title")
+        app.run()
+
+        new_project = next(
+            button
+            for button in app.button
+            if button.label == "New project"
+        )
+        new_project.click()
+        app.run()
+
+        self.assertFalse(app.exception)
+        self.assertIn(
+            "Discard & continue",
+            {button.label for button in app.button},
+        )
+        self.assertTrue(
+            any("unsaved changes" in warning.value.lower() for warning in app.warning)
+        )
+
+        keep_editing = next(
+            button
+            for button in app.button
+            if button.label == "Keep editing"
+        )
+        keep_editing.click()
+        app.run()
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            next(
+                control.value
+                for control in app.text_input
+                if control.label == "Video title"
+            ),
+            "Unsaved title",
+        )
+
     def test_category_editor_filters_and_applies_page_changes(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"

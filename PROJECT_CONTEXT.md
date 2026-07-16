@@ -182,6 +182,22 @@ The project is a usable MVP:
   neighboring annual keyframes, keeps velocity continuous for persistent bars,
   preserves eased fades for entries/exits, and emits year-boundary frames once.
 - Project Studio shows render progress while launching a final video render.
+- Final video rendering is preceded by a structured preflight covering project
+  parsing, data loading/validation, minimum period count, FFmpeg, output path,
+  required background/texture assets, and optional logo warnings. Errors block
+  launch.
+- Final renders run in an isolated worker process controlled by
+  `src/ui/render_controller.py`. Progress is throttled into an atomic status
+  file under `output/.render_jobs/<job_id>/`; stdout/stderr go to that job's
+  log. The Streamlit UI polls only an active fragment and can terminate the
+  worker plus its FFmpeg child tree.
+- The worker renders to a job-specific partial MP4 and atomically replaces the
+  configured output only after success. Failure/cancellation removes the
+  partial file and preserves the previous completed video.
+- Project JSON saves are atomic temporary-file replacements through
+  `src/studio/project_storage.py`. In-app project/new-CSV switching requires
+  confirmation when the draft fingerprint differs from the saved fingerprint;
+  `Keep editing` restores the complete captured draft.
 - Project Studio shows the estimated playback duration, transition count, and
   frame count live from the dataset periods, steps per transition, motion mode,
   and FPS. The estimate is playback length, not render completion time, and
@@ -250,6 +266,11 @@ Important boundaries:
   reruns as saves.
 - UI dataset caching belongs in `src/ui/dataset_cache.py`. Data importers and
   the render pipeline remain independent of Streamlit.
+- `src/studio/render_worker.py` may construct and run `RenderJob`, but it must
+  not duplicate pipeline stages. Its responsibilities are process isolation,
+  status transport, and atomic promotion of successful video output.
+- A UI cancel action must terminate the whole render process tree so an FFmpeg
+  child cannot remain orphaned.
 
 ## Model Meanings
 
@@ -449,9 +470,11 @@ in verified, published checkpoints:
    set, mount only a configurable page, preserve applied pages in the session
    draft, and use a deliberate form submit to avoid rerunning on every field
    edit.
-3. **Reliable rendering workflow.** Add preflight validation, cancellation,
-   isolated/background execution, atomic project writes, and safe close/reload
-   behavior for unsaved changes.
+3. **Reliable rendering workflow — completed.** Preflight validation,
+   cancellable isolated rendering, atomic JSON/video promotion, persistent job
+   logs/status, and confirmation for destructive in-app draft transitions are
+   implemented. Browser/tab close cannot be intercepted reliably; the visible
+   dirty indicator remains the close warning.
 4. **Versioned configuration.** Define a project schema version, centralize
    validation/defaults, and add migrations for older JSON files before adding
    more fields.

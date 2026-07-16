@@ -218,6 +218,20 @@ same shared calculation supplies the pipeline's expected frame count, so the
 displayed runtime matches the generated timeline. It describes final playback
 length, not how long rendering will take.
 
+Before a final render, Project Studio runs a preflight over the saved project,
+data source, dataset columns and periods, FFmpeg, output path, background,
+custom texture, and category-logo references. Errors block the render; missing
+optional logos are warnings. A passing render starts in an isolated Python
+process, reports progress from `output/.render_jobs/`, and can be canceled from
+the UI. Cancellation terminates the worker and its FFmpeg child process.
+
+The worker writes FFmpeg output to a job-specific partial MP4 and atomically
+replaces the configured video only after successful completion. A failed or
+canceled run therefore does not overwrite the previous good video. Project
+JSON saves use the same temporary-file-and-replace strategy. Loading another
+project, starting a new one, or replacing a new-project CSV asks for explicit
+confirmation when the current draft has unsaved changes.
+
 Example:
 
 ```json
@@ -1150,7 +1164,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add render preflight, cancellation, isolated background execution, and
-  atomic project writes.
 - Introduce a versioned project schema with migrations before expanding the
   editor and renderer further.

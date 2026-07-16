@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.chart_config import ChartConfig
+from studio.project_storage import atomic_write_json
 
 
 _DEFAULT_CHART_CONFIG = ChartConfig()
@@ -390,14 +391,7 @@ def build_project_data(
 
 
 def save_project_data(project_data, project_path):
-    path = Path(project_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(project_data, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-    return path
+    return atomic_write_json(project_data, project_path)
 
 
 def load_project_data(project_path):
