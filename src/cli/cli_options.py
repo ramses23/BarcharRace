@@ -33,9 +33,11 @@ class CliOptions:
     height: int | None = None
     video_codec: str | None = None
     video_pixel_format: str | None = None
+    png_compress_level: int | None = None
     video_crf: int | None = None
     video_bitrate: str | None = None
     ffmpeg_preset: str | None = None
+    frame_output_mode: str | None = None
 
 
 def build_argument_parser():
@@ -156,6 +158,11 @@ def build_argument_parser():
         help="Override FFmpeg pixel format.",
     )
     parser.add_argument(
+        "--png-compress-level",
+        type=_png_compress_level,
+        help="Override PNG frame compression level, from 0 fastest to 9 smallest.",
+    )
+    parser.add_argument(
         "--video-crf",
         type=_non_negative_int,
         help="Override FFmpeg CRF quality value.",
@@ -167,6 +174,11 @@ def build_argument_parser():
     parser.add_argument(
         "--ffmpeg-preset",
         help="Override FFmpeg encoder preset, for example slow.",
+    )
+    parser.add_argument(
+        "--frame-output-mode",
+        choices=("png_sequence", "ffmpeg_stream"),
+        help="Write PNG frames or stream raw RGBA frames directly to FFmpeg.",
     )
 
     return parser
@@ -205,9 +217,11 @@ def parse_cli_args(argv):
         height=namespace.height,
         video_codec=namespace.video_codec,
         video_pixel_format=namespace.video_pixel_format,
+        png_compress_level=namespace.png_compress_level,
         video_crf=namespace.video_crf,
         video_bitrate=namespace.video_bitrate,
         ffmpeg_preset=namespace.ffmpeg_preset,
+        frame_output_mode=namespace.frame_output_mode,
     )
 
 
@@ -280,6 +294,9 @@ def apply_cli_overrides(preset, options):
     if options.video_pixel_format is not None:
         chart_updates["video_pixel_format"] = options.video_pixel_format
 
+    if options.png_compress_level is not None:
+        chart_updates["png_compress_level"] = options.png_compress_level
+
     if options.video_crf is not None:
         chart_updates["video_crf"] = options.video_crf
 
@@ -288,6 +305,9 @@ def apply_cli_overrides(preset, options):
 
     if options.ffmpeg_preset is not None:
         chart_updates["ffmpeg_preset"] = options.ffmpeg_preset
+
+    if options.frame_output_mode is not None:
+        chart_updates["frame_output_mode"] = options.frame_output_mode
 
     if chart_updates:
         chart_config = replace(chart_config, **chart_updates)
@@ -321,6 +341,15 @@ def _positive_float(value):
 
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
+
+    return parsed
+
+
+def _png_compress_level(value):
+    parsed = _non_negative_int(value)
+
+    if parsed > 9:
+        raise argparse.ArgumentTypeError("must be between 0 and 9")
 
     return parsed
 

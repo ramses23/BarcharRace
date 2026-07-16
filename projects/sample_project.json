@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
@@ -37,6 +38,18 @@
     "aggregate_other": false,
     "other_label": "Other",
     "other_color": "#A0A0A0"
+  },
+  "categories": {
+    "USA": {
+      "label": "United States",
+      "color": "#4E79A7"
+    },
+    "Mexico": {
+      "color": "#59A14F"
+    },
+    "Canada": {
+      "color": "#E15759"
+    }
   },
   "data_source": {
     "source_type": "csv",

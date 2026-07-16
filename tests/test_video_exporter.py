@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import _test_path
 from config.chart_config import ChartConfig
@@ -84,6 +84,46 @@ class VideoExporterTest(unittest.TestCase):
             self.assertTrue(output_file.parent.exists())
             run.assert_called_once()
             self.assertEqual(run.call_args.kwargs["check"], True)
+
+    def test_builds_raw_rgba_stream_command(self):
+        config = ChartConfig(
+            width=1280,
+            height=720,
+            fps=24,
+            output_file="output/video.mp4",
+        )
+
+        command = VideoExporter(config=config).build_stream_command()
+
+        self.assertEqual(command[command.index("-f") + 1], "rawvideo")
+        self.assertEqual(command[command.index("-s") + 1], "1280x720")
+        self.assertEqual(command[command.index("-r") + 1], "24")
+        self.assertEqual(command[command.index("-i") + 1], "-")
+        self.assertEqual(command[-1], "output\\video.mp4")
+
+    def test_finish_stream_reports_ffmpeg_stderr(self):
+        process = Mock()
+        process.stderr.read.return_value = b"encoder failed"
+        process.wait.return_value = 3
+
+        with self.assertRaisesRegex(RuntimeError, "encoder failed"):
+            VideoExporter().finish_stream(process)
+
+        process.stdin.close.assert_called_once_with()
+        process.stderr.close.assert_called_once_with()
+
+    def test_abort_stream_closes_ffmpeg_pipes(self):
+        process = Mock()
+        process.stdin.closed = False
+        process.stderr.closed = False
+        process.poll.return_value = None
+
+        VideoExporter().abort_stream(process)
+
+        process.stdin.close.assert_called_once_with()
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with()
+        process.stderr.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

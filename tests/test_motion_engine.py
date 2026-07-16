@@ -7,6 +7,74 @@ from models.bar_sprite import BarSprite
 
 
 class MotionEngineTest(unittest.TestCase):
+    def test_continuous_motion_preserves_velocity_across_period_boundary(self):
+        def sprite(value, y):
+            return BarSprite(
+                name="USA",
+                value=value,
+                color="#123456",
+                x=0,
+                y=y,
+                width=value,
+                height=40,
+                rank=1,
+            )
+
+        year_a = [sprite(0, 0)]
+        year_b = [sprite(100, 100)]
+        year_c = [sprite(300, 300)]
+        year_d = [sprite(600, 600)]
+        engine = MotionEngine(
+            animation_config=AnimationConfig(motion_mode="continuous")
+        )
+
+        first_transition = engine.interpolate_sprites_continuous(
+            year_a,
+            year_a,
+            year_b,
+            year_c,
+            steps=100,
+            include_start=True,
+        )
+        second_transition = engine.interpolate_sprites_continuous(
+            year_a,
+            year_b,
+            year_c,
+            year_d,
+            steps=100,
+            include_start=False,
+        )
+
+        velocity_before = (
+            first_transition[-1][0].y - first_transition[-2][0].y
+        )
+        velocity_after = second_transition[0][0].y - year_b[0].y
+
+        self.assertEqual(len(first_transition), 101)
+        self.assertEqual(len(second_transition), 100)
+        self.assertNotEqual(second_transition[0][0].y, year_b[0].y)
+        self.assertAlmostEqual(velocity_before, velocity_after, delta=0.05)
+
+    def test_continuous_motion_hits_yearly_keyframes_without_overshoot(self):
+        previous = [BarSprite("A", 50, "#123456", 0, 0, 50, 40)]
+        start = [BarSprite("A", 100, "#123456", 0, 100, 100, 40)]
+        end = [BarSprite("A", 80, "#123456", 0, 80, 80, 40)]
+        next_sprites = [BarSprite("A", 200, "#123456", 0, 200, 200, 40)]
+
+        frames = MotionEngine(
+            animation_config=AnimationConfig(motion_mode="continuous")
+        ).interpolate_sprites_continuous(
+            previous,
+            start,
+            end,
+            next_sprites,
+            steps=20,
+        )
+
+        self.assertEqual(frames[0][0].value, 100)
+        self.assertEqual(frames[-1][0].value, 80)
+        self.assertTrue(all(80 <= frame[0].value <= 100 for frame in frames))
+
     def test_interpolates_rank(self):
         start = [
             BarSprite(
@@ -248,6 +316,7 @@ class MotionEngineTest(unittest.TestCase):
                 width=100,
                 height=40,
                 logo_path="logos/USA.png",
+                secondary_logo_path="flags/USA.png",
             )
         ]
         end = [
@@ -260,6 +329,7 @@ class MotionEngineTest(unittest.TestCase):
                 width=200,
                 height=40,
                 logo_path="logos/USA.png",
+                secondary_logo_path="flags/USA.png",
             )
         ]
 
@@ -267,6 +337,8 @@ class MotionEngineTest(unittest.TestCase):
 
         self.assertEqual(frames[0][0].logo_path, "logos/USA.png")
         self.assertEqual(frames[1][0].logo_path, "logos/USA.png")
+        self.assertEqual(frames[0][0].secondary_logo_path, "flags/USA.png")
+        self.assertEqual(frames[1][0].secondary_logo_path, "flags/USA.png")
 
 
 if __name__ == "__main__":

@@ -63,6 +63,7 @@ def parse_args(argv=None):
     parser.add_argument("--output", default="output/large_profile.mp4")
     parser.add_argument("--frames-dir", default="output/large_profile_frames")
     parser.add_argument("--csv-output", default=None)
+    parser.add_argument("--png-compress-level", type=_png_compress_level, default=1)
     parser.add_argument("--video-crf", type=_non_negative_int, default=23)
     parser.add_argument("--ffmpeg-preset", default="veryfast")
 
@@ -136,6 +137,7 @@ def build_chart_config(args):
         theme=get_theme(args.theme),
         selection=BarSelectionConfig(top_n=args.top_n),
         logos_enabled=False,
+        png_compress_level=args.png_compress_level,
         video_crf=args.video_crf,
         ffmpeg_preset=args.ffmpeg_preset,
     )
@@ -151,6 +153,15 @@ def _positive_int(value):
 
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+
+    return parsed
+
+
+def _png_compress_level(value):
+    parsed = _non_negative_int(value)
+
+    if parsed > 9:
+        raise argparse.ArgumentTypeError("must be between 0 and 9")
 
     return parsed
 

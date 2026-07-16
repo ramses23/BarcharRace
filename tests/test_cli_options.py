@@ -81,12 +81,16 @@ class CliOptionsTest(unittest.TestCase):
                 "libx265",
                 "--video-pixel-format",
                 "yuv444p",
+                "--png-compress-level",
+                "0",
                 "--video-crf",
                 "22",
                 "--video-bitrate",
                 "8M",
                 "--ffmpeg-preset",
                 "slow",
+                "--frame-output-mode",
+                "ffmpeg_stream",
             ]
         )
 
@@ -101,9 +105,11 @@ class CliOptionsTest(unittest.TestCase):
         self.assertEqual(updated.chart_config.height, 720)
         self.assertEqual(updated.chart_config.video_codec, "libx265")
         self.assertEqual(updated.chart_config.video_pixel_format, "yuv444p")
+        self.assertEqual(updated.chart_config.png_compress_level, 0)
         self.assertEqual(updated.chart_config.video_crf, 22)
         self.assertEqual(updated.chart_config.video_bitrate, "8M")
         self.assertEqual(updated.chart_config.ffmpeg_preset, "slow")
+        self.assertEqual(updated.chart_config.frame_output_mode, "ffmpeg_stream")
         self.assertEqual(updated.data_source_config, preset.data_source_config)
         self.assertEqual(updated.dataset_config, preset.dataset_config)
 
@@ -174,6 +180,11 @@ class CliOptionsTest(unittest.TestCase):
                         "10",
                     ]
                 )
+
+    def test_rejects_invalid_png_compress_level(self):
+        with patch.object(sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                parse_cli_args(["csv_sample", "--png-compress-level", "10"])
 
     def test_rejects_negative_video_crf(self):
         with patch.object(sys, "stderr"):

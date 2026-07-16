@@ -36,12 +36,24 @@ class Interpolator:
                     if start_bar
                     else end_bar.color
                 )
+                logo_path = (
+                    start_bar.logo_path
+                    if start_bar
+                    else end_bar.logo_path
+                )
+                secondary_logo_path = (
+                    start_bar.secondary_logo_path
+                    if start_bar
+                    else end_bar.secondary_logo_path
+                )
 
                 current.append(
                     BarData(
                         name=name,
                         value=lerp(start_value, end_value, t),
-                        color=color
+                        color=color,
+                        logo_path=logo_path,
+                        secondary_logo_path=secondary_logo_path,
                     )
                 )
 

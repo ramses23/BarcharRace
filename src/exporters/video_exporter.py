@@ -55,3 +55,60 @@ class VideoExporter:
         cmd.append(str(output_file))
 
         return cmd
+
+
+    def build_stream_command(self, output_file=None):
+        output_file = Path(output_file or self.config.output_file)
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "rawvideo", "-pix_fmt", "rgba",
+            "-s", f"{self.config.width}x{self.config.height}",
+            "-r", str(self.fps), "-i", "-",
+            "-c:v", self.config.video_codec,
+        ]
+
+        if self.config.ffmpeg_preset:
+            cmd.extend(["-preset", self.config.ffmpeg_preset])
+        if self.config.video_bitrate:
+            cmd.extend(["-b:v", self.config.video_bitrate])
+        elif self.config.video_crf is not None:
+            cmd.extend(["-crf", str(self.config.video_crf)])
+        if self.config.video_pixel_format:
+            cmd.extend(["-pix_fmt", self.config.video_pixel_format])
+
+        cmd.append(str(output_file))
+        return cmd
+
+    def open_stream(self, output_file=None):
+        output_file = Path(output_file or self.config.output_file)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        return subprocess.Popen(
+            self.build_stream_command(output_file),
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def finish_stream(self, process):
+        if process.stdin is not None:
+            process.stdin.close()
+        stderr_stream = process.stderr
+        try:
+            stderr = stderr_stream.read() if stderr_stream is not None else b""
+            return_code = process.wait()
+        finally:
+            if stderr_stream is not None:
+                stderr_stream.close()
+        if return_code:
+            message = stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"FFmpeg stream failed with exit code {return_code}: {message}"
+            )
+
+    def abort_stream(self, process):
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
+        if process.poll() is None:
+            process.terminate()
+        process.wait()
+        if process.stderr is not None and not process.stderr.closed:
+            process.stderr.close()

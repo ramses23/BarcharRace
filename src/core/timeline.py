@@ -17,9 +17,17 @@ class Timeline:
         frame = frame.sort_values(by=self.config.value_column, ascending=False)
 
         return [
-            BarData(
-                name=row[self.config.name_column],
-                value=row[self.config.value_column]
-            )
+            self._bar_data_from_row(row)
             for _, row in frame.iterrows()
         ]
+
+    def _bar_data_from_row(self, row):
+        raw_name = row[self.config.name_column]
+
+        return BarData(
+            name=self.config.display_name_for(raw_name),
+            value=row[self.config.value_column],
+            color=self.config.color_for(raw_name),
+            logo_path=self.config.logo_for(raw_name),
+            secondary_logo_path=self.config.secondary_logo_for(raw_name),
+        )

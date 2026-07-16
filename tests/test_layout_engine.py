@@ -65,6 +65,42 @@ class LayoutEngineTest(unittest.TestCase):
 
             self.assertEqual(sprites[0].logo_path, str(logo_path))
 
+    def test_prefers_explicit_bar_logo_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resolved_logo = Path(temp_dir) / "USA.png"
+            resolved_logo.write_text("resolved", encoding="utf-8")
+
+            config = ChartConfig(
+                logos_dir=temp_dir,
+                logo_file_extensions=(".png",),
+            )
+
+            sprites = LayoutEngine(config=config).build(
+                [
+                    BarData(
+                        name="USA",
+                        value=100,
+                        logo_path="logos/custom_usa.png",
+                        secondary_logo_path="logos/custom_secondary_usa.png",
+                    ),
+                ]
+            )
+
+            self.assertEqual(sprites[0].logo_path, "logos/custom_usa.png")
+
+    def test_preserves_explicit_secondary_logo_path(self):
+        sprites = LayoutEngine(config=ChartConfig()).build([
+            BarData(
+                name="USA",
+                value=100,
+                logo_path="portraits/usa.png",
+                secondary_logo_path="flags/usa.png",
+            ),
+        ])
+
+        self.assertEqual(sprites[0].logo_path, "portraits/usa.png")
+        self.assertEqual(sprites[0].secondary_logo_path, "flags/usa.png")
+
     def test_does_not_add_logo_when_logos_are_disabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "USA.png"
@@ -78,11 +114,16 @@ class LayoutEngineTest(unittest.TestCase):
 
             sprites = LayoutEngine(config=config).build(
                 [
-                    BarData(name="USA", value=100),
+                    BarData(
+                        name="USA",
+                        value=100,
+                        logo_path="logos/custom_usa.png",
+                    ),
                 ]
             )
 
             self.assertIsNone(sprites[0].logo_path)
+            self.assertIsNone(sprites[0].secondary_logo_path)
 
     def test_auto_limits_bars_to_vertical_capacity(self):
         config = ChartConfig(
