@@ -311,12 +311,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertEqual(
             [tab.label for tab in app.tabs],
-            [
-                "1. Data & content",
-                "2. Canvas & text",
-                "3. Bars & categories",
-                "4. Animation & output",
-            ],
+            ["Data", "Canvas", "Bars", "Export"],
         )
         selectbox_labels = {selectbox.label for selectbox in app.selectbox}
         self.assertNotIn("Theme", selectbox_labels)
@@ -371,6 +366,17 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
 
         self.assertFalse(app.exception)
+        subheaders = {subheader.value for subheader in app.subheader}
+        self.assertTrue({
+            ":material/tune: Project settings",
+            ":material/movie_edit: Preview and output",
+            ":material/folder_open: Project library",
+        }.issubset(subheaders))
+        self.assertTrue({
+            "Save project",
+            "Render preview",
+            "Render video",
+        }.issubset({button.label for button in app.button}))
         self.assertIn(
             "Project bundle",
             {uploader.label for uploader in app.file_uploader},

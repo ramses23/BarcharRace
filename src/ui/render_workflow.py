@@ -61,8 +61,8 @@ def _active_render_fragment():
         _finish_background_render(status)
         st.rerun()
 
-    with st.container(border=True):
-        st.subheader("Video render")
+    with st.container(border=True, gap="xsmall", key="active_video_render"):
+        st.subheader(":material/progress_activity: Rendering video")
         progress = max(0.0, min(1.0, float(status.get("progress", 0.0))))
         st.progress(progress)
         message = status.get("message", "Rendering video")
@@ -73,15 +73,14 @@ def _active_render_fragment():
             message = f"{message}: {current:,}/{total:,}"
 
         st.caption(message)
-        status_column, cancel_column = st.columns([3, 1])
-        status_column.caption(
+        st.caption(
             f"Isolated process {background_render.pid} · "
             f"log: {background_render.log_path}"
         )
-        if cancel_column.button(
+        if st.button(
             "Cancel render",
             icon=":material/cancel:",
-            width="stretch",
+            width="content",
             key="cancel_background_render",
         ):
             canceled_status = background_render.cancel()
@@ -100,7 +99,11 @@ def _show_preflight_results():
         return
 
     label = "Render preflight passed" if preflight.get("ready") else "Render preflight"
-    with st.expander(label, expanded=not preflight.get("ready", False)):
+    with st.expander(
+        label,
+        expanded=not preflight.get("ready", False),
+        icon=":material/fact_check:",
+    ):
         for check in preflight.get("checks", []):
             level = check.get("level")
             icon = {"ok": "✓", "warning": "⚠", "error": "✕"}.get(level, "•")
@@ -116,13 +119,16 @@ def _show_last_render_status():
         return
 
     state = status.get("state")
-    with st.container(border=True):
+    with st.container(border=True, gap="xsmall", key="render_result"):
         if state == "completed":
             output_file = status.get("output_file") or status.get("result", {}).get(
                 "output_file",
                 "",
             )
-            st.success(f"Rendered {output_file}")
+            st.success(
+                f"Rendered {output_file}",
+                icon=":material/check_circle:",
+            )
             show_finished_video(output_file)
             result = render_result_from_status(status)
             if result is not None:
@@ -147,12 +153,20 @@ def show_render_profile(result):
     profile = result.profile
     total_seconds = profile.total_seconds
 
-    st.subheader("Render profile")
+    st.subheader(":material/query_stats: Render profile")
     total_column, frames_column, average_column, transitions_column = st.columns(4)
-    total_column.metric("Total", _format_seconds(total_seconds))
-    frames_column.metric("Frames", f"{result.frames_rendered:,}")
-    average_column.metric("Avg / frame", _format_seconds(result.average_frame_seconds))
-    transitions_column.metric("Transitions", f"{result.transitions_rendered:,}")
+    total_column.metric("Total", _format_seconds(total_seconds), border=True)
+    frames_column.metric("Frames", f"{result.frames_rendered:,}", border=True)
+    average_column.metric(
+        "Avg / frame",
+        _format_seconds(result.average_frame_seconds),
+        border=True,
+    )
+    transitions_column.metric(
+        "Transitions",
+        f"{result.transitions_rendered:,}",
+        border=True,
+    )
 
     render_overhead_seconds = max(
         0.0,

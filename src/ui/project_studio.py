@@ -41,6 +41,13 @@ from ui.render_workflow import (
     render_workflow_panel,
     start_render_with_preflight,
 )
+from ui.studio_shell import (
+    section_intro,
+    show_dataset_snapshot,
+    show_empty_preview,
+    show_studio_header,
+    show_welcome_header,
+)
 from ui.text_layout_editor import text_layout_editor
 from studio.project_builder import (
     BAR_STYLE_FIELDS,
@@ -99,15 +106,23 @@ LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
 
 st.set_page_config(
     page_title="BarChartStudio",
-    page_icon="B",
+    page_icon=":material/animated_images:",
     layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        "About": "BarChartStudio · Professional bar chart race editor",
+    },
+)
+st.logo(
+    ":material/animated_images:",
+    icon_image=":material/animated_images:",
+    size="large",
 )
 
 
 def main():
     _initialize_studio_state()
-    st.title("BarChartStudio")
-    st.caption("Build, style, preview, and export animated bar chart races.")
+    header_slot = st.empty()
 
     with st.sidebar:
         _project_source_panel()
@@ -119,6 +134,9 @@ def main():
         csv_path = _csv_source_panel(values, loaded_project_data)
 
     if not csv_path:
+        with header_slot.container():
+            show_welcome_header()
+        _show_empty_workspace()
         return
 
     _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data)
@@ -131,19 +149,21 @@ def main():
         st.error(str(exc))
         return
 
-    with st.expander("Dataset preview"):
-        st.caption(f"{inspection.row_count:,} rows · {len(inspection.columns):,} columns")
-        preview_df = dataset.head(12)
-        st.dataframe(preview_df, width="stretch", hide_index=True)
-
-    project_data, project_file, preview_settings = _project_form(
-        csv_path,
-        inspection,
-        values,
-        loaded_project_data,
-        loaded_project_path,
-        dataset,
-    )
+    editor_column, stage_column = st.columns([1.72, 1], gap="large")
+    with editor_column:
+        section_intro(
+            "Project settings",
+            "Shape the data, canvas, bars, motion, and export from one workspace.",
+            icon="tune",
+        )
+        project_data, project_file, preview_settings = _project_form(
+            csv_path,
+            inspection,
+            values,
+            loaded_project_data,
+            loaded_project_path,
+            dataset,
+        )
 
     draft = ProjectDraft.create(
         project_data,
@@ -156,12 +176,44 @@ def main():
         "project_data": copy.deepcopy(draft.project_data),
         "project_file": draft.project_file,
     }
-    _project_actions(draft)
-    render_workflow_panel()
-    _show_persistent_preview(draft)
+    saved_fingerprint = st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE)
+    with header_slot.container():
+        show_studio_header(
+            project_name=project_data.get("name", "Untitled project"),
+            project_file=project_file,
+            is_dirty=draft.is_dirty(saved_fingerprint),
+            row_count=inspection.row_count,
+            column_count=len(inspection.columns),
+        )
 
-    with st.expander("Generated project JSON"):
-        st.json(project_data, expanded=True)
+    with stage_column:
+        section_intro(
+            "Preview and output",
+            "Save, inspect, render, and package the current project.",
+            icon="movie_edit",
+        )
+        _project_actions(draft)
+        render_workflow_panel()
+        if not _show_persistent_preview(draft):
+            show_empty_preview()
+
+        with st.expander(
+            "Dataset snapshot",
+            icon=":material/table_view:",
+        ):
+            dataset_config = project_data.get("dataset", {})
+            show_dataset_snapshot(
+                dataset,
+                inspection,
+                year_column=dataset_config.get("year_column", ""),
+                name_column=dataset_config.get("name_column", ""),
+            )
+
+        with st.expander(
+            "Generated project JSON",
+            icon=":material/data_object:",
+        ):
+            st.json(project_data, expanded=False)
 
 
 def _initialize_studio_state():
@@ -187,29 +239,58 @@ def _initialize_saved_draft(draft):
         st.session_state[SAVED_DRAFT_PENDING_STATE] = False
 
 
+def _show_empty_workspace():
+    with st.container(
+        border=True,
+        horizontal_alignment="center",
+        gap="xsmall",
+        key="empty_workspace",
+    ):
+        st.markdown("## :material/folder_open: Start a project")
+        st.caption(
+            "Use the project library in the sidebar to open a JSON project, "
+            "import a portable ZIP, or choose a CSV for a new project."
+        )
+        st.badge(
+            "Project library",
+            icon=":material/arrow_back:",
+            color="primary",
+        )
+
+
 def _project_actions(draft):
     background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
     render_active = bool(
         background_render is not None and background_render.is_running()
     )
-    save_column, preview_column, render_column = st.columns(3)
-    save_project = save_column.button(
-        "Save project",
-        icon=":material/save:",
-        width="stretch",
-    )
-    render_preview = preview_column.button(
-        "Render preview",
-        icon=":material/visibility:",
-        width="stretch",
-    )
-    render_video = render_column.button(
-        "Render video",
-        icon=":material/movie:",
-        type="primary",
-        width="stretch",
-        disabled=render_active,
-    )
+    with st.container(border=True, gap="xsmall", key="project_actions"):
+        st.caption("Project actions")
+        action_row = st.container(
+            horizontal=True,
+            horizontal_alignment="distribute",
+            vertical_alignment="center",
+            gap="xsmall",
+        )
+        save_project = action_row.button(
+            "Save project",
+            icon=":material/save:",
+            width="content",
+            help="Save the current project JSON.",
+        )
+        render_preview = action_row.button(
+            "Render preview",
+            icon=":material/visibility:",
+            width="content",
+            help="Render the selected preview frame.",
+        )
+        render_video = action_row.button(
+            "Render video",
+            icon=":material/movie:",
+            type="primary",
+            width="content",
+            disabled=render_active,
+            help="Render the final MP4 in an isolated process.",
+        )
 
     if save_project:
         _save_draft(draft)
@@ -241,7 +322,10 @@ def _project_actions(draft):
 
 
 def _portable_bundle_export_panel(draft, *, render_active):
-    with st.expander("Portable project bundle"):
+    with st.expander(
+        "Portable project bundle",
+        icon=":material/folder_zip:",
+    ):
         st.caption(
             "Package the project JSON, dataset, background, custom texture, "
             "and both logo slots into one verified ZIP."
@@ -301,16 +385,16 @@ def _show_persistent_preview(draft):
     preview = st.session_state.get(LAST_PREVIEW_STATE)
 
     if not isinstance(preview, dict):
-        return
+        return False
 
     preview_path = Path(str(preview.get("path", "")))
 
     if not preview_path.is_file():
         st.session_state[LAST_PREVIEW_STATE] = None
-        return
+        return False
 
-    with st.container(border=True):
-        st.subheader("Latest preview")
+    with st.container(border=True, gap="xsmall", key="latest_preview"):
+        st.subheader(":material/preview: Latest preview")
 
         if preview.get("fingerprint") != draft.fingerprint:
             st.warning(
@@ -321,9 +405,12 @@ def _show_persistent_preview(draft):
 
         st.image(str(preview_path), width="stretch")
 
+    return True
+
 
 def _project_source_panel():
-    st.subheader("Project")
+    st.caption("Workspace")
+    st.subheader(":material/folder_open: Project library")
     _pending_project_action_panel()
     project_files = _project_files()
     project_options = ("", *project_files)
@@ -334,39 +421,51 @@ def _project_source_panel():
         index=_option_index(project_options, current_project),
         format_func=lambda path: "New project" if not path else path,
     )
-    load_column, new_column = st.columns(2)
     background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
     render_active = bool(
         background_render is not None and background_render.is_running()
     )
 
-    with load_column:
-        if st.button(
-            "Load project",
-            width="stretch",
-            disabled=not selected_project or render_active,
-        ):
-            _request_project_action("load", project=selected_project)
+    project_action_row = st.container(
+        horizontal=True,
+        horizontal_alignment="distribute",
+        gap="xsmall",
+    )
+    if project_action_row.button(
+        "Load project",
+        icon=":material/folder_open:",
+        width="content",
+        disabled=not selected_project or render_active,
+    ):
+        _request_project_action("load", project=selected_project)
 
-    with new_column:
-        if st.button(
-            "New project",
-            width="stretch",
-            disabled=render_active,
-        ):
-            _request_project_action("new")
+    if project_action_row.button(
+        "New project",
+        icon=":material/note_add:",
+        width="content",
+        disabled=render_active,
+    ):
+        _request_project_action("new")
 
     if render_active:
         st.caption("Project switching is disabled while a render is active.")
 
     if st.session_state.get("loaded_project_path"):
-        st.caption(f"Editing {st.session_state['loaded_project_path']}")
+        st.badge(
+            "Project loaded",
+            icon=":material/edit_document:",
+            color="green",
+        )
+        st.caption(st.session_state["loaded_project_path"])
 
     _portable_bundle_import_panel(render_active=render_active)
 
 
 def _portable_bundle_import_panel(*, render_active):
-    with st.expander("Import portable ZIP"):
+    with st.expander(
+        "Import portable ZIP",
+        icon=":material/unarchive:",
+    ):
         imported = st.session_state.get(LAST_BUNDLE_IMPORT_STATE)
         if isinstance(imported, dict):
             st.success(
@@ -417,20 +516,41 @@ def _pending_project_action_panel():
     if not isinstance(pending_action, dict):
         return
 
-    st.warning("You have unsaved changes. Save them before continuing, or discard them.")
-    discard_column, keep_column = st.columns(2)
-    if discard_column.button(
+    _pending_project_action_dialog()
+
+
+@st.dialog(
+    "Unsaved changes",
+    icon=":material/warning:",
+    dismissible=False,
+)
+def _pending_project_action_dialog():
+    pending_action = st.session_state.get(PENDING_PROJECT_ACTION_STATE)
+    if not isinstance(pending_action, dict):
+        return
+
+    st.warning(
+        "You have unsaved changes in the current draft. "
+        "Discard them to continue, or return to the editor.",
+        icon=":material/edit_note:",
+    )
+    action_row = st.container(
+        horizontal=True,
+        horizontal_alignment="right",
+        gap="xsmall",
+    )
+    if action_row.button(
         "Discard & continue",
         type="primary",
-        width="stretch",
+        width="content",
         key="discard_pending_project_action",
     ):
         st.session_state[PENDING_PROJECT_ACTION_STATE] = None
         _execute_project_action(pending_action)
 
-    if keep_column.button(
+    if action_row.button(
         "Keep editing",
-        width="stretch",
+        width="content",
         key="cancel_pending_project_action",
     ):
         current_draft = pending_action.get("draft")
@@ -539,7 +659,7 @@ def _has_unsaved_draft():
 
 
 def _csv_source_panel(values, loaded_project_data):
-    st.subheader("Dataset")
+    st.subheader(":material/database: Dataset source")
     uploaded_file = st.file_uploader(
         "CSV file",
         type=["csv"],
@@ -565,7 +685,14 @@ def _csv_source_panel(values, loaded_project_data):
 
         return csv_path
 
-    return st.text_input("CSV path", value=default_csv, key=_widget_key("csv_path"))
+    csv_path = st.text_input(
+        "CSV path",
+        value=default_csv,
+        key=_widget_key("csv_path"),
+        help="Path relative to the repository or an absolute CSV path.",
+    )
+    st.caption("CSV uploads are copied into `data/datasets/`.")
+    return csv_path
 
 
 def _project_form(
@@ -579,11 +706,11 @@ def _project_form(
     theme, theme_settings = _resolved_theme(values)
     typography_preset, typography_settings = _resolved_typography(values)
     data_tab, canvas_tab, bars_tab, animation_tab = st.tabs((
-        "1. Data & content",
-        "2. Canvas & text",
-        "3. Bars & categories",
-        "4. Animation & output",
-    ))
+        "Data",
+        "Canvas",
+        "Bars",
+        "Export",
+    ), key="studio_editor_tabs")
 
     with data_tab:
         data_settings = _data_content_section(
@@ -710,7 +837,11 @@ def _resolved_typography(values):
 
 
 def _data_content_section(csv_path, inspection, values, dataset):
-    st.caption("Name the project, map the CSV columns, and define source text.")
+    section_intro(
+        "Data and content",
+        "Name the project, map the CSV columns, and define source text.",
+        icon="database",
+    )
     title_column, name_column_widget = st.columns((2, 1))
 
     with title_column:
@@ -814,7 +945,11 @@ def _canvas_text_section(
     theme_settings,
     typography_settings,
 ):
-    st.caption("Configure the canvas, background, fonts, sizes, and text placement.")
+    section_intro(
+        "Canvas and text",
+        "Configure the canvas, background, typography, and text placement.",
+        icon="dashboard_customize",
+    )
     layout_column, visible_column = st.columns(2)
     layouts = list_layout_presets()
 
@@ -840,7 +975,7 @@ def _canvas_text_section(
     layout_settings = get_layout_preset(layout_preset)
     background = _background_panel(values, theme_settings.background_color)
 
-    with st.expander("Fonts", expanded=True):
+    with st.expander("Fonts", icon=":material/font_download:"):
         st.caption("Project default inherits the base font; each element can override it.")
         font_column_a, font_column_b, font_column_c = st.columns(3)
 
@@ -885,7 +1020,7 @@ def _canvas_text_section(
                 _widget_key("source_font_family"),
             )
 
-    with st.expander("Text sizes"):
+    with st.expander("Text sizes", icon=":material/format_size:"):
         st.caption("Sizes use points and update the placement editor.")
         size_column_a, size_column_b, size_column_c, size_column_d = st.columns(4)
 
@@ -939,7 +1074,7 @@ def _canvas_text_section(
                 _widget_key("rank_label_font_size"),
             )
 
-    with st.expander("Text colors"):
+    with st.expander("Text colors", icon=":material/palette:"):
         st.caption("Each text element can override the colors inherited from the project.")
         color_column_a, color_column_b, color_column_c, color_column_d = st.columns(4)
 
@@ -1007,7 +1142,7 @@ def _canvas_text_section(
                 key=_widget_key("rank_label_text_color"),
             )
 
-    with st.expander("Text placement"):
+    with st.expander("Text placement", icon=":material/open_with:"):
         position_values = text_layout_editor(
             canvas_width=layout_settings.width,
             canvas_height=layout_settings.height,
@@ -1132,7 +1267,11 @@ def _bars_categories_section(
     background_color,
     dataset,
 ):
-    st.caption("Control ranking, number formatting, bar materials, icons, and categories.")
+    section_intro(
+        "Bars and categories",
+        "Control ranking, number formatting, materials, icons, and categories.",
+        icon="bar_chart",
+    )
     format_column, ranking_column, aggregate_column = st.columns(3)
     value_formats = list_value_formats()
 
@@ -1156,13 +1295,13 @@ def _bars_categories_section(
         )
 
     with aggregate_column:
-        aggregate_other = st.checkbox(
+        aggregate_other = st.toggle(
             "Group remaining as Other",
             value=bool(values["aggregate_other"]),
             key=_widget_key("aggregate_other"),
         )
 
-    with st.expander("Bar appearance", expanded=True):
+    with st.expander("Bar appearance", icon=":material/texture:"):
         st.caption(
             "Shape, material, icon placement, label alignment, borders, and effects."
         )
@@ -1199,7 +1338,11 @@ def _animation_output_section(
     paths,
     loaded_project_path,
 ):
-    st.caption("Set motion timing, review playback duration, and choose output files.")
+    section_intro(
+        "Animation and export",
+        "Set motion timing, review playback duration, and choose output files.",
+        icon="movie_filter",
+    )
     fps_column, steps_column, motion_column = st.columns(3)
 
     with fps_column:
@@ -1242,7 +1385,7 @@ def _animation_output_section(
             motion_mode=motion_mode,
         )
 
-    with st.expander("Export settings"):
+    with st.expander("Export settings", icon=":material/tune:"):
         output_mode_column, compression_column = st.columns(2)
 
         with output_mode_column:
@@ -1274,7 +1417,7 @@ def _animation_output_section(
                 key=_widget_key("png_compress_level"),
             )
 
-    with st.expander("Output files", expanded=True):
+    with st.expander("Output files", icon=":material/folder:"):
         output_column, project_column = st.columns(2)
 
         with output_column:
@@ -1438,7 +1581,7 @@ def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
         raw_name: index for index, raw_name in enumerate(all_categories)
     }
 
-    with st.expander("Categories"):
+    with st.expander("Categories", icon=":material/category:"):
         st.caption(
             "Search or filter the dataset, edit one small page, then apply "
             "the page before navigating away."
@@ -1840,7 +1983,10 @@ def _save_draft(draft, *, show_success=True):
         except ValueError:
             display_path = path
 
-        st.success(f"Saved {display_path}")
+        st.toast(
+            f"Saved {display_path}",
+            icon=":material/cloud_done:",
+        )
 
     return path
 
@@ -1932,7 +2078,7 @@ def _background_panel(values, theme_background_color):
         or ""
     )
 
-    with st.expander("Background"):
+    with st.expander("Background", icon=":material/wallpaper:"):
         mode = st.segmented_control(
             "Background type",
             options=mode_options,
@@ -2112,7 +2258,7 @@ def _preview_controls(csv_path, year_column, years=None):
             "transition_progress": 0.0,
         }
 
-    with st.expander("Preview", expanded=True):
+    with st.expander("Preview frame", icon=":material/preview:"):
         mode = st.segmented_control(
             "Mode",
             ("Year", "Transition"),

@@ -18,7 +18,7 @@ def show_finished_video(output_file, *, root_dir=None):
         return False
 
     size = video_path.stat().st_size
-    st.subheader("Finished video")
+    st.subheader(":material/play_circle: Finished video")
     st.video(str(video_path))
     st.caption(f"{format_file_size(size)} · {video_path}")
 

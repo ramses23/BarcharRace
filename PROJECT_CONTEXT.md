@@ -159,12 +159,20 @@ The project is a usable MVP:
   commits that page to a session-backed category draft, which persists across
   filters/pages and participates in the next project draft. Bulk primary and
   secondary logo matching still covers every category.
-- Project Studio groups its form into four workflow tabs: `Data & content`,
-  `Canvas & text`, `Bars & categories`, and `Animation & output`. Project and
-  CSV loading live in the sidebar, while dataset previews and advanced panels
-  remain collapsed until needed. The redundant `Theme` and `Typography`
-  selectors are hidden, but their stored values remain compatible with older
-  project files.
+- Project Studio uses a dark creative-workspace theme defined only through
+  `.streamlit/config.toml`: graphite surfaces, violet accent, native borders,
+  Inter/JetBrains Mono typography, 512 MB upload/message limits, and a minimal
+  toolbar. Do not replace the theme with injected CSS.
+- The workspace is a responsive editor/stage split. `Data`, `Canvas`, `Bars`,
+  and `Export` tabs live on the left; project actions, persistent preview,
+  render state/video, dataset snapshot, portable bundle, and generated JSON
+  live on the right. A compact out-of-order header shows project identity,
+  dataset dimensions, destination JSON, and dirty/saved state.
+- Project/CSV loading and bundle import remain in the sidebar project library.
+  Unsaved destructive transitions use a non-dismissible `st.dialog`. Advanced
+  controls use icon-labelled collapsed expanders to reduce initial density.
+  The redundant `Theme` and `Typography` selectors are hidden, but their
+  stored values remain compatible with older project files.
 - For new projects, Project Studio derives the title, project name, project JSON
   path, output MP4 path, and frames directory from the selected CSV filename.
 - Project Studio can render selected-year previews and transition-point
@@ -566,6 +574,11 @@ in verified, published checkpoints:
    carry project JSON, data, and all supported image assets. Imports are staged
    without overwrites, completed videos have playback/download handoff, docs
    are current, and a real FFmpeg render from an imported bundle is covered.
+9. **Studio interface redesign — completed.** A native dark theme, responsive
+   editor/stage workspace, compact project header, sidebar project library,
+   always-visible action card, focused dirty-draft dialog, Material icons, and
+   collapsed advanced controls improve hierarchy without changing project or
+   renderer contracts.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

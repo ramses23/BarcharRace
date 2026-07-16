@@ -259,13 +259,28 @@ fields remain hidden until their parent feature is enabled (for example bevel
 size, glow details, second-logo layout, or value border settings). Inactive
 values remain preserved in the project JSON.
 
-The editor is organized as a short workflow instead of one long form:
-`Data & content`, `Canvas & text`, `Bars & categories`, and
-`Animation & output`. Project loading stays in the sidebar, while dataset
-previews, generated JSON, and advanced controls are collapsed until needed.
-The old `Theme` and `Typography` selectors are intentionally hidden because
-their individual visual properties can be adjusted in the following sections;
-existing values are still preserved in saved project files for compatibility.
+Project Studio uses a dark creative-workspace layout configured natively in
+`.streamlit/config.toml`; it does not inject fragile CSS into Streamlit. The
+graphite surfaces, violet accent, Inter typography, visible widget borders,
+compact heading scale, and independently styled sidebar remain consistent in
+native widgets and CCv2 controls that consume Streamlit theme variables.
+
+The main workspace is split into two responsive columns. The left editor uses
+four compact tabs (`Data`, `Canvas`, `Bars`, and `Export`). The right stage keeps
+the save, preview, and final-render actions close to the persistent preview,
+render status, completed video, dataset snapshot, portable bundle action, and
+generated JSON. On narrower windows the columns stack naturally. A compact
+header identifies the project, destination JSON, dataset size, and saved/dirty
+state without consuming the editing area.
+
+The sidebar is the project library: open/new actions, portable ZIP import, and
+CSV selection stay separate from the creative controls. Destructive project,
+CSV, and bundle transitions use a focused unsaved-changes dialog. Advanced
+fonts, sizes, colors, placement, materials, category details, preview-frame,
+export, and output-path controls are collapsed until requested. The old
+`Theme` and `Typography` selectors remain hidden because their individual
+visual properties are editable; stored values remain compatible with older
+project files.
 
 The render settings show a live estimated video duration calculated from the
 CSV's distinct time periods, steps per transition, motion mode, and FPS. The
