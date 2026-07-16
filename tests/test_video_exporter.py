@@ -110,6 +110,20 @@ class VideoExporterTest(unittest.TestCase):
             VideoExporter().finish_stream(process)
 
         process.stdin.close.assert_called_once_with()
+        process.stderr.close.assert_called_once_with()
+
+    def test_abort_stream_closes_ffmpeg_pipes(self):
+        process = Mock()
+        process.stdin.closed = False
+        process.stderr.closed = False
+        process.poll.return_value = None
+
+        VideoExporter().abort_stream(process)
+
+        process.stdin.close.assert_called_once_with()
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with()
+        process.stderr.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

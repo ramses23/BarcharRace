@@ -3,6 +3,7 @@ import streamlit as st
 
 from studio.render_preflight import run_render_preflight
 from ui.render_controller import render_result_from_status, start_background_render
+from ui.video_output import show_finished_video
 
 
 BACKGROUND_RENDER_STATE = "background_render"
@@ -122,6 +123,7 @@ def _show_last_render_status():
                 "",
             )
             st.success(f"Rendered {output_file}")
+            show_finished_video(output_file)
             result = render_result_from_status(status)
             if result is not None:
                 show_render_profile(result)

@@ -40,6 +40,8 @@ charts, animated scatter plots, and timeline animations.
 - Render project-specific source labels instead of raw local file paths.
 - Apply project-specific category labels and bar colors.
 - Assign project-specific category logos from the local Streamlit editor.
+- Export/import complete project bundles with data and visual assets.
+- Play and download the finished MP4 directly from Project Studio.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
 - Report per-stage render profiling timings for larger-dataset tuning.
@@ -400,6 +402,29 @@ entry can define a display `label`, a bar `color`, a primary `logo`, an optional
 
 If a category has no custom color, the renderer keeps using the active theme
 palette.
+
+## Portable Project Bundles
+
+Project Studio can prepare a `.barchart.zip` file from the current draft. The
+bundle contains:
+
+- the versioned project JSON;
+- the CSV or SQLite data source;
+- the selected background image and custom texture;
+- all primary and secondary category logos;
+- a manifest with the size and SHA-256 checksum of every included file.
+
+Asset names are deduplicated and all paths inside the bundled JSON are portable.
+On import, BarChartStudio validates the ZIP paths, rejects symbolic links,
+encrypted entries, unexpected files, suspicious compression ratios, oversized
+archives, and checksum mismatches before writing anything. Imported assets are
+stored under `projects/imported/<project>/`, while the openable project JSON is
+created under `projects/`. A second import receives a suffix such as `_2`; it
+never silently overwrites an existing project.
+
+The imported project's video and frame outputs are reset to unique paths under
+`output/`. Bundle schema version 1 has a 512 MB compressed/uncompressed safety
+limit and a maximum of 2,000 files.
 
 ## Presets
 
@@ -1150,6 +1175,11 @@ video_crf = 18
 CRF mode is the default quality mode. When `video_bitrate` is set, bitrate mode
 is used and `video_crf` is omitted from the FFmpeg command.
 
+After a successful Project Studio render, the persistent result card includes
+an embedded video player, the final path and size, the render profile, and an
+MP4 download button. Videos larger than 200 MB remain playable from disk but
+are not duplicated into Streamlit's in-memory download buffer.
+
 ## Logos
 
 Optional logos are resolved from:
@@ -1239,5 +1269,6 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Add portable project bundle import/export and surface finished videos with
-  clear playback and download actions inside Project Studio.
+- The consolidation roadmap is complete. Keep future work driven by concrete
+  chart types or user workflows, preserving the schema, bundle, renderer, and
+  regression contracts documented above.

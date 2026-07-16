@@ -18,6 +18,11 @@ from config.theme_config import get_theme
 from config.typography_config import get_typography_preset
 from config.value_format_config import list_value_formats
 from studio.preview import render_project_preview
+from studio.project_bundle import (
+    ProjectBundleError,
+    build_project_bundle,
+    import_project_bundle,
+)
 from studio.project_draft import ProjectDraft
 from ui.category_editor import (
     CATEGORY_FILTERS,
@@ -54,6 +59,7 @@ from studio.project_builder import (
     year_values,
     year_values_from_dataframe,
 )
+from utils.file_size import format_file_size
 from utils.video_duration import estimate_video_duration, format_video_duration
 
 
@@ -87,6 +93,10 @@ CATEGORY_STYLE_DRAFT_STATE = "category_style_draft"
 CURRENT_DRAFT_FINGERPRINT_STATE = "current_project_draft_fingerprint"
 CURRENT_DRAFT_STATE = "current_project_draft"
 PENDING_PROJECT_ACTION_STATE = "pending_project_action"
+PROJECT_BUNDLE_EXPORT_STATE = "project_bundle_export"
+LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
+
+
 st.set_page_config(
     page_title="BarChartStudio",
     page_icon="B",
@@ -165,6 +175,8 @@ def _initialize_studio_state():
     st.session_state.setdefault(BACKGROUND_RENDER_STATE, None)
     st.session_state.setdefault(LAST_RENDER_STATUS_STATE, None)
     st.session_state.setdefault(LAST_PREFLIGHT_STATE, None)
+    st.session_state.setdefault(PROJECT_BUNDLE_EXPORT_STATE, None)
+    st.session_state.setdefault(LAST_BUNDLE_IMPORT_STATE, None)
 
 
 def _initialize_saved_draft(draft):
@@ -224,6 +236,65 @@ def _project_actions(draft):
         st.caption(":orange-badge[Unsaved changes] Save before closing the app.")
     else:
         st.caption(f":green-badge[Saved] {draft.project_file}")
+
+    _portable_bundle_export_panel(draft, render_active=render_active)
+
+
+def _portable_bundle_export_panel(draft, *, render_active):
+    with st.expander("Portable project bundle"):
+        st.caption(
+            "Package the project JSON, dataset, background, custom texture, "
+            "and both logo slots into one verified ZIP."
+        )
+        if st.button(
+            "Prepare portable ZIP",
+            icon=":material/folder_zip:",
+            width="stretch",
+            disabled=render_active,
+            key="prepare_project_bundle",
+        ):
+            _save_draft(draft, show_success=False)
+            try:
+                with st.spinner("Collecting project files..."):
+                    exported = build_project_bundle(
+                        draft.project_data,
+                        root_dir=ROOT_DIR,
+                    )
+            except (OSError, ValueError, ProjectBundleError) as exc:
+                st.session_state[PROJECT_BUNDLE_EXPORT_STATE] = None
+                st.error(str(exc))
+            else:
+                st.session_state[PROJECT_BUNDLE_EXPORT_STATE] = {
+                    "fingerprint": draft.fingerprint,
+                    "data": exported.data,
+                    "filename": exported.filename,
+                    "file_count": exported.file_count,
+                    "uncompressed_size": exported.uncompressed_size,
+                }
+
+        prepared = st.session_state.get(PROJECT_BUNDLE_EXPORT_STATE)
+        if not isinstance(prepared, dict):
+            return
+        if prepared.get("fingerprint") != draft.fingerprint:
+            st.info(
+                "The prepared ZIP is out of date. Prepare it again to include "
+                "the current project settings."
+            )
+            return
+
+        st.caption(
+            f"{prepared.get('file_count', 0):,} files · "
+            f"{format_file_size(prepared.get('uncompressed_size', 0))} unpacked"
+        )
+        st.download_button(
+            "Download portable ZIP",
+            data=prepared["data"],
+            file_name=prepared["filename"],
+            mime="application/zip",
+            icon=":material/download:",
+            width="stretch",
+            on_click="ignore",
+        )
 
 
 def _show_persistent_preview(draft):
@@ -291,6 +362,41 @@ def _project_source_panel():
     if st.session_state.get("loaded_project_path"):
         st.caption(f"Editing {st.session_state['loaded_project_path']}")
 
+    _portable_bundle_import_panel(render_active=render_active)
+
+
+def _portable_bundle_import_panel(*, render_active):
+    with st.expander("Import portable ZIP"):
+        imported = st.session_state.get(LAST_BUNDLE_IMPORT_STATE)
+        if isinstance(imported, dict):
+            st.success(
+                f"Imported {imported.get('project', 'project bundle')}",
+                icon=":material/inventory_2:",
+            )
+            st.caption(
+                f"{imported.get('files', 0):,} verified files · "
+                f"{format_file_size(imported.get('uncompressed_size', 0))} unpacked"
+            )
+
+        uploaded = st.file_uploader(
+            "Project bundle",
+            type=["zip"],
+            help="Select a .barchart.zip file exported by BarChartStudio.",
+            key=_widget_key("project_bundle_upload"),
+        )
+        if st.button(
+            "Import and open",
+            icon=":material/unarchive:",
+            width="stretch",
+            disabled=uploaded is None or render_active,
+            key="import_project_bundle",
+        ):
+            _request_project_action(
+                "import_bundle",
+                bundle=uploaded.getvalue(),
+                filename=uploaded.name,
+            )
+
 
 def _request_project_action(action, **payload):
     if _has_unsaved_draft():
@@ -356,9 +462,30 @@ def _execute_project_action(action):
         _start_new_project()
     elif action_name == "change_csv":
         _apply_new_project_csv_change(action.get("csv_path", ""))
+    elif action_name == "import_bundle":
+        _import_project_bundle_action(
+            action.get("bundle", b""),
+            filename=action.get("filename", "project bundle"),
+        )
 
 
-def _load_selected_project(selected_project):
+def _import_project_bundle_action(bundle, *, filename):
+    try:
+        imported = import_project_bundle(bundle, root_dir=ROOT_DIR)
+    except (OSError, ValueError, ProjectBundleError) as exc:
+        st.error(f"Could not import {filename}: {exc}")
+        return
+
+    project_path = _project_relative_path(Path(imported.project_path))
+    st.session_state[LAST_BUNDLE_IMPORT_STATE] = {
+        "project": project_path,
+        "files": imported.file_count,
+        "uncompressed_size": imported.uncompressed_size,
+    }
+    _load_selected_project(project_path, preserve_bundle_import=True)
+
+
+def _load_selected_project(selected_project, *, preserve_bundle_import=False):
     try:
         project_data = load_project_data(ROOT_DIR / selected_project)
     except (OSError, ValueError) as exc:
@@ -369,6 +496,8 @@ def _load_selected_project(selected_project):
     st.session_state["loaded_project_path"] = selected_project
     st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
     st.session_state[SAVED_DRAFT_PENDING_STATE] = True
+    if not preserve_bundle_import:
+        st.session_state[LAST_BUNDLE_IMPORT_STATE] = None
     _reset_project_editor_state()
     st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
     st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
@@ -381,6 +510,7 @@ def _start_new_project():
     st.session_state.pop("loaded_project_path", None)
     st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
     st.session_state[SAVED_DRAFT_PENDING_STATE] = False
+    st.session_state[LAST_BUNDLE_IMPORT_STATE] = None
     _reset_project_editor_state()
     st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
     st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
@@ -394,6 +524,7 @@ def _reset_project_editor_state():
     st.session_state[LAST_PREVIEW_STATE] = None
     st.session_state[LAST_PREFLIGHT_STATE] = None
     st.session_state[LAST_RENDER_STATUS_STATE] = None
+    st.session_state[PROJECT_BUNDLE_EXPORT_STATE] = None
     st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
     _clear_logo_session_overrides()
 

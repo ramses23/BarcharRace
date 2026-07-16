@@ -91,8 +91,13 @@ class VideoExporter:
     def finish_stream(self, process):
         if process.stdin is not None:
             process.stdin.close()
-        stderr = process.stderr.read() if process.stderr is not None else b""
-        return_code = process.wait()
+        stderr_stream = process.stderr
+        try:
+            stderr = stderr_stream.read() if stderr_stream is not None else b""
+            return_code = process.wait()
+        finally:
+            if stderr_stream is not None:
+                stderr_stream.close()
         if return_code:
             message = stderr.decode("utf-8", errors="replace").strip()
             raise RuntimeError(
@@ -100,6 +105,10 @@ class VideoExporter:
             )
 
     def abort_stream(self, process):
+        if process.stdin is not None and not process.stdin.closed:
+            process.stdin.close()
         if process.poll() is None:
             process.terminate()
         process.wait()
+        if process.stderr is not None and not process.stderr.closed:
+            process.stderr.close()

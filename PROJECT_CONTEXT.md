@@ -208,6 +208,16 @@ The project is a usable MVP:
 - The worker renders to a job-specific partial MP4 and atomically replaces the
   configured output only after success. Failure/cancellation removes the
   partial file and preserves the previous completed video.
+- A completed render remains in the status card with an embedded player, file
+  path/size, profile, and MP4 download. Files over 200 MB are played from disk
+  but are not copied into Streamlit's in-memory download buffer.
+- `src/studio/project_bundle.py` exports a bundle-schema-v1 `.barchart.zip`
+  containing versioned project JSON, CSV/SQLite data, background, custom
+  texture, and both logo slots. Its manifest records SHA-256 and size per file.
+  Import validates paths, membership, checksums, compression, symlinks,
+  encryption, size/file-count limits, then stages assets before atomic project
+  creation. Collisions receive `_2`, `_3`, etc.; existing projects are never
+  overwritten.
 - Project JSON saves are atomic temporary-file replacements through
   `src/studio/project_storage.py`. In-app project/new-CSV switching requires
   confirmation when the draft fingerprint differs from the saved fingerprint;
@@ -227,8 +237,8 @@ The project is a usable MVP:
   format.
 - Unit tests and a real FFmpeg integration test.
 
-The latest technical direction is portable project delivery and a cleaner
-finished-video handoff now that development and CI are reproducible.
+The eight-phase consolidation roadmap is complete. Future work should start
+from a concrete chart type or user workflow and preserve the contracts below.
 
 ## Architecture Contract
 
@@ -302,6 +312,14 @@ Important boundaries:
 - `requirements.txt` is the fully pinned environment lock used locally and in
   CI. Dependency changes must update the lock, pass `pip check`, and pass the
   Windows/Python 3.13 workflow.
+- Project bundle filesystem and integrity logic belongs in
+  `src/studio/project_bundle.py`; the Streamlit layer only initiates it and
+  presents results. Bundle schema versioning is independent from project JSON
+  schema versioning.
+- Bundle import must never call `extractall`, trust archive paths, overwrite an
+  existing project, or write files before membership/checksum validation.
+- Finished-video playback/download presentation belongs in
+  `src/ui/video_output.py`; `RenderJob` remains unaware of Streamlit.
 
 ## Model Meanings
 
@@ -404,6 +422,13 @@ When changing project JSON support:
 - Add tests for accepted and rejected JSON fields.
 - Update `projects/sample_project.json`.
 - Update README.
+
+When changing portable bundle support:
+
+- Keep bundle and project schema versions independent.
+- Preserve safe-path, checksum, file-membership, size, and no-overwrite tests.
+- Add a migration/reader path before incrementing `BUNDLE_SCHEMA_VERSION`.
+- Keep at least one real FFmpeg render test sourced from an imported bundle.
 
 ## Verification Commands
 
@@ -537,9 +562,10 @@ in verified, published checkpoints:
    write access, sample configuration, FFmpeg, and FFprobe. Dependencies are
    fully locked, Windows/Python 3.13 CI runs compile/tests/visual signatures,
    and GitHub plus `origin/HEAD` confirm `master` as the sole default branch.
-8. **Portable delivery.** Export/import complete project bundles, surface the
-   finished video cleanly in the UI, finish documentation, and run an integral
-   end-to-end verification.
+8. **Portable delivery — completed.** Safe manifest/checksum-based ZIP bundles
+   carry project JSON, data, and all supported image assets. Imports are staged
+   without overwrites, completed videos have playback/download handoff, docs
+   are current, and a real FFmpeg render from an imported bundle is covered.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

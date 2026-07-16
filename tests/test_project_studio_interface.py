@@ -371,6 +371,14 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
 
         self.assertFalse(app.exception)
+        self.assertIn(
+            "Project bundle",
+            {uploader.label for uploader in app.file_uploader},
+        )
+        self.assertIn(
+            "Prepare portable ZIP",
+            {button.label for button in app.button},
+        )
 
         number_inputs = {
             number_input.label: number_input
