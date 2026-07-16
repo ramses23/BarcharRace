@@ -735,6 +735,133 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             finally:
                 renderer.close()
 
+    def test_text_compositor_reuses_static_rank_category_and_value_sprites(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=640,
+            height=180,
+            dpi=72,
+            left_margin=220,
+            right_margin=20,
+            top_margin=40,
+            bottom_margin=20,
+            logos_enabled=False,
+        ))
+        scene = Scene(
+            title="Cached title",
+            bars=[
+                BarSprite(
+                    name="Mexico",
+                    value=100,
+                    color="#4E79A7",
+                    x=220,
+                    y=90,
+                    width=320,
+                    height=36,
+                    rank=1,
+                )
+            ],
+        )
+
+        try:
+            renderer.render_rgba(scene)
+            first_foreground = renderer._text_foreground_artist.commands[0][0]
+            first_bar_images = tuple(
+                command[0]
+                for command in renderer._text_bar_artist.commands
+            )
+            cache_size = len(renderer._text_sprite_cache)
+
+            renderer.render_rgba(scene)
+            second_bar_images = tuple(
+                command[0]
+                for command in renderer._text_bar_artist.commands
+            )
+
+            self.assertIs(
+                renderer._text_foreground_artist.commands[0][0],
+                first_foreground,
+            )
+            self.assertEqual(len(first_bar_images), 3)
+            self.assertTrue(all(
+                first is second
+                for first, second in zip(first_bar_images, second_bar_images)
+            ))
+            self.assertEqual(len(renderer._text_sprite_cache), cache_size)
+            self.assertFalse(renderer._title_artist.get_visible())
+            self.assertFalse(renderer._bar_artists[0].name_label.get_visible())
+        finally:
+            renderer.close()
+
+    def test_text_compositor_preserves_upright_vertical_orientation(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=180,
+            height=120,
+            dpi=72,
+            title_x=40,
+            title_y=55,
+            title_font_size=56,
+            title_font_family="DejaVu Sans",
+            title_text_color="#000000",
+            logos_enabled=False,
+        ))
+
+        try:
+            rgba = np.frombuffer(
+                renderer.render_rgba(Scene(title="L")),
+                dtype=np.uint8,
+            ).reshape((120, 180, 4))
+            dark = np.all(rgba[:, :, :3] < 80, axis=2)
+            y_values, x_values = np.where(dark)
+            relevant = (
+                (x_values >= 35)
+                & (x_values <= 100)
+                & (y_values >= 10)
+                & (y_values <= 95)
+            )
+            text_y = y_values[relevant]
+            midpoint = (int(text_y.min()) + int(text_y.max())) // 2
+
+            self.assertGreater(
+                int(np.count_nonzero(text_y > midpoint)),
+                int(np.count_nonzero(text_y <= midpoint)),
+            )
+        finally:
+            renderer.close()
+
+    def test_text_sprite_cache_preserves_value_border_and_shadow_style(self):
+        renderer = BarRenderer(config=ChartConfig(dpi=72))
+        style = {
+            "ha": "right",
+            "va": "center",
+            "font_size": 24,
+            "font_family": "DejaVu Sans",
+            "font_weight": "normal",
+            "color": "#FFFFFF",
+            "stroke_width": 2,
+            "stroke_color": "#112233",
+            "shadow_offset": (4, 3),
+            "shadow_color": "#000000",
+            "shadow_opacity": 0.72,
+        }
+
+        styled = renderer._cached_text_sprite("125.0", **style)
+        cached = renderer._cached_text_sprite("125.0", **style)
+        plain = renderer._cached_text_sprite(
+            "125.0",
+            **{
+                **style,
+                "stroke_width": 0,
+                "shadow_offset": None,
+                "shadow_opacity": 0,
+            },
+        )
+
+        self.assertIs(styled, cached)
+        self.assertGreaterEqual(styled.image.shape[0], plain.image.shape[0])
+        self.assertGreater(styled.image.shape[1], plain.image.shape[1])
+        self.assertGreater(int(styled.image[:, :, 3].max()), 0)
+        self.assertTrue(styled.image.flags.c_contiguous)
+
     def test_logo_compositor_supports_modes_positions_and_shapes(self):
         cases = (
             ("outside_left", "adaptive", "rectangle", "square"),
