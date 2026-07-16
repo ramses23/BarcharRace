@@ -44,6 +44,11 @@ class MotionEngine:
                 start_height = a.height if a else (b.height if b else 40)
                 end_height = b.height if b else (a.height if a else 40)
                 logo_path = a.logo_path if a else (b.logo_path if b else None)
+                secondary_logo_path = (
+                    a.secondary_logo_path
+                    if a
+                    else (b.secondary_logo_path if b else None)
+                )
                 start_rank, end_rank = self._rank_bounds(a, b)
                 start_opacity = self._sprite_opacity(a, fallback=0.0 if b else 1.0)
                 end_opacity = self._sprite_opacity(b, fallback=0.0 if a else 1.0)
@@ -64,6 +69,7 @@ class MotionEngine:
                         height=lerp(start_height, end_height, t),
                         rank=rank,
                         logo_path=logo_path,
+                        secondary_logo_path=secondary_logo_path,
                         opacity=lerp(start_opacity, end_opacity, t),
                     )
                 )
@@ -163,6 +169,9 @@ class MotionEngine:
             )),
             rank=rank,
             logo_path=start.logo_path or end.logo_path,
+            secondary_logo_path=(
+                start.secondary_logo_path or end.secondary_logo_path
+            ),
             opacity=min(1.0, max(0.0, self._bounded_catmull_rom(
                 previous.opacity,
                 start.opacity,
@@ -205,6 +214,11 @@ class MotionEngine:
                 else None
             ),
             logo_path=start.logo_path if start else end.logo_path,
+            secondary_logo_path=(
+                start.secondary_logo_path
+                if start
+                else end.secondary_logo_path
+            ),
             opacity=lerp(start_opacity, end_opacity, t),
         )
 

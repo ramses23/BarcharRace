@@ -85,6 +85,20 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "bar_logo_background_enabled": True,
                             "bar_logo_background_color": "#101010",
                             "bar_logo_background_opacity": 0.8,
+                            "bar_secondary_logo_enabled": True,
+                            "bar_secondary_logo_layout": "side_by_side",
+                            "bar_secondary_logo_position": "inside_left",
+                            "bar_secondary_logo_badge_corner": "top_left",
+                            "bar_secondary_logo_shape": "rounded",
+                            "bar_secondary_logo_size": 26,
+                            "bar_secondary_logo_gap": 4,
+                            "bar_secondary_logo_padding": 2,
+                            "bar_secondary_logo_border_enabled": True,
+                            "bar_secondary_logo_border_color": "#EEEEEE",
+                            "bar_secondary_logo_border_width": 1,
+                            "bar_secondary_logo_background_enabled": True,
+                            "bar_secondary_logo_background_color": "#202020",
+                            "bar_secondary_logo_background_opacity": 0.7,
                             "bar_label_position": "inside",
                             "bar_label_alignment": "left",
                             "bar_value_position": "above",
@@ -151,6 +165,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                                 "label": "Carbon",
                                 "color": "#333333",
                                 "logo": "logos/coal.png",
+                                "secondary_logo": "logos_secondary/coal.png",
                             },
                             "Solar": {
                                 "color": "#F2C94C",
@@ -236,6 +251,15 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.bar_logo_border_width, 2)
         self.assertTrue(preset.chart_config.bar_logo_background_enabled)
         self.assertEqual(preset.chart_config.bar_logo_background_opacity, 0.8)
+        self.assertTrue(preset.chart_config.bar_secondary_logo_enabled)
+        self.assertEqual(preset.chart_config.bar_secondary_logo_layout, "side_by_side")
+        self.assertEqual(preset.chart_config.bar_secondary_logo_position, "inside_left")
+        self.assertEqual(preset.chart_config.bar_secondary_logo_badge_corner, "top_left")
+        self.assertEqual(preset.chart_config.bar_secondary_logo_shape, "rounded")
+        self.assertEqual(preset.chart_config.bar_secondary_logo_size, 26)
+        self.assertEqual(preset.chart_config.bar_secondary_logo_gap, 4)
+        self.assertEqual(preset.chart_config.bar_secondary_logo_border_color, "#EEEEEE")
+        self.assertEqual(preset.chart_config.bar_secondary_logo_background_opacity, 0.7)
         self.assertEqual(preset.chart_config.bar_label_position, "inside")
         self.assertEqual(preset.chart_config.bar_label_alignment, "left")
         self.assertEqual(preset.chart_config.bar_value_position, "above")
@@ -303,6 +327,10 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.dataset_config.category_labels["Coal"], "Carbon")
         self.assertEqual(preset.dataset_config.category_colors["Coal"], "#333333")
         self.assertEqual(preset.dataset_config.category_logos["Coal"], "logos/coal.png")
+        self.assertEqual(
+            preset.dataset_config.category_secondary_logos["Coal"],
+            "logos_secondary/coal.png",
+        )
         self.assertEqual(preset.dataset_config.category_colors["Solar"], "#F2C94C")
 
     def test_uses_file_stem_as_default_name(self):
@@ -419,6 +447,17 @@ class ProjectFileLoaderTest(unittest.TestCase):
             project_path = Path(temp_dir) / "bad.json"
             project_path.write_text(
                 json.dumps({"categories": {"Coal": {"logo": ""}}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_blank_category_secondary_logo(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad.json"
+            project_path.write_text(
+                json.dumps({"categories": {"Coal": {"secondary_logo": ""}}}),
                 encoding="utf-8",
             )
 

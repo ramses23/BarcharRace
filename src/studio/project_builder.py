@@ -107,14 +107,22 @@ def match_category_logos(category_names, logo_paths):
     return matches
 
 
-def apply_category_logo_matches(category_styles, matched_logos):
+def apply_category_logo_matches(
+    category_styles,
+    matched_logos,
+    *,
+    logo_field="logo",
+):
     styles = copy.deepcopy(category_styles) if isinstance(category_styles, dict) else {}
+
+    if logo_field not in ("logo", "secondary_logo"):
+        raise ValueError("logo_field must be 'logo' or 'secondary_logo'.")
 
     for raw_name, logo_path in matched_logos.items():
         if not raw_name or not logo_path:
             continue
 
-        styles.setdefault(raw_name, {})["logo"] = logo_path
+        styles.setdefault(raw_name, {})[logo_field] = logo_path
 
     return styles
 
@@ -532,6 +540,7 @@ def clean_category_styles(category_styles):
         label = style.get("label")
         color = style.get("color")
         logo = style.get("logo")
+        secondary_logo = style.get("secondary_logo")
 
         if isinstance(label, str):
             label = label.strip()
@@ -544,6 +553,9 @@ def clean_category_styles(category_styles):
 
         if isinstance(logo, str) and logo.strip():
             cleaned_style["logo"] = logo.strip()
+
+        if isinstance(secondary_logo, str) and secondary_logo.strip():
+            cleaned_style["secondary_logo"] = secondary_logo.strip()
 
         if cleaned_style:
             cleaned[raw_name] = cleaned_style

@@ -935,6 +935,101 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                         finally:
                             renderer.close()
 
+    def test_logo_compositor_supports_two_logos_in_all_layout_modes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            primary_path = Path(temp_dir) / "primary.png"
+            secondary_path = Path(temp_dir) / "secondary.png"
+            Image.new("RGBA", (48, 48), (225, 40, 60, 255)).save(primary_path)
+            Image.new("RGBA", (48, 48), (40, 120, 225, 255)).save(secondary_path)
+            sprite = BarSprite(
+                name="Example",
+                value=100,
+                color="#4E79A7",
+                x=100,
+                y=90,
+                width=180,
+                height=40,
+                rank=1,
+                logo_path=str(primary_path),
+                secondary_logo_path=str(secondary_path),
+            )
+
+            cases = (
+                ("badge", "inside_left"),
+                ("side_by_side", "inside_left"),
+                ("independent", "inside_right"),
+            )
+            for layout_mode, secondary_position in cases:
+                with self.subTest(layout_mode=layout_mode):
+                    renderer = BarRenderer(config=ChartConfig(
+                        width=360,
+                        height=180,
+                        dpi=72,
+                        bar_logo_position=(
+                            "outside_left"
+                            if layout_mode == "independent"
+                            else "inside_left"
+                        ),
+                        logo_size=32,
+                        bar_secondary_logo_enabled=True,
+                        bar_secondary_logo_layout=layout_mode,
+                        bar_secondary_logo_position=secondary_position,
+                        bar_secondary_logo_size=18,
+                        bar_secondary_logo_gap=5,
+                    ))
+
+                    try:
+                        renderer.render_rgba(Scene(title="", bars=[sprite]))
+                        layouts = renderer._logo_layouts_for_sprite(sprite)
+
+                        self.assertEqual(len(layouts), 2)
+                        self.assertEqual(len(renderer._logo_composite_artist.commands), 2)
+                        self.assertEqual([item[0] for item in layouts], ["primary", "secondary"])
+
+                        primary_layout = layouts[0][2]
+                        secondary_layout = layouts[1][2]
+                        if layout_mode == "badge":
+                            self.assertLess(secondary_layout["left"], primary_layout["right"])
+                            self.assertGreater(secondary_layout["right"], primary_layout["left"])
+                        elif layout_mode == "side_by_side":
+                            self.assertGreaterEqual(
+                                secondary_layout["left"],
+                                primary_layout["right"] + 5,
+                            )
+                        else:
+                            self.assertLess(primary_layout["right"], sprite.x)
+                            self.assertGreaterEqual(secondary_layout["left"], sprite.x)
+                            self.assertLessEqual(
+                                secondary_layout["right"],
+                                sprite.x + sprite.width,
+                            )
+
+                        cache_slots = {key[1] for key in renderer._logo_sprite_cache}
+                        self.assertEqual(cache_slots, {"primary", "secondary"})
+                    finally:
+                        renderer.close()
+
+    def test_disabling_second_logo_keeps_primary_logo(self):
+        sprite = BarSprite(
+            name="Example",
+            value=100,
+            color="#4E79A7",
+            x=100,
+            y=90,
+            width=180,
+            height=40,
+            logo_path="primary.png",
+            secondary_logo_path="secondary.png",
+        )
+        renderer = BarRenderer(config=ChartConfig(
+            bar_secondary_logo_enabled=False,
+        ))
+
+        layouts = renderer._logo_layouts_for_sprite(sprite)
+
+        self.assertEqual(len(layouts), 1)
+        self.assertEqual(layouts[0][0], "primary")
+
     def test_logo_compositor_preserves_vertical_orientation_and_opacity(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "oriented_logo.png"

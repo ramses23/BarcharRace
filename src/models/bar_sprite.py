@@ -19,4 +19,5 @@ class BarSprite:
 
     rank: float | None = None
     logo_path: str | None = None
+    secondary_logo_path: str | None = None
     opacity: float = 1.0

@@ -342,6 +342,20 @@ def _convert_chart_value(key, value):
             "hidden",
         ),
         "bar_logo_shape": ("adaptive", "circle", "rounded", "square"),
+        "bar_secondary_logo_layout": ("badge", "side_by_side", "independent"),
+        "bar_secondary_logo_position": (
+            "outside_left",
+            "inside_left",
+            "inside_right",
+            "hidden",
+        ),
+        "bar_secondary_logo_badge_corner": (
+            "top_left",
+            "top_right",
+            "bottom_left",
+            "bottom_right",
+        ),
+        "bar_secondary_logo_shape": ("adaptive", "circle", "rounded", "square"),
         "bar_label_position": ("left", "inside", "above", "outside"),
         "bar_label_alignment": ("auto", "left", "center", "right"),
         "bar_value_position": ("auto", "outside", "inside", "above"),
@@ -369,6 +383,9 @@ def _convert_chart_value(key, value):
         "bar_track_enabled",
         "bar_logo_border_enabled",
         "bar_logo_background_enabled",
+        "bar_secondary_logo_enabled",
+        "bar_secondary_logo_border_enabled",
+        "bar_secondary_logo_background_enabled",
         "bar_value_use_theme_color",
         "bar_value_border_enabled",
         "bar_value_shadow_enabled",
@@ -387,6 +404,8 @@ def _convert_chart_value(key, value):
         "bar_track_color",
         "bar_logo_border_color",
         "bar_logo_background_color",
+        "bar_secondary_logo_border_color",
+        "bar_secondary_logo_background_color",
         "bar_value_color",
         "bar_value_border_color",
         "bar_value_shadow_color",
@@ -421,6 +440,7 @@ def _convert_chart_value(key, value):
         "bar_shine_opacity",
         "bar_track_opacity",
         "bar_logo_background_opacity",
+        "bar_secondary_logo_background_opacity",
     ):
         if (
             isinstance(value, bool)
@@ -437,6 +457,10 @@ def _convert_chart_value(key, value):
         "bar_texture_contrast",
         "bar_logo_padding",
         "bar_logo_border_width",
+        "bar_secondary_logo_size",
+        "bar_secondary_logo_gap",
+        "bar_secondary_logo_padding",
+        "bar_secondary_logo_border_width",
     ):
         if (
             isinstance(value, bool)
@@ -675,7 +699,12 @@ def _convert_data_source_value(key, value):
 
 
 def _convert_dataset_value(key, value):
-    if key in ("category_labels", "category_colors", "category_logos"):
+    if key in (
+        "category_labels",
+        "category_colors",
+        "category_logos",
+        "category_secondary_logos",
+    ):
         return _convert_string_map(value, f"Dataset field '{key}'")
 
     return value
@@ -691,6 +720,7 @@ def _apply_category_styles(dataset_config, categories):
     labels = dict(dataset_config.category_labels)
     colors = dict(dataset_config.category_colors)
     logos = dict(dataset_config.category_logos)
+    secondary_logos = dict(dataset_config.category_secondary_logos)
 
     for raw_name, style in categories.items():
         if not isinstance(raw_name, str) or not raw_name.strip():
@@ -703,7 +733,7 @@ def _apply_category_styles(dataset_config, categories):
 
         _reject_unknown_keys(
             style,
-            {"label", "color", "logo"},
+            {"label", "color", "logo", "secondary_logo"},
             f"category '{raw_name}'",
         )
 
@@ -731,11 +761,20 @@ def _apply_category_styles(dataset_config, categories):
                 f"Category '{raw_name}' field 'logo'",
             )
 
+        if "secondary_logo" in style:
+            _update_optional_style(
+                secondary_logos,
+                raw_name,
+                style["secondary_logo"],
+                f"Category '{raw_name}' field 'secondary_logo'",
+            )
+
     return replace(
         dataset_config,
         category_labels=labels,
         category_colors=colors,
         category_logos=logos,
+        category_secondary_logos=secondary_logos,
     )
 
 

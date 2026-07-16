@@ -56,9 +56,12 @@ DEFAULT_CATEGORY_COLORS = (
 )
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_LOGO_FOLDER = "logos"
+DEFAULT_SECONDARY_LOGO_FOLDER = "logos_secondary"
 CATEGORY_DISPLAY_LIMIT = 80
 APPLIED_LOGO_MATCHES_STATE = "applied_logo_matches"
 LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
+APPLIED_SECONDARY_LOGO_MATCHES_STATE = "applied_secondary_logo_matches"
+SECONDARY_LOGO_FOLDER_OVERRIDE_STATE = "category_secondary_logo_folder_override"
 NEW_PROJECT_CSV_PATH_STATE = "new_project_csv_path"
 NEW_PROJECT_CSV_PATH_OVERRIDE_STATE = "new_project_csv_path_override"
 CUSTOM_TEXTURE_PATH_STATE = "custom_bar_texture_path"
@@ -957,6 +960,7 @@ def _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data):
 
     if previous_csv_path is not None and previous_csv_path != csv_path:
         st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
+        st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
         _refresh_form()
         st.rerun()
 
@@ -1047,15 +1051,118 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
             styles = apply_category_logo_matches(styles, matched_logos)
             _set_matched_logo_widget_values(visible_categories, matched_logos)
 
+        st.markdown("**Second logo source**")
+        secondary_upload_column, secondary_folder_column, secondary_action_column = (
+            st.columns([2, 2, 1])
+        )
+        secondary_folder_widget_key = _widget_key("category_secondary_logo_folder")
+
+        with secondary_upload_column:
+            uploaded_secondary_logo_files = st.file_uploader(
+                "Second logo folder",
+                type=[extension.lstrip(".") for extension in LOGO_FILE_EXTENSIONS],
+                accept_multiple_files="directory",
+                key=_widget_key("category_secondary_logo_folder_upload"),
+            )
+
+            if uploaded_secondary_logo_files:
+                secondary_logo_folder = _save_uploaded_logo_folder(
+                    uploaded_secondary_logo_files,
+                    slot="secondary",
+                )
+                previous_secondary_folder = st.session_state.get(
+                    SECONDARY_LOGO_FOLDER_OVERRIDE_STATE
+                )
+                st.session_state[SECONDARY_LOGO_FOLDER_OVERRIDE_STATE] = (
+                    secondary_logo_folder
+                )
+
+                if previous_secondary_folder != secondary_logo_folder:
+                    st.session_state.pop(
+                        APPLIED_SECONDARY_LOGO_MATCHES_STATE,
+                        None,
+                    )
+                    st.session_state[secondary_folder_widget_key] = (
+                        secondary_logo_folder
+                    )
+                    st.rerun()
+
+        with secondary_folder_column:
+            secondary_folder_input_kwargs = {
+                "key": secondary_folder_widget_key,
+            }
+            if secondary_folder_widget_key not in st.session_state:
+                secondary_folder_input_kwargs["value"] = st.session_state.get(
+                    SECONDARY_LOGO_FOLDER_OVERRIDE_STATE,
+                    DEFAULT_SECONDARY_LOGO_FOLDER,
+                )
+            secondary_logo_folder = st.text_input(
+                "Second logo folder path",
+                **secondary_folder_input_kwargs,
+            )
+
+        secondary_logo_files = _logo_files(secondary_logo_folder)
+        matched_secondary_logos = match_category_logos(
+            all_categories,
+            secondary_logo_files,
+        )
+        secondary_match_context = _logo_match_context(
+            csv_path,
+            name_column,
+            secondary_logo_folder,
+        )
+        styles = apply_category_logo_matches(
+            styles,
+            _applied_logo_matches(
+                secondary_match_context,
+                state_key=APPLIED_SECONDARY_LOGO_MATCHES_STATE,
+            ),
+            logo_field="secondary_logo",
+        )
+
+        with secondary_action_column:
+            apply_matched_secondary_logos = st.button(
+                "Apply matched second logos",
+                width="stretch",
+                disabled=not matched_secondary_logos,
+                key=_widget_key("apply_matched_secondary_logos"),
+            )
+
+        if matched_secondary_logos:
+            st.caption(f"{len(matched_secondary_logos)} second logo matches")
+
+        if apply_matched_secondary_logos:
+            st.session_state[APPLIED_SECONDARY_LOGO_MATCHES_STATE] = {
+                "context": secondary_match_context,
+                "matches": matched_secondary_logos,
+            }
+            styles = apply_category_logo_matches(
+                styles,
+                matched_secondary_logos,
+                logo_field="secondary_logo",
+            )
+            _set_matched_logo_widget_values(
+                visible_categories,
+                matched_secondary_logos,
+                logo_field="secondary_logo",
+            )
+
         for index, raw_name in enumerate(visible_categories):
             key = _safe_widget_key(raw_name, index)
             logo_widget_key = _widget_key(f"category_logo_{key}")
+            secondary_logo_widget_key = _widget_key(
+                f"category_secondary_logo_{key}"
+            )
             current_style = styles.get(raw_name, {})
             current_label = current_style.get("label", raw_name)
             current_color = current_style.get("color")
             current_logo = (
                 current_style.get("logo")
                 or st.session_state.get(logo_widget_key, "")
+            )
+            current_secondary_logo = (
+                current_style.get("secondary_logo")
+                or st.session_state.get(secondary_logo_widget_key, "")
             )
             default_color = (
                 current_color
@@ -1116,6 +1223,42 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
                 if uploaded_logo is not None:
                     logo_path = _save_uploaded_logo(raw_name, uploaded_logo)
 
+            secondary_logo_columns = st.columns([3, 1])
+            with secondary_logo_columns[0]:
+                secondary_logo_options = _logo_options(
+                    current_secondary_logo,
+                    secondary_logo_files,
+                )
+                secondary_logo_input_kwargs = {
+                    "format_func": (
+                        lambda path: "No second logo" if not path else path
+                    ),
+                    "key": secondary_logo_widget_key,
+                }
+                if secondary_logo_widget_key not in st.session_state:
+                    secondary_logo_input_kwargs["index"] = _option_index(
+                        secondary_logo_options,
+                        current_secondary_logo,
+                    )
+                secondary_logo_path = st.selectbox(
+                    "Second logo",
+                    secondary_logo_options,
+                    **secondary_logo_input_kwargs,
+                )
+
+            with secondary_logo_columns[1]:
+                uploaded_secondary_logo = st.file_uploader(
+                    "Second upload",
+                    type=[extension.lstrip(".") for extension in LOGO_FILE_EXTENSIONS],
+                    key=_widget_key(f"category_upload_secondary_logo_{key}"),
+                )
+                if uploaded_secondary_logo is not None:
+                    secondary_logo_path = _save_uploaded_logo(
+                        raw_name,
+                        uploaded_secondary_logo,
+                        slot="secondary",
+                    )
+
             next_style = {}
             label = label.strip()
 
@@ -1127,6 +1270,9 @@ def _category_styles_panel(csv_path, name_column, existing_styles):
 
             if logo_path:
                 next_style["logo"] = logo_path
+
+            if secondary_logo_path:
+                next_style["secondary_logo"] = secondary_logo_path
 
             if next_style:
                 styles[raw_name] = next_style
@@ -1145,8 +1291,12 @@ def _logo_match_context(csv_path, name_column, logo_folder):
     return "|".join(str(value) for value in (csv_path, name_column, logo_folder))
 
 
-def _applied_logo_matches(match_context):
-    applied_logo_matches = st.session_state.get(APPLIED_LOGO_MATCHES_STATE, {})
+def _applied_logo_matches(
+    match_context,
+    *,
+    state_key=APPLIED_LOGO_MATCHES_STATE,
+):
+    applied_logo_matches = st.session_state.get(state_key, {})
 
     if not isinstance(applied_logo_matches, dict):
         return {}
@@ -1159,7 +1309,17 @@ def _applied_logo_matches(match_context):
     return matches if isinstance(matches, dict) else {}
 
 
-def _set_matched_logo_widget_values(visible_categories, matched_logos):
+def _set_matched_logo_widget_values(
+    visible_categories,
+    matched_logos,
+    *,
+    logo_field="logo",
+):
+    widget_prefix = (
+        "category_secondary_logo_"
+        if logo_field == "secondary_logo"
+        else "category_logo_"
+    )
     for index, raw_name in enumerate(visible_categories):
         logo_path = matched_logos.get(raw_name)
 
@@ -1167,13 +1327,15 @@ def _set_matched_logo_widget_values(visible_categories, matched_logos):
             continue
 
         category_key = _safe_widget_key(raw_name, index)
-        widget_key = _widget_key(f"category_logo_{category_key}")
+        widget_key = _widget_key(f"{widget_prefix}{category_key}")
         st.session_state[widget_key] = logo_path
 
 
 def _clear_logo_session_overrides():
     st.session_state.pop(LOGO_FOLDER_OVERRIDE_STATE, None)
     st.session_state.pop(APPLIED_LOGO_MATCHES_STATE, None)
+    st.session_state.pop(SECONDARY_LOGO_FOLDER_OVERRIDE_STATE, None)
+    st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
     st.session_state.pop(CUSTOM_TEXTURE_PATH_STATE, None)
     st.session_state.pop(BACKGROUND_IMAGE_PATH_STATE, None)
 
@@ -1577,7 +1739,7 @@ def _logo_options(current_logo, logo_files):
     return tuple(options)
 
 
-def _save_uploaded_logo(raw_name, uploaded_logo):
+def _save_uploaded_logo(raw_name, uploaded_logo, *, slot="primary"):
     logos_dir = ROOT_DIR / "logos"
     logos_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1586,18 +1748,26 @@ def _save_uploaded_logo(raw_name, uploaded_logo):
     if suffix not in LOGO_FILE_EXTENSIONS:
         suffix = ".png"
 
-    logo_path = logos_dir / f"{_safe_filename_key(raw_name)}{suffix}"
+    suffix_label = "_secondary" if slot == "secondary" else ""
+    logo_path = logos_dir / (
+        f"{_safe_filename_key(raw_name)}{suffix_label}{suffix}"
+    )
     logo_path.write_bytes(uploaded_logo.getbuffer())
 
     return _project_relative_path(logo_path)
 
 
-def _save_uploaded_logo_folder(uploaded_logo_files):
+def _save_uploaded_logo_folder(uploaded_logo_files, *, slot="primary"):
     folder_name = _uploaded_folder_name(uploaded_logo_files)
     folder_key = _safe_filename_key(folder_name)
-    target_dir = ROOT_DIR / DEFAULT_LOGO_FOLDER
+    default_folder = (
+        DEFAULT_SECONDARY_LOGO_FOLDER
+        if slot == "secondary"
+        else DEFAULT_LOGO_FOLDER
+    )
+    target_dir = ROOT_DIR / default_folder
 
-    if folder_key != DEFAULT_LOGO_FOLDER:
+    if folder_key != default_folder:
         target_dir = target_dir / folder_key
 
     target_dir.mkdir(parents=True, exist_ok=True)

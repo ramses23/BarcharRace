@@ -316,6 +316,7 @@ class MotionEngineTest(unittest.TestCase):
                 width=100,
                 height=40,
                 logo_path="logos/USA.png",
+                secondary_logo_path="flags/USA.png",
             )
         ]
         end = [
@@ -328,6 +329,7 @@ class MotionEngineTest(unittest.TestCase):
                 width=200,
                 height=40,
                 logo_path="logos/USA.png",
+                secondary_logo_path="flags/USA.png",
             )
         ]
 
@@ -335,6 +337,8 @@ class MotionEngineTest(unittest.TestCase):
 
         self.assertEqual(frames[0][0].logo_path, "logos/USA.png")
         self.assertEqual(frames[1][0].logo_path, "logos/USA.png")
+        self.assertEqual(frames[0][0].secondary_logo_path, "flags/USA.png")
+        self.assertEqual(frames[1][0].secondary_logo_path, "flags/USA.png")
 
 
 if __name__ == "__main__":

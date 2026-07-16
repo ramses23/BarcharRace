@@ -12,6 +12,9 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         app_path = root_dir / "src" / "ui" / "project_studio.py"
         folder_name = f"ui_state_test_{uuid4().hex}"
         uploaded_logo_path = root_dir / "logos" / folder_name / "coal.png"
+        uploaded_secondary_logo_path = (
+            root_dir / "logos_secondary" / folder_name / "coal.png"
+        )
 
         try:
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
@@ -93,14 +96,66 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
                 project_data["categories"]["Coal"]["logo"],
                 f"logos/{folder_name}/coal.png",
             )
+
+            second_folder_upload = next(
+                uploader
+                for uploader in app.file_uploader
+                if uploader.label == "Second logo folder"
+            )
+            second_folder_upload.set_value([
+                (
+                    f"{folder_name}/Coal.png",
+                    b"test-second-logo",
+                    "image/png",
+                )
+            ])
+            app.run()
+
+            self.assertFalse(app.exception)
+            self.assertEqual(
+                next(
+                    control.value
+                    for control in app.text_input
+                    if control.label == "Second logo folder path"
+                ),
+                f"logos_secondary/{folder_name}",
+            )
+            apply_second_matches = next(
+                button
+                for button in app.button
+                if button.label == "Apply matched second logos"
+            )
+            self.assertFalse(apply_second_matches.disabled)
+            apply_second_matches.click()
+            app.run()
+
+            self.assertFalse(app.exception)
+            project_data = json.loads(app.json[0].value)
+            self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
+            self.assertEqual(
+                project_data["categories"]["Coal"]["logo"],
+                f"logos/{folder_name}/coal.png",
+            )
+            self.assertEqual(
+                project_data["categories"]["Coal"]["secondary_logo"],
+                f"logos_secondary/{folder_name}/coal.png",
+            )
         finally:
             if uploaded_logo_path.exists():
                 uploaded_logo_path.unlink()
+
+            if uploaded_secondary_logo_path.exists():
+                uploaded_secondary_logo_path.unlink()
 
             uploaded_logo_dir = uploaded_logo_path.parent
 
             if uploaded_logo_dir.exists():
                 uploaded_logo_dir.rmdir()
+
+            uploaded_secondary_logo_dir = uploaded_secondary_logo_path.parent
+
+            if uploaded_secondary_logo_dir.exists():
+                uploaded_secondary_logo_dir.rmdir()
 
     def test_video_duration_estimate_reacts_to_steps_and_fps(self):
         app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
@@ -282,6 +337,11 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             "bar_inner_shadow_opacity",
             "bar_outer_glow_enabled",
             "bar_track_enabled",
+            "bar_secondary_logo_enabled",
+            "bar_secondary_logo_layout",
+            "bar_secondary_logo_position",
+            "bar_secondary_logo_badge_corner",
+            "bar_secondary_logo_shape",
             "bar_label_position",
             "bar_label_alignment",
             "bar_value_position",

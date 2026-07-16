@@ -94,6 +94,35 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertEqual(legacy["bar_logo_position"], "inside_left")
         self.assertEqual(settings["bar_label_alignment"], "left")
 
+    def test_normalizes_secondary_logo_layout_and_style(self):
+        settings = normalize_bar_style({
+            "bar_secondary_logo_enabled": True,
+            "bar_secondary_logo_layout": "side_by_side",
+            "bar_secondary_logo_position": "inside_left",
+            "bar_secondary_logo_badge_corner": "top_left",
+            "bar_secondary_logo_shape": "rounded",
+            "bar_secondary_logo_size": 999,
+            "bar_secondary_logo_gap": -5,
+            "bar_secondary_logo_padding": 99,
+            "bar_secondary_logo_border_enabled": True,
+            "bar_secondary_logo_border_color": "#123abc",
+            "bar_secondary_logo_border_width": 99,
+            "bar_secondary_logo_background_enabled": True,
+            "bar_secondary_logo_background_opacity": 2,
+        })
+
+        self.assertTrue(settings["bar_secondary_logo_enabled"])
+        self.assertEqual(settings["bar_secondary_logo_layout"], "side_by_side")
+        self.assertEqual(settings["bar_secondary_logo_position"], "inside_left")
+        self.assertEqual(settings["bar_secondary_logo_badge_corner"], "top_left")
+        self.assertEqual(settings["bar_secondary_logo_shape"], "rounded")
+        self.assertEqual(settings["bar_secondary_logo_size"], 160.0)
+        self.assertEqual(settings["bar_secondary_logo_gap"], 0.0)
+        self.assertEqual(settings["bar_secondary_logo_padding"], 20.0)
+        self.assertEqual(settings["bar_secondary_logo_border_color"], "#123ABC")
+        self.assertEqual(settings["bar_secondary_logo_border_width"], 8.0)
+        self.assertEqual(settings["bar_secondary_logo_background_opacity"], 1.0)
+
     def test_builds_small_data_url_for_custom_texture_preview(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             texture_path = Path(temp_dir) / "texture.png"
@@ -141,6 +170,12 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertIn('data-key="bar_logo_shape"', html)
         self.assertIn('data-key="bar_logo_border_enabled"', html)
         self.assertIn('data-key="bar_logo_background_enabled"', html)
+        self.assertIn('data-key="bar_secondary_logo_enabled"', html)
+        self.assertIn('data-key="bar_secondary_logo_layout"', html)
+        self.assertIn('<option value="side_by_side">Side by side</option>', html)
+        self.assertIn('<option value="independent">Independent positions</option>', html)
+        self.assertIn('data-key="bar_secondary_logo_badge_corner"', html)
+        self.assertIn('data-key="bar_secondary_logo_shape"', html)
         self.assertIn('data-key="bar_label_alignment"', html)
         self.assertIn('data-key="bar_value_position"', html)
         self.assertIn('update("bar_shape", button.dataset.shape)', html)

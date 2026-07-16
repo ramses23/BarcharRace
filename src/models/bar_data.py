@@ -12,3 +12,4 @@ class BarData:
     value: float
     color: str | None = None
     logo_path: str | None = None
+    secondary_logo_path: str | None = None

@@ -1921,9 +1921,12 @@ class BarRenderer:
         return vertices
 
     def _lollipop_has_left_socket(self, sprite=None):
-        return (
-            self._logo_position() == "inside_left"
-            and (sprite is None or bool(sprite.logo_path))
+        if sprite is None:
+            return self._logo_position() == "inside_left"
+
+        return any(
+            position == "inside_left"
+            for _, _, _, position in self._logo_layouts_for_sprite(sprite)
         )
 
     def _lollipop_half_height(
@@ -2010,32 +2013,51 @@ class BarRenderer:
     def _update_logo_composite(self, sprites):
         commands = []
 
-        if self.config.logos_enabled and self._logo_position() != "hidden":
+        if self.config.logos_enabled:
             for sprite in sprites:
-                command = self._logo_composite_command(sprite)
+                for slot, logo_path, layout, _ in self._logo_layouts_for_sprite(sprite):
+                    command = self._logo_composite_command(
+                        sprite,
+                        slot=slot,
+                        logo_path=logo_path,
+                        layout=layout,
+                    )
 
-                if command is not None:
-                    commands.append(command)
+                    if command is not None:
+                        commands.append(command)
 
         self._logo_composite_artist.set_commands(commands)
 
-    def _logo_composite_command(self, sprite):
+    def _logo_composite_command(
+        self,
+        sprite,
+        *,
+        slot="primary",
+        logo_path=None,
+        layout=None,
+    ):
         opacity = self._opacity(sprite)
+        logo_path = logo_path or self._logo_path(sprite, slot)
 
-        if not sprite.logo_path or opacity <= 0:
+        if not logo_path or opacity <= 0:
             return None
 
-        image = self._load_logo(sprite.logo_path)
-        layout = self._logo_layout(sprite)
+        layout = layout or self._logo_layout(sprite, slot=slot)
 
-        if image is None or layout is None:
+        if layout is None:
             return None
 
         pixel_size = max(1, int(round(layout["size"])))
+        image = self._load_logo(logo_path, pixel_size)
+
+        if image is None:
+            return None
+
         logo_sprite, padding = self._cached_logo_sprite(
-            sprite.logo_path,
+            logo_path,
             image,
             pixel_size,
+            slot=slot,
         )
 
         if opacity < 0.999:
@@ -2050,27 +2072,28 @@ class BarRenderer:
             int(round(layout["top"])) - padding,
         )
 
-    def _cached_logo_sprite(self, logo_path, image, size):
-        shape = self._resolved_logo_shape()
+    def _cached_logo_sprite(self, logo_path, image, size, *, slot="primary"):
+        shape = self._resolved_logo_shape(slot=slot)
+        style = self._logo_style(slot)
         background_enabled = (
-            self.config.bar_logo_background_enabled
-            and self.config.bar_logo_background_opacity > 0
+            style["background_enabled"]
+            and style["background_opacity"] > 0
         )
         border_enabled = (
-            self.config.bar_logo_border_enabled
-            and self.config.bar_logo_border_width > 0
+            style["border_enabled"]
+            and style["border_width"] > 0
         )
         cache_key = (
             str(logo_path),
-            int(self.config.logo_size),
+            slot,
             int(size),
             shape,
             bool(background_enabled),
-            str(self.config.bar_logo_background_color).lower(),
-            round(float(self.config.bar_logo_background_opacity), 3),
+            str(style["background_color"]).lower(),
+            round(float(style["background_opacity"]), 3),
             bool(border_enabled),
-            str(self.config.bar_logo_border_color).lower(),
-            round(float(self.config.bar_logo_border_width), 3),
+            str(style["border_color"]).lower(),
+            round(float(style["border_width"]), 3),
         )
         cached = self._lru_get(self._logo_sprite_cache, cache_key)
 
@@ -2083,6 +2106,10 @@ class BarRenderer:
             shape=shape,
             background_enabled=background_enabled,
             border_enabled=border_enabled,
+            background_color=style["background_color"],
+            background_opacity=style["background_opacity"],
+            border_color=style["border_color"],
+            border_width=style["border_width"],
         )
         self._lru_put(
             self._logo_sprite_cache,
@@ -2100,8 +2127,18 @@ class BarRenderer:
         shape,
         background_enabled,
         border_enabled,
+        background_color=None,
+        background_opacity=1.0,
+        border_color=None,
+        border_width=None,
     ):
-        border_width = max(0.0, float(self.config.bar_logo_border_width))
+        background_color = background_color or self.config.bar_logo_background_color
+        border_color = border_color or self.config.bar_logo_border_color
+        border_width = max(0.0, float(
+            self.config.bar_logo_border_width
+            if border_width is None
+            else border_width
+        ))
         padding = (
             max(1, int(np.ceil(border_width / 2)) + 1)
             if border_enabled
@@ -2118,9 +2155,9 @@ class BarRenderer:
         if background_enabled:
             background = self._solid_advanced_layer(
                 (size, size),
-                self.config.bar_logo_background_color,
+                background_color,
                 shape_mask,
-                self.config.bar_logo_background_opacity,
+                background_opacity,
             )
             canvas.alpha_composite(background, (padding, padding))
 
@@ -2145,7 +2182,7 @@ class BarRenderer:
             )
             border = self._solid_advanced_layer(
                 canvas.size,
-                self.config.bar_logo_border_color,
+                border_color,
                 border_mask,
                 1.0,
             )
@@ -2159,13 +2196,16 @@ class BarRenderer:
         )
         return render_image, padding
 
-    def _resolved_logo_shape(self):
-        shape = self.config.bar_logo_shape
+    def _resolved_logo_shape(self, *, slot="primary"):
+        shape = self._logo_style(slot)["shape"]
 
         if shape != "adaptive":
             return shape
 
-        if self._logo_position() == "outside_left":
+        if slot == "secondary" and self.config.bar_secondary_logo_layout == "badge":
+            return "circle"
+
+        if self._logo_position(slot) == "outside_left":
             return "square"
 
         if self.config.bar_shape in ("capsule", "lollipop"):
@@ -2258,35 +2298,118 @@ class BarRenderer:
 
         return 0.0
 
-    def _logo_position(self):
+    def _logo_style(self, slot):
+        if slot == "secondary":
+            return {
+                "shape": self.config.bar_secondary_logo_shape,
+                "size": self.config.bar_secondary_logo_size,
+                "padding": self.config.bar_secondary_logo_padding,
+                "border_enabled": self.config.bar_secondary_logo_border_enabled,
+                "border_color": self.config.bar_secondary_logo_border_color,
+                "border_width": self.config.bar_secondary_logo_border_width,
+                "background_enabled": self.config.bar_secondary_logo_background_enabled,
+                "background_color": self.config.bar_secondary_logo_background_color,
+                "background_opacity": self.config.bar_secondary_logo_background_opacity,
+            }
+
+        return {
+            "shape": self.config.bar_logo_shape,
+            "size": self.config.logo_size,
+            "padding": self.config.bar_logo_padding,
+            "border_enabled": self.config.bar_logo_border_enabled,
+            "border_color": self.config.bar_logo_border_color,
+            "border_width": self.config.bar_logo_border_width,
+            "background_enabled": self.config.bar_logo_background_enabled,
+            "background_color": self.config.bar_logo_background_color,
+            "background_opacity": self.config.bar_logo_background_opacity,
+        }
+
+    @staticmethod
+    def _logo_path(sprite, slot):
+        return (
+            sprite.secondary_logo_path
+            if slot == "secondary"
+            else sprite.logo_path
+        )
+
+    def _logo_position(self, slot="primary"):
+        position = (
+            self.config.bar_secondary_logo_position
+            if slot == "secondary"
+            and self.config.bar_secondary_logo_layout == "independent"
+            else self.config.bar_logo_position
+        )
         return {
             "outside": "outside_left",
             "inside": "inside_left",
-        }.get(self.config.bar_logo_position, self.config.bar_logo_position)
+        }.get(position, position)
 
-    def _logo_layout(self, sprite):
-        position = self._logo_position()
+    def _logo_layouts_for_sprite(self, sprite):
+        if not self.config.logos_enabled:
+            return []
+
+        layouts = []
+        if sprite.logo_path and self._logo_position() != "hidden":
+            layout = self._logo_layout(sprite)
+            if layout is not None:
+                layouts.append(("primary", sprite.logo_path, layout, self._logo_position()))
+
+        if (
+            self.config.bar_secondary_logo_enabled
+            and sprite.secondary_logo_path
+            and self._logo_position("secondary") != "hidden"
+        ):
+            layout = self._logo_layout(sprite, slot="secondary")
+            if layout is not None:
+                layouts.append((
+                    "secondary",
+                    sprite.secondary_logo_path,
+                    layout,
+                    self._logo_position("secondary"),
+                ))
+
+        return layouts
+
+    def _logo_layout(self, sprite, *, slot="primary"):
+        if slot == "secondary":
+            layout_mode = self.config.bar_secondary_logo_layout
+            primary_layout = (
+                self._base_logo_layout(sprite, slot="primary")
+                if sprite.logo_path and self._logo_position() != "hidden"
+                else None
+            )
+
+            if layout_mode == "badge" and primary_layout is not None:
+                return self._secondary_badge_layout(primary_layout)
+
+            if layout_mode == "side_by_side" and primary_layout is not None:
+                return self._secondary_side_by_side_layout(
+                    sprite,
+                    primary_layout,
+                )
+
+        return self._base_logo_layout(sprite, slot=slot)
+
+    def _base_logo_layout(self, sprite, *, slot):
+        position = self._logo_position(slot)
+        style = self._logo_style(slot)
 
         if position == "hidden":
             return None
 
         if position == "outside_left":
-            size = max(1.0, float(self.config.logo_size))
+            size = max(1.0, float(style["size"]))
             right = sprite.x - self.config.logo_gap
             left = right - size
         else:
-            padding = max(0.0, float(self.config.bar_logo_padding))
+            padding = max(0.0, float(style["padding"]))
             available_width = max(0.0, sprite.width - (padding * 2))
             available_height = max(0.0, sprite.height - (padding * 2))
 
             if available_width <= 0 or available_height <= 0:
                 return None
 
-            size = min(
-                float(self.config.logo_size),
-                available_width,
-                available_height,
-            )
+            size = min(float(style["size"]), available_width, available_height)
 
             if self.config.bar_shape == "lollipop":
                 center_x, radius, _ = self._lollipop_geometry(
@@ -2312,12 +2435,71 @@ class BarRenderer:
                 left = sprite.x + padding
                 right = left + size
 
+        return self._square_layout(left, right, sprite.y, size)
+
+    def _secondary_badge_layout(self, primary_layout):
+        size = min(
+            max(1.0, float(self.config.bar_secondary_logo_size)),
+            primary_layout["size"],
+        )
+        corner = self.config.bar_secondary_logo_badge_corner
+        outside_offset = size * 0.15
+
+        if corner.endswith("right"):
+            right = primary_layout["right"] + outside_offset
+            left = right - size
+        else:
+            left = primary_layout["left"] - outside_offset
+            right = left + size
+
+        if corner.startswith("bottom"):
+            bottom = primary_layout["bottom"] + outside_offset
+            top = bottom - size
+        else:
+            top = primary_layout["top"] - outside_offset
+            bottom = top + size
+
+        return {
+            "left": left,
+            "right": right,
+            "top": top,
+            "bottom": bottom,
+            "size": size,
+        }
+
+    def _secondary_side_by_side_layout(self, sprite, primary_layout):
+        position = self._logo_position()
+        style = self._logo_style("secondary")
+        gap = max(0.0, float(self.config.bar_secondary_logo_gap))
+        size = max(1.0, float(style["size"]))
+
+        if position != "outside_left":
+            padding = max(0.0, float(style["padding"]))
+            size = min(size, max(0.0, sprite.height - (padding * 2)))
+            if size <= 0:
+                return None
+
+        if position == "inside_left":
+            left = primary_layout["right"] + gap
+            right = left + size
+            if right > sprite.x + sprite.width:
+                return None
+        else:
+            right = primary_layout["left"] - gap
+            left = right - size
+            if position == "inside_right" and left < sprite.x:
+                return None
+
+        return self._square_layout(left, right, sprite.y, size)
+
+    @staticmethod
+    def _square_layout(left, right, center_y, size):
         half_size = size / 2
         return {
             "left": left,
             "right": right,
-            "top": sprite.y - half_size,
-            "bottom": sprite.y + half_size,
+            "top": center_y - half_size,
+            "bottom": center_y + half_size,
             "size": size,
         }
 
@@ -2637,19 +2819,16 @@ class BarRenderer:
             x = sprite.x + padding
             right_limit = sprite.x + sprite.width - padding
 
-            if sprite.logo_path:
-                logo_layout = self._logo_layout(sprite)
+            left_logos = self._logo_group_extent(sprite, "inside_left")
+            right_logos = self._logo_group_extent(sprite, "inside_right")
 
-                if logo_layout and self._logo_position() == "inside_left":
-                    x = max(
-                        x,
-                        logo_layout["right"] + self.config.logo_label_gap,
-                    )
-                elif logo_layout and self._logo_position() == "inside_right":
-                    right_limit = min(
-                        right_limit,
-                        logo_layout["left"] - self.config.logo_label_gap,
-                    )
+            if left_logos:
+                x = max(x, left_logos[1] + self.config.logo_label_gap)
+            if right_logos:
+                right_limit = min(
+                    right_limit,
+                    right_logos[0] - self.config.logo_label_gap,
+                )
 
             max_width = max(0.0, right_limit - x)
             alignment, anchor_x = self._bar_label_alignment_anchor(
@@ -2779,14 +2958,12 @@ class BarRenderer:
             if position == "inside":
                 inside_x = sprite.x + sprite.width - self.config.value_label_gap
 
-                if sprite.logo_path and self._logo_position() == "inside_right":
-                    logo_layout = self._logo_layout(sprite)
-
-                    if logo_layout:
-                        inside_x = min(
-                            inside_x,
-                            logo_layout["left"] - self.config.logo_label_gap,
-                        )
+                right_logos = self._logo_group_extent(sprite, "inside_right")
+                if right_logos:
+                    inside_x = min(
+                        inside_x,
+                        right_logos[0] - self.config.logo_label_gap,
+                    )
 
                 return {
                     "text": text,
@@ -2838,14 +3015,12 @@ class BarRenderer:
 
         inside_x = sprite.x + sprite.width - self.config.value_label_gap
 
-        if sprite.logo_path and self._logo_position() == "inside_right":
-            logo_layout = self._logo_layout(sprite)
-
-            if logo_layout:
-                inside_x = min(
-                    inside_x,
-                    logo_layout["left"] - self.config.logo_label_gap,
-                )
+        right_logos = self._logo_group_extent(sprite, "inside_right")
+        if right_logos:
+            inside_x = min(
+                inside_x,
+                right_logos[0] - self.config.logo_label_gap,
+            )
         required_inside_width = text_width + (self.config.value_label_inside_padding * 2)
 
         if (
@@ -2973,21 +3148,33 @@ class BarRenderer:
             ))
 
     def _label_x(self, sprite):
-        if (
-            not sprite.logo_path
-            or self._logo_position() != "outside_left"
-        ):
+        outside_logos = self._logo_group_extent(sprite, "outside_left")
+
+        if not outside_logos:
             return sprite.x - 16
 
+        return outside_logos[0] - self.config.logo_label_gap
+
+    def _logo_group_extent(self, sprite, position):
+        layouts = [
+            layout
+            for _, _, layout, logo_position in self._logo_layouts_for_sprite(sprite)
+            if logo_position == position
+        ]
+
+        if not layouts:
+            return None
+
         return (
-            sprite.x
-            - self.config.logo_gap
-            - self.config.logo_size
-            - self.config.logo_label_gap
+            min(layout["left"] for layout in layouts),
+            max(layout["right"] for layout in layouts),
         )
 
-    def _load_logo(self, logo_path):
-        cache_key = (logo_path, self.config.logo_size)
+    def _load_logo(self, logo_path, logo_size=None):
+        logo_size = max(1, int(round(
+            self.config.logo_size if logo_size is None else logo_size
+        )))
+        cache_key = (logo_path, logo_size)
 
         if cache_key in self.logo_cache:
             image = self.logo_cache[cache_key]
@@ -2995,15 +3182,17 @@ class BarRenderer:
             return image
 
         try:
-            image = self._prepare_logo_image(logo_path)
+            image = self._prepare_logo_image(logo_path, logo_size)
         except (OSError, ValueError):
             image = None
 
         self._lru_put(self.logo_cache, cache_key, image, limit=256)
         return image
 
-    def _prepare_logo_image(self, logo_path):
-        logo_size = max(1, int(self.config.logo_size))
+    def _prepare_logo_image(self, logo_path, logo_size=None):
+        logo_size = max(1, int(round(
+            self.config.logo_size if logo_size is None else logo_size
+        )))
 
         with Image.open(logo_path) as image:
             image = image.convert("RGBA")

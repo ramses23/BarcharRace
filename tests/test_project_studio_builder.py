@@ -109,6 +109,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "label": "Carbon",
                     "color": "#333333",
                     "logo": "logos/coal.png",
+                    "secondary_logo": "logos_secondary/coal.png",
                 },
                 "Solar": {"label": "Solar"},
             },
@@ -161,6 +162,10 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
         self.assertEqual(loaded["categories"]["Coal"]["logo"], "logos/coal.png")
+        self.assertEqual(
+            loaded["categories"]["Coal"]["secondary_logo"],
+            "logos_secondary/coal.png",
+        )
         self.assertNotIn("Solar", loaded["categories"])
 
     def test_extracts_category_values_from_csv(self):
@@ -303,6 +308,19 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(styles["Team 001"]["color"], "#111111")
         self.assertEqual(styles["Team 001"]["logo"], "logos/team_001.png")
         self.assertEqual(styles["Team 318"]["logo"], "logos/team_318.png")
+
+    def test_applies_matches_to_secondary_logo_without_replacing_primary(self):
+        styles = apply_category_logo_matches(
+            {"Team 001": {"logo": "portraits/team_001.png"}},
+            {"Team 001": "flags/team_001.png"},
+            logo_field="secondary_logo",
+        )
+
+        self.assertEqual(styles["Team 001"]["logo"], "portraits/team_001.png")
+        self.assertEqual(
+            styles["Team 001"]["secondary_logo"],
+            "flags/team_001.png",
+        )
 
     def test_loads_project_data(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -544,7 +562,10 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             {
                 "Coal": {"label": " Carbon ", "color": " #333333 "},
                 "Solar": {"label": "Solar", "color": "", "logo": ""},
-                "Hydro": {"logo": " logos/hydro.png "},
+                "Hydro": {
+                    "logo": " logos/hydro.png ",
+                    "secondary_logo": " flags/hydro.png ",
+                },
                 "": {"label": "Missing"},
                 "Wind": "blue",
             }
@@ -559,6 +580,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                 },
                 "Hydro": {
                     "logo": "logos/hydro.png",
+                    "secondary_logo": "flags/hydro.png",
                 },
             },
         )

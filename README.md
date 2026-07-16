@@ -290,15 +290,16 @@ Named `theme`, `layout_preset`, `typography_preset`, and `value_format` values
 are resolved through their registries.
 
 Category styles are keyed by the raw value from the dataset name column. Each
-entry can define a display `label`, a bar `color`, a `logo`, or any combination
-of those fields:
+entry can define a display `label`, a bar `color`, a primary `logo`, an optional
+`secondary_logo`, or any combination of those fields:
 
 ```json
 "categories": {
   "Gas": {
     "label": "Natural gas",
     "color": "#F28E2B",
-    "logo": "logos/gas.png"
+    "logo": "logos/gas.png",
+    "secondary_logo": "logos_secondary/gas.png"
   },
   "Solar": {
     "color": "#EDC948",
@@ -907,7 +908,10 @@ Advanced Track can draw a full-width background bar behind each value. Content
 controls can place logos outside-left, inside-left, inside-right, or hide them.
 Logo masks can follow the bar automatically or use circle, rounded, or square
 shapes, with independent padding, background, opacity, border color, and border
-width. Capsule and lollipop logos use circular adaptive masks; an inside-left
+width. A category can also have a second logo displayed as an overlaid badge,
+beside the primary logo, or in an independent inside/outside position. Its
+size, shape, gap, padding, background, and border are configured separately.
+Capsule and lollipop logos use circular adaptive masks; an inside-left
 lollipop logo adds a circular socket at the start of the stem, while an
 inside-right logo occupies its endpoint circle. Legacy `outside` and `inside`
 project values remain supported and are migrated by the editor. Category
@@ -1068,15 +1072,18 @@ Project files can also assign explicit logos per category:
 ```json
 "categories": {
   "Coal": {
-    "logo": "logos/coal.png"
+    "logo": "logos/coal.png",
+    "secondary_logo": "logos_secondary/coal.png"
   }
 }
 ```
 
 Project Studio can upload a complete logo folder, choose an existing file from
 a logo folder, auto-match files whose names match category names, or upload a
-logo for a category. Uploaded logo folders are copied under `logos/`, and
-category logo paths are referenced from the project JSON.
+logo for a category. The same workflow is available independently for the
+second logo. Uploaded primary folders are copied under `logos/`, secondary
+folders under `logos_secondary/`, and both category paths are referenced from
+the project JSON.
 Logo auto-matching runs against every category in the dataset, even when the
 category editor only displays the first 80 rows. Applied logo matches are kept
 in the editor session so subsequent preview and video renders use the full

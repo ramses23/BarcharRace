@@ -49,6 +49,11 @@ class LayoutEngine:
                     height=self.config.bar_height,
                     rank=i + 1,
                     logo_path=self._resolve_logo(bar),
+                    secondary_logo_path=(
+                        bar.secondary_logo_path
+                        if self.config.logos_enabled
+                        else None
+                    ),
                 )
             )
 

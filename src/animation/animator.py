@@ -30,6 +30,7 @@ class Animator:
                     value=base_value * progress,
                     color=bar.color,
                     logo_path=bar.logo_path,
+                    secondary_logo_path=bar.secondary_logo_path,
                 )
                 for bar, base_value in zip(bars, base_values)
             ]
