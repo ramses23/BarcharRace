@@ -299,6 +299,13 @@ optional logos are warnings. A passing render starts in an isolated Python
 process, reports progress from `output/.render_jobs/`, and can be canceled from
 the UI. Cancellation terminates the worker and its FFmpeg child process.
 
+Status and project JSON files use atomic temporary-file replacement with
+bounded retries for transient Windows destination locks. Render-progress
+updates are best-effort telemetry: if an external reader, antivirus, or indexer
+briefly locks `status.json`, that update is skipped and logged instead of
+terminating the video render. A later progress or terminal update restores the
+visible status.
+
 The worker writes FFmpeg output to a job-specific partial MP4 and atomically
 replaces the configured video only after successful completion. A failed or
 canceled run therefore does not overwrite the previous good video. Project

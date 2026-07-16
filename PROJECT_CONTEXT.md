@@ -217,7 +217,11 @@ The project is a usable MVP:
   `src/ui/render_controller.py`. Progress is throttled into an atomic status
   file under `output/.render_jobs/<job_id>/`; stdout/stderr go to that job's
   log. The Streamlit UI polls only an active fragment and can terminate the
-  worker plus its FFmpeg child tree.
+  worker plus its FFmpeg child tree. Atomic JSON replacement retries transient
+  destination locks with bounded backoff, which is required on Windows while
+  Streamlit, antivirus, or indexing software reads `status.json`. A progress
+  status write is non-fatal telemetry: after retries are exhausted it is logged
+  and skipped, so status-file contention cannot abort the actual render.
 - The worker renders to a job-specific partial MP4 and atomically replaces the
   configured output only after success. Failure/cancellation removes the
   partial file and preserves the previous completed video.
@@ -313,7 +317,9 @@ Important boundaries:
   `src/ui/render_workflow.py`, not in the project form or pipeline.
 - `src/studio/render_worker.py` may construct and run `RenderJob`, but it must
   not duplicate pipeline stages. Its responsibilities are process isolation,
-  status transport, and atomic promotion of successful video output.
+  best-effort progress status transport, reliable terminal status, and atomic
+  promotion of successful video output. Progress reporting failures must never
+  propagate into `RenderJob` and stop frame generation.
 - A UI cancel action must terminate the whole render process tree so an FFmpeg
   child cannot remain orphaned.
 - Pixel-exact Simple and Advanced frame signatures are renderer contracts. An
@@ -560,7 +566,9 @@ in verified, published checkpoints:
    cancellable isolated rendering, atomic JSON/video promotion, persistent job
    logs/status, and confirmation for destructive in-app draft transitions are
    implemented. Browser/tab close cannot be intercepted reliably; the visible
-   dirty indicator remains the close warning.
+   dirty indicator remains the close warning. Atomic status updates retry
+   transient Windows file locks, and exhausted progress-write failures are
+   isolated from the renderer.
 4. **Versioned configuration — completed.** Schema version 1, sequential
    migration infrastructure, legacy normalization, future-version rejection,
    versioned builder/storage output, and a canonical sample are implemented.

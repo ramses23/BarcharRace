@@ -9,10 +9,32 @@ from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from pipeline.render_job import RenderProfile, RenderResult
-from studio.render_worker import run_worker
+from studio.render_worker import _progress_writer, run_worker
 
 
 class RenderWorkerTest(unittest.TestCase):
+    def test_progress_status_failure_does_not_abort_render_callback(self):
+        progress = SimpleNamespace(
+            stage="render_frames",
+            message="Drawing frames.",
+            progress=0.25,
+            current=1,
+            total=4,
+        )
+        callback = _progress_writer(
+            Path("status.json"),
+            {"job_id": "job123"},
+            minimum_interval=0,
+        )
+
+        with patch(
+            "studio.render_worker.atomic_write_json",
+            side_effect=PermissionError("temporarily locked"),
+        ), patch("studio.render_worker.print") as warning:
+            callback(progress)
+
+        warning.assert_called_once()
+
     def test_promotes_partial_video_only_after_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -90,18 +90,26 @@ def _progress_writer(status_path, base_status, minimum_interval=0.25):
         if not stage_changed and current_time - last_write < minimum_interval:
             return
 
-        atomic_write_json(
-            {
-                **base_status,
-                "state": "running",
-                "stage": progress.stage,
-                "message": progress.message,
-                "progress": progress.progress,
-                "current": progress.current,
-                "total": progress.total,
-            },
-            status_path,
-        )
+        try:
+            atomic_write_json(
+                {
+                    **base_status,
+                    "state": "running",
+                    "stage": progress.stage,
+                    "message": progress.message,
+                    "progress": progress.progress,
+                    "current": progress.current,
+                    "total": progress.total,
+                },
+                status_path,
+            )
+        except OSError as exc:
+            print(
+                f"Warning: progress status update skipped: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+
         last_write = current_time
         last_stage = progress.stage
 
