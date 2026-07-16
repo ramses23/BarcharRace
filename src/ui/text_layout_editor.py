@@ -1,13 +1,15 @@
-from pathlib import Path
-
-import streamlit.components.v1 as components
-
-
-_COMPONENT_DIR = Path(__file__).resolve().parent / "components" / "text_layout_editor"
-_text_layout_component = components.declare_component(
-    "text_layout_editor",
-    path=str(_COMPONENT_DIR),
+from ui.component_v2 import (
+    component_renderer,
+    component_source,
+    component_state_value,
+    component_v2_runtime_available,
 )
+
+_COMPONENT_HTML = """
+<div data-component="text-layout-editor"></div>
+"""
+_COMPONENT_CSS = component_source("text_layout_editor", "component.css")
+_COMPONENT_JS = component_source("text_layout_editor", "component.js")
 
 _ELEMENT_NAMES = ("title", "subtitle", "date", "source")
 
@@ -29,19 +31,34 @@ def text_layout_editor(
         preset_positions,
         fallback=normalized_positions,
     )
-    result = _text_layout_component(
-        canvas_width=int(canvas_width),
-        canvas_height=int(canvas_height),
-        dpi=int(dpi),
-        positions=normalized_positions,
-        preset_positions=normalized_preset_positions,
-        elements=elements,
-        theme=theme,
-        layout=layout,
-        default=normalized_positions,
-        key=key,
+    current_positions = _normalize_positions(
+        component_state_value(key, "positions", normalized_positions),
+        fallback=normalized_positions,
     )
-    return _normalize_positions(result, fallback=normalized_positions)
+    if not component_v2_runtime_available():
+        return current_positions
+
+    component = component_renderer(
+        "text_layout_editor_v2",
+        html=_COMPONENT_HTML,
+        css=_COMPONENT_CSS,
+        js=_COMPONENT_JS,
+    )
+    component(
+        data={
+            "canvas_width": int(canvas_width),
+            "canvas_height": int(canvas_height),
+            "dpi": int(dpi),
+            "positions": current_positions,
+            "preset_positions": normalized_preset_positions,
+            "elements": elements,
+            "theme": theme,
+            "layout": layout,
+        },
+        key=key,
+        height="content",
+    )
+    return current_positions
 
 
 def _normalize_positions(positions, fallback=None):

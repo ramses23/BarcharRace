@@ -1,7 +1,12 @@
-from pathlib import Path
-
-import streamlit.components.v1 as components
+import streamlit as st
 from matplotlib import font_manager
+
+from ui.component_v2 import (
+    component_renderer,
+    component_source,
+    component_state_value,
+    component_v2_runtime_available,
+)
 
 
 COMMON_FONT_FAMILIES = (
@@ -37,11 +42,11 @@ COMMON_FONT_FAMILIES = (
     "Verdana",
 )
 
-_COMPONENT_DIR = Path(__file__).resolve().parent / "components" / "font_picker"
-_font_picker_component = components.declare_component(
-    "font_family_picker",
-    path=str(_COMPONENT_DIR),
-)
+_COMPONENT_HTML = """
+<div data-component="font-family-picker"></div>
+"""
+_COMPONENT_CSS = component_source("font_picker", "component.css")
+_COMPONENT_JS = component_source("font_picker", "component.js")
 
 
 def available_common_font_families(current_value=None):
@@ -63,12 +68,37 @@ def available_common_font_families(current_value=None):
 
 
 def font_family_picker(label, current_value=None, key=None):
-    selected = _font_picker_component(
-        label=label,
-        options=available_common_font_families(current_value),
-        value=current_value or "",
-        theme_default_label="Project default",
-        default=current_value or "",
+    selected = component_state_value(key, "value", current_value or "")
+    options = available_common_font_families(selected)
+
+    if not component_v2_runtime_available():
+        fallback_options = ("", *options)
+        return st.selectbox(
+            label,
+            fallback_options,
+            index=(
+                fallback_options.index(selected)
+                if selected in fallback_options
+                else 0
+            ),
+            format_func=lambda value: value or "Project default",
+            key=key,
+        ) or None
+
+    component = component_renderer(
+        "font_family_picker_v2",
+        html=_COMPONENT_HTML,
+        css=_COMPONENT_CSS,
+        js=_COMPONENT_JS,
+    )
+    component(
+        data={
+            "label": label,
+            "options": options,
+            "value": selected,
+            "theme_default_label": "Project default",
+        },
         key=key,
+        height="content",
     )
     return selected or None

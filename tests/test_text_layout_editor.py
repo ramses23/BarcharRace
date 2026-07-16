@@ -31,9 +31,15 @@ class TextLayoutEditorTest(unittest.TestCase):
         }
 
         with patch(
-            "ui.text_layout_editor._text_layout_component",
+            "ui.text_layout_editor.component_state_value",
             return_value=moved,
-        ) as component:
+        ), patch(
+            "ui.text_layout_editor.component_v2_runtime_available",
+            return_value=True,
+        ), patch(
+            "ui.text_layout_editor.component_renderer",
+        ) as renderer:
+            component = renderer.return_value
             result = text_layout_editor(
                 canvas_width=1920,
                 canvas_height=1080,
@@ -47,8 +53,9 @@ class TextLayoutEditorTest(unittest.TestCase):
             )
 
         self.assertEqual(result["title"], {"x": 240, "y": 80})
-        self.assertEqual(component.call_args.kwargs["default"], POSITIONS)
-        self.assertEqual(component.call_args.kwargs["preset_positions"], POSITIONS)
+        data = component.call_args.kwargs["data"]
+        self.assertEqual(data["positions"], moved)
+        self.assertEqual(data["preset_positions"], POSITIONS)
 
     def test_frontend_supports_drag_keyboard_alignment_and_reset(self):
         component_path = (
@@ -57,15 +64,17 @@ class TextLayoutEditorTest(unittest.TestCase):
             / "ui"
             / "components"
             / "text_layout_editor"
-            / "index.html"
+            / "component.js"
         )
-        html = component_path.read_text(encoding="utf-8")
+        javascript = component_path.read_text(encoding="utf-8")
 
-        self.assertIn('node.addEventListener("pointerdown", startDrag)', html)
-        self.assertIn('stage.addEventListener("keydown"', html)
-        self.assertIn('data-action="center"', html)
-        self.assertIn('data-action="reset"', html)
-        self.assertIn('setComponentValue(clone(state.positions))', html)
+        self.assertIn("export default function (component)", javascript)
+        self.assertIn("node.onpointerdown", javascript)
+        self.assertIn("state.stage.onkeydown", javascript)
+        self.assertIn('["center", "Center X"]', javascript)
+        self.assertIn('["reset", "Reset preset"]', javascript)
+        self.assertIn('setStateValue("positions"', javascript)
+        self.assertNotIn("postMessage", javascript)
 
 
 if __name__ == "__main__":

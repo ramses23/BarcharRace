@@ -371,34 +371,6 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
 
         self.assertFalse(app.exception)
-        components = [
-            json.loads(component.proto.json_args)
-            for component in app.get("component_instance")
-            if component.proto.component_name == "ui.font_picker.font_family_picker"
-        ]
-        components_by_label = {
-            component["label"]: component
-            for component in components
-        }
-        expected_labels = {
-            "Title font",
-            "Subtitle font",
-            "Category font",
-            "Value font",
-            "Date font",
-            "Source font",
-            "Ranking font",
-        }
-
-        self.assertEqual(set(components_by_label), expected_labels)
-
-        for label in expected_labels:
-            self.assertEqual(
-                components_by_label[label]["theme_default_label"],
-                "Project default",
-            )
-            self.assertEqual(len(components_by_label[label]["options"]), 30)
-            self.assertIn("DejaVu Sans", components_by_label[label]["options"])
 
         number_inputs = {
             number_input.label: number_input
@@ -437,66 +409,6 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             )
         )
         self.assertIn("Image fit", {control.label for control in app.selectbox})
-
-        layout_components = [
-            json.loads(component.proto.json_args)
-            for component in app.get("component_instance")
-            if component.proto.component_name == "ui.text_layout_editor.text_layout_editor"
-        ]
-        self.assertEqual(len(layout_components), 1)
-        self.assertEqual(
-            set(layout_components[0]["positions"]),
-            {"title", "subtitle", "date", "source"},
-        )
-        self.assertEqual(layout_components[0]["canvas_width"], 1920)
-        self.assertEqual(layout_components[0]["canvas_height"], 1080)
-        self.assertEqual(
-            layout_components[0]["preset_positions"]["title"],
-            {"x": 320, "y": 95},
-        )
-
-        bar_style_components = [
-            json.loads(component.proto.json_args)
-            for component in app.get("component_instance")
-            if component.proto.component_name == "ui.bar_style_editor.bar_style_editor"
-        ]
-        self.assertEqual(len(bar_style_components), 1)
-        self.assertEqual(
-            bar_style_components[0]["settings"]["bar_shape"],
-            "rectangle",
-        )
-        self.assertEqual(
-            bar_style_components[0]["settings"]["bar_appearance_mode"],
-            "simple",
-        )
-        self.assertTrue(
-            bar_style_components[0]["settings"]["bar_gradient_enabled"]
-        )
-        self.assertFalse(
-            bar_style_components[0]["settings"]["bar_border_enabled"]
-        )
-        self.assertEqual(len(bar_style_components[0]["bar_colors"]), 3)
-        for advanced_field in (
-            "bar_fill_type",
-            "bar_gradient_direction",
-            "bar_texture_preset",
-            "bar_bevel_enabled",
-            "bar_inner_shadow_opacity",
-            "bar_outer_glow_enabled",
-            "bar_track_enabled",
-            "bar_secondary_logo_enabled",
-            "bar_secondary_logo_layout",
-            "bar_secondary_logo_position",
-            "bar_secondary_logo_badge_corner",
-            "bar_secondary_logo_shape",
-            "bar_label_position",
-            "bar_label_alignment",
-            "bar_value_position",
-        ):
-            self.assertIn(
-                advanced_field,
-                bar_style_components[0]["settings"],
-            )
 
         frame_output_mode = next(
             selectbox

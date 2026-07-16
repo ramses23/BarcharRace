@@ -212,6 +212,19 @@ session draft and are included when the project is saved, previewed, or
 rendered. Bulk logo matching still evaluates every category, not only the
 visible page.
 
+The font picker, visual text-position editor, and live bar-appearance editor
+use Streamlit Custom Components v2. They are controlled components: Python
+rehydrates their current session value and the frontend emits named state with
+`setStateValue`. They no longer use iframe messaging or the legacy components
+v1 API. Component styles are isolated and consume Streamlit theme variables.
+
+The bar editor exposes controls contextually. Simple mode shows only its
+gradient plus shared border/projected-shadow controls. Advanced sections appear
+for fill, texture, depth, effects, track, content, and frame, while dependent
+fields remain hidden until their parent feature is enabled (for example bevel
+size, glow details, second-logo layout, or value border settings). Inactive
+values remain preserved in the project JSON.
+
 The editor is organized as a short workflow instead of one long form:
 `Data & content`, `Canvas & text`, `Bars & categories`, and
 `Animation & output`. Project loading stays in the sidebar, while dataset
@@ -1173,5 +1186,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Modernize the custom Streamlit controls and expose advanced fields only when
-  their parent feature is active.
+- Split the oversized UI and renderer modules at stable responsibility
+  boundaries and expand deterministic visual regression coverage.

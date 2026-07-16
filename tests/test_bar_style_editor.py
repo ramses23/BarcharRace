@@ -9,6 +9,7 @@ from ui.bar_style_editor import (
     _custom_texture_data,
     bar_style_editor,
     normalize_bar_style,
+    visible_bar_style_fields,
 )
 
 
@@ -51,9 +52,15 @@ class BarStyleEditorTest(unittest.TestCase):
         }
 
         with patch(
-            "ui.bar_style_editor._bar_style_component",
+            "ui.bar_style_editor.component_state_value",
             return_value=result_value,
-        ) as component:
+        ), patch(
+            "ui.bar_style_editor.component_v2_runtime_available",
+            return_value=True,
+        ), patch(
+            "ui.bar_style_editor.component_renderer",
+        ) as renderer:
+            component = renderer.return_value
             result = bar_style_editor(
                 settings={"bar_shape": "rectangle"},
                 bar_colors=("#111111", "#222222", "#333333", "#444444"),
@@ -63,7 +70,7 @@ class BarStyleEditorTest(unittest.TestCase):
 
         self.assertEqual(result["bar_shape"], "capsule")
         self.assertTrue(result["bar_border_enabled"])
-        self.assertEqual(component.call_args.kwargs["bar_colors"], [
+        self.assertEqual(component.call_args.kwargs["data"]["bar_colors"], [
             "#111111",
             "#222222",
             "#333333",
@@ -135,6 +142,33 @@ class BarStyleEditorTest(unittest.TestCase):
 
         self.assertTrue(data_url.startswith("data:image/png;base64,"))
 
+    def test_contextual_fields_follow_parent_controls(self):
+        simple_fields = {
+            field["field"]
+            for field in visible_bar_style_fields({
+                "bar_appearance_mode": "simple",
+                "bar_border_enabled": False,
+            })
+        }
+        advanced_fields = {
+            field["field"]
+            for field in visible_bar_style_fields({
+                "bar_appearance_mode": "advanced",
+                "bar_fill_type": "texture",
+                "bar_texture_enabled": True,
+                "bar_secondary_logo_enabled": False,
+                "bar_outer_glow_enabled": False,
+            })
+        }
+
+        self.assertIn("bar_gradient_enabled", simple_fields)
+        self.assertNotIn("bar_fill_type", simple_fields)
+        self.assertNotIn("bar_border_color", simple_fields)
+        self.assertIn("bar_texture_preset", advanced_fields)
+        self.assertNotIn("bar_gradient_direction", advanced_fields)
+        self.assertNotIn("bar_secondary_logo_layout", advanced_fields)
+        self.assertNotIn("bar_glow_color", advanced_fields)
+
     def test_frontend_has_live_preview_and_four_shape_buttons(self):
         component_path = (
             Path(__file__).resolve().parents[1]
@@ -142,44 +176,18 @@ class BarStyleEditorTest(unittest.TestCase):
             / "ui"
             / "components"
             / "bar_style_editor"
-            / "index.html"
+            / "component.js"
         )
-        html = component_path.read_text(encoding="utf-8")
+        javascript = component_path.read_text(encoding="utf-8")
 
         for shape in ("rectangle", "rounded", "capsule", "lollipop"):
-            self.assertIn(f'data-shape="{shape}"', html)
+            self.assertIn(f'"{shape}"', javascript)
 
-        self.assertIn('id="preview"', html)
-        for tab in (
-            "fill",
-            "texture",
-            "depth",
-            "effects",
-            "track",
-            "content",
-            "frame",
-        ):
-            self.assertIn(f'data-tab="{tab}"', html)
-
-        self.assertIn('data-mode="advanced"', html)
-        self.assertIn('data-key="bar_inner_shadow_opacity"', html)
-        self.assertIn('data-key="bar_outer_glow_enabled"', html)
-        self.assertIn('data-key="bar_track_enabled"', html)
-        self.assertIn('data-key="bar_logo_position"', html)
-        self.assertIn('<option value="inside_right">Inside right</option>', html)
-        self.assertIn('data-key="bar_logo_shape"', html)
-        self.assertIn('data-key="bar_logo_border_enabled"', html)
-        self.assertIn('data-key="bar_logo_background_enabled"', html)
-        self.assertIn('data-key="bar_secondary_logo_enabled"', html)
-        self.assertIn('data-key="bar_secondary_logo_layout"', html)
-        self.assertIn('<option value="side_by_side">Side by side</option>', html)
-        self.assertIn('<option value="independent">Independent positions</option>', html)
-        self.assertIn('data-key="bar_secondary_logo_badge_corner"', html)
-        self.assertIn('data-key="bar_secondary_logo_shape"', html)
-        self.assertIn('data-key="bar_label_alignment"', html)
-        self.assertIn('data-key="bar_value_position"', html)
-        self.assertIn('update("bar_shape", button.dataset.shape)', html)
-        self.assertIn('setComponentValue(clone(state.settings))', html)
+        self.assertIn("renderPreview(state)", javascript)
+        self.assertIn("renderFields(state)", javascript)
+        self.assertIn('setStateValue("settings"', javascript)
+        self.assertIn("export default function (component)", javascript)
+        self.assertNotIn("postMessage", javascript)
 
 
 if __name__ == "__main__":

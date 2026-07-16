@@ -33,9 +33,15 @@ class FontPickerTest(unittest.TestCase):
 
     def test_component_receives_curated_options_and_returns_selection(self):
         with patch(
-            "ui.font_picker._font_picker_component",
+            "ui.font_picker.component_state_value",
             return_value="Georgia",
-        ) as component:
+        ), patch(
+            "ui.font_picker.component_v2_runtime_available",
+            return_value=True,
+        ), patch(
+            "ui.font_picker.component_renderer",
+        ) as renderer:
+            component = renderer.return_value
             selected = font_family_picker(
                 "Title font",
                 current_value="Arial",
@@ -43,8 +49,9 @@ class FontPickerTest(unittest.TestCase):
             )
 
         self.assertEqual(selected, "Georgia")
-        self.assertLessEqual(len(component.call_args.kwargs["options"]), 30)
-        self.assertEqual(component.call_args.kwargs["value"], "Arial")
+        data = component.call_args.kwargs["data"]
+        self.assertLessEqual(len(data["options"]), 30)
+        self.assertEqual(data["value"], "Georgia")
 
     def test_frontend_renders_font_name_and_sample_with_option_family(self):
         component_path = (
@@ -53,12 +60,15 @@ class FontPickerTest(unittest.TestCase):
             / "ui"
             / "components"
             / "font_picker"
-            / "index.html"
+            / "component.js"
         )
-        html = component_path.read_text(encoding="utf-8")
+        javascript = component_path.read_text(encoding="utf-8")
 
-        self.assertIn('option.style.fontFamily = fontStyle(value)', html)
-        self.assertIn('sample.textContent = "Aa 123"', html)
+        self.assertIn("export default function (component)", javascript)
+        self.assertIn("button.style.fontFamily = fontStyle(value)", javascript)
+        self.assertIn('sample.textContent = "Aa 123"', javascript)
+        self.assertIn('setStateValue("value", value)', javascript)
+        self.assertNotIn("postMessage", javascript)
 
 
 if __name__ == "__main__":

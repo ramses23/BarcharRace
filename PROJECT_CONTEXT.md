@@ -173,6 +173,15 @@ The project is a usable MVP:
   labels, values, date, source, and ranking. The selectors use a curated list
   of up to 30 common installed fonts and render each option in its own family.
   Each element falls back to the active theme font when its family is null.
+- Font selection, visual text placement, and bar appearance are Custom
+  Components v2. Inline source assets are registered once per active Streamlit
+  component manager, state is synchronized through named `setStateValue`
+  fields, and styles are isolated with Streamlit theme CSS variables. Do not
+  reintroduce `components.v1`, iframe messages, or manual frame sizing.
+- Bar-appearance fields are contextual. Simple and Advanced mode, fill type,
+  texture, bevel, glow, shine, track, primary/secondary logo, border,
+  background, and value styling controls reveal only their active dependents.
+  Hidden values remain in normalized settings for reversible switching.
 - Project Studio exposes point-size controls for title, subtitle, category,
   value, date, source, and ranking text. A visual layout editor lets users drag
   title, subtitle, date, and source on a scaled canvas, nudge with arrow keys,
@@ -269,6 +278,8 @@ Important boundaries:
 - Project Studio's form may create a `ProjectDraft`, but only
   `save_project_data` persists it. The UI must not treat incidental widget
   reruns as saves.
+- Custom UI wrappers own CCv2 registration/state hydration. Renderer and config
+  modules must never depend on Streamlit component result objects.
 - UI dataset caching belongs in `src/ui/dataset_cache.py`. Data importers and
   the render pipeline remain independent of Streamlit.
 - `src/studio/render_worker.py` may construct and run `RenderJob`, but it must
@@ -488,9 +499,9 @@ in verified, published checkpoints:
 4. **Versioned configuration — completed.** Schema version 1, sequential
    migration infrastructure, legacy normalization, future-version rejection,
    versioned builder/storage output, and a canonical sample are implemented.
-5. **Modern components.** Migrate custom Streamlit component v1 controls to the
-   supported v2 API and show controls contextually so simple projects remain
-   approachable.
+5. **Modern components — completed.** Font, layout, and bar controls use CCv2
+   with isolated themed styles and controlled named state. Legacy iframe APIs
+   are removed, and dependent Advanced controls are generated contextually.
 6. **Modular renderer and UI.** Split oversized modules at stable responsibility
    boundaries and add deterministic/visual regression coverage for renderer
    combinations.

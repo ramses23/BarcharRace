@@ -3,8 +3,14 @@ import re
 from io import BytesIO
 from pathlib import Path
 
-import streamlit.components.v1 as components
 from PIL import Image, ImageOps
+
+from ui.component_v2 import (
+    component_renderer,
+    component_source,
+    component_state_value,
+    component_v2_runtime_available,
+)
 
 
 BAR_SHAPES = ("rectangle", "rounded", "capsule", "lollipop")
@@ -208,25 +214,245 @@ _INTEGER_BOUNDS = {
     "bar_value_shadow_offset_y": (-20, 20),
 }
 
-_COMPONENT_DIR = Path(__file__).resolve().parent / "components" / "bar_style_editor"
-_bar_style_component = components.declare_component(
-    "bar_style_editor",
-    path=str(_COMPONENT_DIR),
-)
+_SIMPLE_FIELDS = {
+    "bar_gradient_enabled",
+    "bar_gradient_lighten",
+}
+_FRAME_FIELDS = {
+    "bar_border_enabled",
+    "bar_border_color",
+    "bar_border_width",
+    "bar_shadow_enabled",
+    "bar_shadow_color",
+    "bar_shadow_alpha",
+    "bar_shadow_offset_x",
+    "bar_shadow_offset_y",
+}
+_FILL_FIELDS = {
+    "bar_fill_type",
+    "bar_gradient_direction",
+    "bar_gradient_color_count",
+    "bar_fill_use_category_color",
+    "bar_fill_color_start",
+    "bar_fill_color_center",
+    "bar_fill_color_end",
+    "bar_highlight_position",
+    "bar_edge_darkening",
+}
+_TEXTURE_FIELDS = {
+    "bar_texture_enabled",
+    "bar_texture_preset",
+    "bar_texture_intensity",
+    "bar_texture_scale",
+    "bar_texture_contrast",
+    "bar_texture_blend_mode",
+}
+_DEPTH_FIELDS = {
+    "bar_bevel_enabled",
+    "bar_bevel_size",
+    "bar_bevel_highlight_opacity",
+    "bar_inner_shadow_opacity",
+    "bar_inner_shadow_size",
+    "bar_top_highlight_opacity",
+    "bar_bottom_shade_opacity",
+}
+_EFFECT_FIELDS = {
+    "bar_outer_glow_enabled",
+    "bar_glow_color",
+    "bar_glow_opacity",
+    "bar_glow_blur",
+    "bar_inner_glow_opacity",
+    "bar_shine_enabled",
+    "bar_shine_position",
+    "bar_shine_width",
+    "bar_shine_opacity",
+}
+_TRACK_FIELDS = {
+    "bar_track_enabled",
+    "bar_track_color",
+    "bar_track_opacity",
+}
+
+
+def visible_bar_style_fields(settings):
+    settings = normalize_bar_style(settings)
+    descriptors = []
+
+    for field in DEFAULT_BAR_STYLE:
+        if field in {"bar_shape", "bar_appearance_mode", "bar_texture_custom_image"}:
+            continue
+
+        group = _bar_style_group(field)
+        if not _bar_style_field_visible(field, group, settings):
+            continue
+
+        descriptor = {
+            "field": field,
+            "label": _bar_style_label(field),
+            "group": group,
+            "value": settings[field],
+        }
+        if field in _ENUM_FIELDS:
+            descriptor.update(type="enum", options=list(_ENUM_FIELDS[field]))
+        elif field in _BOOLEAN_FIELDS:
+            descriptor["type"] = "boolean"
+        elif field in _COLOR_FIELDS:
+            descriptor["type"] = "color"
+        else:
+            minimum, maximum = (
+                _FLOAT_BOUNDS.get(field)
+                or _INTEGER_BOUNDS[field]
+            )
+            descriptor.update(
+                type="range",
+                minimum=minimum,
+                maximum=maximum,
+                step=_range_step(field, minimum, maximum),
+            )
+        descriptors.append(descriptor)
+
+    return descriptors
+
+
+def _bar_style_group(field):
+    if field in _SIMPLE_FIELDS:
+        return "Simple"
+    if field in _FRAME_FIELDS:
+        return "Frame"
+    if field in _FILL_FIELDS:
+        return "Fill"
+    if field in _TEXTURE_FIELDS:
+        return "Texture"
+    if field in _DEPTH_FIELDS:
+        return "Depth"
+    if field in _EFFECT_FIELDS:
+        return "Effects"
+    if field in _TRACK_FIELDS:
+        return "Track"
+    return "Content"
+
+
+def _bar_style_field_visible(field, group, settings):
+    advanced = settings["bar_appearance_mode"] == "advanced"
+    if group == "Simple":
+        return not advanced and (
+            field != "bar_gradient_lighten"
+            or settings["bar_gradient_enabled"]
+        )
+    if group == "Frame":
+        if field in {"bar_border_color", "bar_border_width"}:
+            return settings["bar_border_enabled"]
+        if field.startswith("bar_shadow_") and field != "bar_shadow_enabled":
+            return settings["bar_shadow_enabled"]
+        return True
+    if not advanced:
+        return False
+
+    fill_type = settings["bar_fill_type"]
+    if field in {
+        "bar_gradient_direction",
+        "bar_gradient_color_count",
+        "bar_highlight_position",
+    }:
+        return fill_type == "gradient"
+    if field in {"bar_fill_color_center", "bar_fill_color_end"}:
+        return fill_type == "gradient" and not settings["bar_fill_use_category_color"]
+    if field == "bar_fill_color_start":
+        return not settings["bar_fill_use_category_color"]
+
+    texture_active = settings["bar_texture_enabled"] or fill_type == "texture"
+    if group == "Texture" and field != "bar_texture_enabled":
+        return texture_active
+    if field in {"bar_bevel_size", "bar_bevel_highlight_opacity"}:
+        return settings["bar_bevel_enabled"]
+    if field == "bar_inner_shadow_size":
+        return settings["bar_inner_shadow_opacity"] > 0
+    if field in {"bar_glow_color", "bar_glow_opacity", "bar_glow_blur"}:
+        return settings["bar_outer_glow_enabled"]
+    if field in {"bar_shine_position", "bar_shine_width", "bar_shine_opacity"}:
+        return settings["bar_shine_enabled"]
+    if field in {"bar_track_color", "bar_track_opacity"}:
+        return settings["bar_track_enabled"]
+    if field in {"bar_logo_border_color", "bar_logo_border_width"}:
+        return settings["bar_logo_border_enabled"]
+    if field in {"bar_logo_background_color", "bar_logo_background_opacity"}:
+        return settings["bar_logo_background_enabled"]
+    if field.startswith("bar_secondary_logo_") and field != "bar_secondary_logo_enabled":
+        if not settings["bar_secondary_logo_enabled"]:
+            return False
+        if field == "bar_secondary_logo_badge_corner":
+            return settings["bar_secondary_logo_layout"] == "badge"
+        if field == "bar_secondary_logo_position":
+            return settings["bar_secondary_logo_layout"] == "independent"
+        if field == "bar_secondary_logo_gap":
+            return settings["bar_secondary_logo_layout"] == "side_by_side"
+        if field in {
+            "bar_secondary_logo_border_color",
+            "bar_secondary_logo_border_width",
+        }:
+            return settings["bar_secondary_logo_border_enabled"]
+        if field in {
+            "bar_secondary_logo_background_color",
+            "bar_secondary_logo_background_opacity",
+        }:
+            return settings["bar_secondary_logo_background_enabled"]
+    if field.startswith("bar_logo_") and field != "bar_logo_position":
+        if settings["bar_logo_position"] == "hidden":
+            return False
+    if field in {"bar_value_border_color", "bar_value_border_width"}:
+        return settings["bar_value_border_enabled"]
+    if field.startswith("bar_value_shadow_") and field != "bar_value_shadow_enabled":
+        return settings["bar_value_shadow_enabled"]
+    if field == "bar_value_color":
+        return not settings["bar_value_use_theme_color"]
+    return True
+
+
+def _bar_style_label(field):
+    return field.removeprefix("bar_").replace("_", " ").title()
+
+
+def _range_step(field, minimum, maximum):
+    if field in _INTEGER_BOUNDS:
+        return 1
+    span = maximum - minimum
+    return 0.01 if span <= 1 else 0.1 if span <= 10 else 1
+
+_COMPONENT_HTML = """
+<div data-component="bar-style-editor"></div>
+"""
+_COMPONENT_CSS = component_source("bar_style_editor", "component.css")
+_COMPONENT_JS = component_source("bar_style_editor", "component.js")
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def bar_style_editor(*, settings, bar_colors, background_color, key=None):
     normalized = normalize_bar_style(settings)
-    result = _bar_style_component(
-        settings=normalized,
-        bar_colors=list(bar_colors[:3]),
-        background_color=background_color,
-        custom_texture_data=_custom_texture_data(normalized),
-        default=normalized,
-        key=key,
+    current_settings = normalize_bar_style(
+        component_state_value(key, "settings", normalized),
+        fallback=normalized,
     )
-    return normalize_bar_style(result, fallback=normalized)
+    if not component_v2_runtime_available():
+        return current_settings
+
+    component = component_renderer(
+        "bar_style_editor_v2",
+        html=_COMPONENT_HTML,
+        css=_COMPONENT_CSS,
+        js=_COMPONENT_JS,
+    )
+    component(
+        data={
+            "settings": current_settings,
+            "fields": visible_bar_style_fields(current_settings),
+            "bar_colors": list(bar_colors[:3]),
+            "background_color": background_color,
+            "custom_texture_data": _custom_texture_data(current_settings),
+        },
+        key=key,
+        height="content",
+    )
+    return current_settings
 
 
 def _custom_texture_data(settings):
