@@ -195,6 +195,15 @@ category editing, and the dataset table share that DataFrame instead of reading
 the file separately on every rerun. Replacing a CSV at the same path
 automatically invalidates the cached entry.
 
+The category editor is designed for large datasets. It provides search,
+filters for customized or missing-logo entries, and pages of 10, 20, or 40
+rows instead of mounting every category widget at once. Row controls are
+grouped in a form: edit the current page and select `Apply category changes`
+before changing its search, filter, or page. Applied pages remain in the
+session draft and are included when the project is saved, previewed, or
+rendered. Bulk logo matching still evaluates every category, not only the
+visible page.
+
 The editor is organized as a short workflow instead of one long form:
 `Data & content`, `Canvas & text`, `Bars & categories`, and
 `Animation & output`. Project loading stays in the sidebar, while dataset
@@ -1141,7 +1150,6 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Scale category editing for large datasets and reduce whole-page reruns.
 - Add render preflight, cancellation, isolated background execution, and
   atomic project writes.
 - Introduce a versioned project schema with migrations before expanding the

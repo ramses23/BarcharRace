@@ -148,6 +148,12 @@ The project is a usable MVP:
   resolved path, file size, and nanosecond modification time. Dataset preview,
   inspection, periods, and categories share the cached DataFrame, while a file
   replacement at the same path invalidates it.
+- The category editor searches and filters the full dataset, but mounts only a
+  page of 10, 20, or 40 editable rows. Page fields live in a Streamlit form, so
+  typing does not rerun the entire application. `Apply category changes`
+  commits that page to a session-backed category draft, which persists across
+  filters/pages and participates in the next project draft. Bulk primary and
+  secondary logo matching still covers every category.
 - Project Studio groups its form into four workflow tabs: `Data & content`,
   `Canvas & text`, `Bars & categories`, and `Animation & output`. Project and
   CSV loading live in the sidebar, while dataset previews and advanced panels
@@ -439,9 +445,10 @@ in verified, published checkpoints:
 1. **Draft and rerun foundation — completed.** Use immutable draft snapshots,
    explicit save/dirty status, persistent previews, and one bounded cached CSV
    load shared by the editor.
-2. **Scalable category editor.** Add search/filtering and pagination or focused
-   editing so hundreds of categories do not create hundreds of active widgets;
-   use fragments or deliberate apply actions to reduce full-app reruns.
+2. **Scalable category editor — completed.** Search/filter the entire category
+   set, mount only a configurable page, preserve applied pages in the session
+   draft, and use a deliberate form submit to avoid rerunning on every field
+   edit.
 3. **Reliable rendering workflow.** Add preflight validation, cancellation,
    isolated/background execution, atomic project writes, and safe close/reload
    behavior for unsaved changes.

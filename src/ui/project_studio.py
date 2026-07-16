@@ -21,6 +21,13 @@ from config.value_format_config import list_value_formats
 from pipeline.render_job import RenderJob
 from studio.preview import render_project_preview
 from studio.project_draft import ProjectDraft
+from ui.category_editor import (
+    CATEGORY_FILTERS,
+    CATEGORY_PAGE_SIZES,
+    filter_categories,
+    paginate_categories,
+    update_category_style,
+)
 from ui.dataset_cache import load_csv_dataset
 from ui.bar_style_editor import bar_style_editor
 from ui.font_picker import font_family_picker
@@ -61,7 +68,6 @@ DEFAULT_CATEGORY_COLORS = (
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 DEFAULT_LOGO_FOLDER = "logos"
 DEFAULT_SECONDARY_LOGO_FOLDER = "logos_secondary"
-CATEGORY_DISPLAY_LIMIT = 80
 APPLIED_LOGO_MATCHES_STATE = "applied_logo_matches"
 LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
 APPLIED_SECONDARY_LOGO_MATCHES_STATE = "applied_secondary_logo_matches"
@@ -73,6 +79,7 @@ BACKGROUND_IMAGE_PATH_STATE = "background_image_path"
 SAVED_DRAFT_FINGERPRINT_STATE = "saved_project_draft_fingerprint"
 SAVED_DRAFT_PENDING_STATE = "saved_project_draft_pending"
 LAST_PREVIEW_STATE = "last_project_preview"
+CATEGORY_STYLE_DRAFT_STATE = "category_style_draft"
 
 
 st.set_page_config(
@@ -251,6 +258,7 @@ def _project_source_panel():
             st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
             st.session_state[SAVED_DRAFT_PENDING_STATE] = True
             st.session_state[LAST_PREVIEW_STATE] = None
+            st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
             _clear_logo_session_overrides()
@@ -264,6 +272,7 @@ def _project_source_panel():
             st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
             st.session_state[SAVED_DRAFT_PENDING_STATE] = False
             st.session_state[LAST_PREVIEW_STATE] = None
+            st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_STATE, None)
             st.session_state.pop(NEW_PROJECT_CSV_PATH_OVERRIDE_STATE, None)
             _clear_logo_session_overrides()
@@ -1080,17 +1089,48 @@ def _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data):
         st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
         st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
         st.session_state[LAST_PREVIEW_STATE] = None
+        st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
         _refresh_form()
         st.rerun()
 
 
-def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
-    styles = {
+def _clean_category_style_mapping(styles):
+    return {
         raw_name: dict(style)
-        for raw_name, style in existing_styles.items()
+        for raw_name, style in styles.items()
         if isinstance(style, dict)
     }
 
+
+def _category_style_context(csv_path, name_column):
+    loaded_project_path = st.session_state.get("loaded_project_path", "")
+    return "|".join(
+        str(value)
+        for value in (loaded_project_path, csv_path, name_column)
+    )
+
+
+def _category_draft_styles(context, existing_styles):
+    category_draft = st.session_state.get(CATEGORY_STYLE_DRAFT_STATE)
+
+    if not isinstance(category_draft, dict) or category_draft.get(
+        "context"
+    ) != context:
+        styles = _clean_category_style_mapping(existing_styles)
+        _store_category_draft_styles(context, styles)
+        return styles
+
+    return _clean_category_style_mapping(category_draft.get("styles", {}))
+
+
+def _store_category_draft_styles(context, styles):
+    st.session_state[CATEGORY_STYLE_DRAFT_STATE] = {
+        "context": context,
+        "styles": _clean_category_style_mapping(styles),
+    }
+
+
+def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
     try:
         all_categories = category_values_from_dataframe(
             dataset,
@@ -1099,14 +1139,23 @@ def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
         )
     except (OSError, ValueError) as exc:
         st.error(str(exc))
-        return styles
+        return _clean_category_style_mapping(existing_styles)
+
+    context = _category_style_context(csv_path, name_column)
+    styles = _category_draft_styles(context, existing_styles)
 
     if not all_categories:
         return styles
 
-    visible_categories = all_categories[:CATEGORY_DISPLAY_LIMIT]
+    category_indices = {
+        raw_name: index for index, raw_name in enumerate(all_categories)
+    }
 
     with st.expander("Categories"):
+        st.caption(
+            "Search or filter the dataset, edit one small page, then apply "
+            "the page before navigating away."
+        )
         upload_column, logo_folder_column, logo_action_column = st.columns([2, 2, 1])
         logo_folder_widget_key = _widget_key("category_logo_folder")
 
@@ -1161,18 +1210,12 @@ def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
         if matched_logos:
             st.caption(f"{len(matched_logos)} logo matches")
 
-        if len(all_categories) > len(visible_categories):
-            st.caption(
-                f"Showing {len(visible_categories)} of {len(all_categories)} categories"
-            )
-
         if apply_matched_logos:
             st.session_state[APPLIED_LOGO_MATCHES_STATE] = {
                 "context": match_context,
                 "matches": matched_logos,
             }
             styles = apply_category_logo_matches(styles, matched_logos)
-            _set_matched_logo_widget_values(visible_categories, matched_logos)
 
         st.markdown("**Second logo source**")
         secondary_upload_column, secondary_folder_column, secondary_action_column = (
@@ -1264,143 +1307,232 @@ def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
                 matched_secondary_logos,
                 logo_field="secondary_logo",
             )
+
+        search_column, filter_column, size_column = st.columns([2, 2, 1])
+        with search_column:
+            category_query = st.text_input(
+                "Search categories",
+                placeholder="Name or custom label",
+                key=_widget_key("category_search"),
+            )
+        with filter_column:
+            category_filter = st.selectbox(
+                "Category filter",
+                CATEGORY_FILTERS,
+                key=_widget_key("category_filter"),
+            )
+        with size_column:
+            page_size = st.selectbox(
+                "Rows per page",
+                CATEGORY_PAGE_SIZES,
+                key=_widget_key("category_page_size"),
+            )
+
+        filtered_categories = filter_categories(
+            all_categories,
+            styles,
+            query=category_query,
+            category_filter=category_filter,
+        )
+        provisional_page = paginate_categories(
+            filtered_categories,
+            page=1,
+            page_size=page_size,
+        )
+        page_options = tuple(range(1, provisional_page.page_count + 1))
+        page_widget_key = _widget_key("category_page")
+        selected_page = st.session_state.get(page_widget_key, 1)
+
+        if selected_page not in page_options:
+            st.session_state[page_widget_key] = page_options[-1]
+
+        page_number = st.selectbox(
+            "Page",
+            page_options,
+            key=page_widget_key,
+        )
+        category_page = paginate_categories(
+            filtered_categories,
+            page=page_number,
+            page_size=page_size,
+        )
+        visible_categories = category_page.items
+
+        if apply_matched_logos:
+            _set_matched_logo_widget_values(
+                visible_categories,
+                matched_logos,
+                category_indices=category_indices,
+            )
+
+        if apply_matched_secondary_logos:
             _set_matched_logo_widget_values(
                 visible_categories,
                 matched_secondary_logos,
                 logo_field="secondary_logo",
+                category_indices=category_indices,
             )
 
-        for index, raw_name in enumerate(visible_categories):
-            key = _safe_widget_key(raw_name, index)
-            logo_widget_key = _widget_key(f"category_logo_{key}")
-            secondary_logo_widget_key = _widget_key(
-                f"category_secondary_logo_{key}"
+        if category_page.total:
+            st.caption(
+                f"Showing {category_page.start}-{category_page.end} of "
+                f"{category_page.total} matching categories "
+                f"({len(all_categories)} total)."
             )
-            current_style = styles.get(raw_name, {})
-            current_label = current_style.get("label", raw_name)
-            current_color = current_style.get("color")
-            current_logo = (
-                current_style.get("logo")
-                or st.session_state.get(logo_widget_key, "")
-            )
-            current_secondary_logo = (
-                current_style.get("secondary_logo")
-                or st.session_state.get(secondary_logo_widget_key, "")
-            )
-            default_color = (
-                current_color
-                or DEFAULT_CATEGORY_COLORS[index % len(DEFAULT_CATEGORY_COLORS)]
-            )
+        else:
+            st.info("No categories match the current search and filter.")
 
-            columns = st.columns([3, 1, 1, 2, 1])
-
-            with columns[0]:
-                label = st.text_input(
-                    raw_name,
-                    value=current_label,
-                    key=_widget_key(f"category_label_{key}"),
-                )
-
-            with columns[1]:
-                use_color = st.checkbox(
-                    "Custom color",
-                    value=bool(current_color),
-                    key=_widget_key(f"category_use_color_{key}"),
-                )
-
-            with columns[2]:
-                color = st.color_picker(
-                    raw_name,
-                    value=default_color,
-                    key=_widget_key(f"category_color_{key}"),
-                    label_visibility="collapsed",
-                    disabled=not use_color,
-                )
-
-            with columns[3]:
-                logo_options = _logo_options(current_logo, logo_files)
-                logo_input_kwargs = {
-                    "format_func": lambda path: "No logo" if not path else path,
-                    "key": logo_widget_key,
-                }
-
-                if logo_widget_key not in st.session_state:
-                    logo_input_kwargs["index"] = _option_index(
-                        logo_options,
-                        current_logo,
+        submitted_rows = []
+        if visible_categories:
+            with st.form(
+                _widget_key("category_page_editor"),
+                clear_on_submit=False,
+                border=False,
+            ):
+                for raw_name in visible_categories:
+                    index = category_indices[raw_name]
+                    key = _safe_widget_key(raw_name, index)
+                    logo_widget_key = _widget_key(f"category_logo_{key}")
+                    secondary_logo_widget_key = _widget_key(
+                        f"category_secondary_logo_{key}"
                     )
-
-                logo_path = st.selectbox(
-                    "Logo",
-                    logo_options,
-                    **logo_input_kwargs,
-                )
-
-            with columns[4]:
-                uploaded_logo = st.file_uploader(
-                    "Upload",
-                    type=[extension.lstrip(".") for extension in LOGO_FILE_EXTENSIONS],
-                    key=_widget_key(f"category_upload_logo_{key}"),
-                )
-
-                if uploaded_logo is not None:
-                    logo_path = _save_uploaded_logo(raw_name, uploaded_logo)
-
-            secondary_logo_columns = st.columns([3, 1])
-            with secondary_logo_columns[0]:
-                secondary_logo_options = _logo_options(
-                    current_secondary_logo,
-                    secondary_logo_files,
-                )
-                secondary_logo_input_kwargs = {
-                    "format_func": (
-                        lambda path: "No second logo" if not path else path
-                    ),
-                    "key": secondary_logo_widget_key,
-                }
-                if secondary_logo_widget_key not in st.session_state:
-                    secondary_logo_input_kwargs["index"] = _option_index(
-                        secondary_logo_options,
-                        current_secondary_logo,
+                    current_style = styles.get(raw_name, {})
+                    current_label = current_style.get("label", raw_name)
+                    current_color = current_style.get("color")
+                    current_logo = (
+                        current_style.get("logo")
+                        or st.session_state.get(logo_widget_key, "")
                     )
-                secondary_logo_path = st.selectbox(
-                    "Second logo",
-                    secondary_logo_options,
-                    **secondary_logo_input_kwargs,
+                    current_secondary_logo = (
+                        current_style.get("secondary_logo")
+                        or st.session_state.get(secondary_logo_widget_key, "")
+                    )
+                    default_color = current_color or DEFAULT_CATEGORY_COLORS[
+                        index % len(DEFAULT_CATEGORY_COLORS)
+                    ]
+
+                    columns = st.columns([3, 1, 1, 2, 1])
+                    with columns[0]:
+                        label = st.text_input(
+                            raw_name,
+                            value=current_label,
+                            key=_widget_key(f"category_label_{key}"),
+                        )
+                    with columns[1]:
+                        use_color = st.checkbox(
+                            "Custom color",
+                            value=bool(current_color),
+                            key=_widget_key(f"category_use_color_{key}"),
+                        )
+                    with columns[2]:
+                        color = st.color_picker(
+                            raw_name,
+                            value=default_color,
+                            key=_widget_key(f"category_color_{key}"),
+                            label_visibility="collapsed",
+                            disabled=not use_color,
+                        )
+                    with columns[3]:
+                        logo_options = _logo_options(current_logo, logo_files)
+                        logo_input_kwargs = {
+                            "format_func": (
+                                lambda path: "No logo" if not path else path
+                            ),
+                            "key": logo_widget_key,
+                        }
+                        if logo_widget_key not in st.session_state:
+                            logo_input_kwargs["index"] = _option_index(
+                                logo_options,
+                                current_logo,
+                            )
+                        logo_path = st.selectbox(
+                            "Logo",
+                            logo_options,
+                            **logo_input_kwargs,
+                        )
+                    with columns[4]:
+                        uploaded_logo = st.file_uploader(
+                            "Upload",
+                            type=[
+                                extension.lstrip(".")
+                                for extension in LOGO_FILE_EXTENSIONS
+                            ],
+                            key=_widget_key(f"category_upload_logo_{key}"),
+                        )
+                        if uploaded_logo is not None:
+                            logo_path = _save_uploaded_logo(raw_name, uploaded_logo)
+
+                    secondary_logo_columns = st.columns([3, 1])
+                    with secondary_logo_columns[0]:
+                        secondary_logo_options = _logo_options(
+                            current_secondary_logo,
+                            secondary_logo_files,
+                        )
+                        secondary_logo_input_kwargs = {
+                            "format_func": (
+                                lambda path: (
+                                    "No second logo" if not path else path
+                                )
+                            ),
+                            "key": secondary_logo_widget_key,
+                        }
+                        if secondary_logo_widget_key not in st.session_state:
+                            secondary_logo_input_kwargs["index"] = _option_index(
+                                secondary_logo_options,
+                                current_secondary_logo,
+                            )
+                        secondary_logo_path = st.selectbox(
+                            "Second logo",
+                            secondary_logo_options,
+                            **secondary_logo_input_kwargs,
+                        )
+                    with secondary_logo_columns[1]:
+                        uploaded_secondary_logo = st.file_uploader(
+                            "Second upload",
+                            type=[
+                                extension.lstrip(".")
+                                for extension in LOGO_FILE_EXTENSIONS
+                            ],
+                            key=_widget_key(
+                                f"category_upload_secondary_logo_{key}"
+                            ),
+                        )
+                        if uploaded_secondary_logo is not None:
+                            secondary_logo_path = _save_uploaded_logo(
+                                raw_name,
+                                uploaded_secondary_logo,
+                                slot="secondary",
+                            )
+
+                    submitted_rows.append({
+                        "raw_name": raw_name,
+                        "label": label,
+                        "use_color": use_color,
+                        "color": color,
+                        "logo": logo_path,
+                        "secondary_logo": secondary_logo_path,
+                    })
+
+                apply_category_edits = st.form_submit_button(
+                    "Apply category changes",
+                    icon=":material/check:",
+                    type="primary",
+                    width="stretch",
                 )
 
-            with secondary_logo_columns[1]:
-                uploaded_secondary_logo = st.file_uploader(
-                    "Second upload",
-                    type=[extension.lstrip(".") for extension in LOGO_FILE_EXTENSIONS],
-                    key=_widget_key(f"category_upload_secondary_logo_{key}"),
-                )
-                if uploaded_secondary_logo is not None:
-                    secondary_logo_path = _save_uploaded_logo(
+            if apply_category_edits:
+                for row in submitted_rows:
+                    raw_name = row.pop("raw_name")
+                    styles = update_category_style(
+                        styles,
                         raw_name,
-                        uploaded_secondary_logo,
-                        slot="secondary",
+                        **row,
                     )
+                st.success(
+                    f"Applied changes for {len(submitted_rows)} categories."
+                )
 
-            next_style = {}
-            label = label.strip()
-
-            if label and label != raw_name:
-                next_style["label"] = label
-
-            if use_color:
-                next_style["color"] = color
-
-            if logo_path:
-                next_style["logo"] = logo_path
-
-            if secondary_logo_path:
-                next_style["secondary_logo"] = secondary_logo_path
-
-            if next_style:
-                styles[raw_name] = next_style
-            else:
-                styles.pop(raw_name, None)
+        _store_category_draft_styles(context, styles)
 
     return styles
 
@@ -1453,19 +1585,25 @@ def _set_matched_logo_widget_values(
     matched_logos,
     *,
     logo_field="logo",
+    category_indices=None,
 ):
     widget_prefix = (
         "category_secondary_logo_"
         if logo_field == "secondary_logo"
         else "category_logo_"
     )
-    for index, raw_name in enumerate(visible_categories):
+    category_indices = category_indices or {}
+
+    for fallback_index, raw_name in enumerate(visible_categories):
         logo_path = matched_logos.get(raw_name)
 
         if not logo_path:
             continue
 
-        category_key = _safe_widget_key(raw_name, index)
+        category_key = _safe_widget_key(
+            raw_name,
+            category_indices.get(raw_name, fallback_index),
+        )
         widget_key = _widget_key(f"{widget_prefix}{category_key}")
         st.session_state[widget_key] = logo_path
 

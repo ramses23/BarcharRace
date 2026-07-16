@@ -8,6 +8,61 @@ from streamlit.testing.v1 import AppTest
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_category_editor_filters_and_applies_page_changes(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+
+        self.assertFalse(app.exception)
+        self.assertIn(
+            "Search categories",
+            {control.label for control in app.text_input},
+        )
+        self.assertIn(
+            "Category filter",
+            {control.label for control in app.selectbox},
+        )
+        rows_per_page = next(
+            control
+            for control in app.selectbox
+            if control.label == "Rows per page"
+        )
+        self.assertEqual(rows_per_page.value, 10)
+
+        coal_label = next(
+            control
+            for control in app.text_input
+            if control.label == "Coal"
+        )
+        coal_label.set_value("Custom Coal")
+        apply_changes = next(
+            button
+            for button in app.button
+            if button.label == "Apply category changes"
+        )
+        apply_changes.click()
+        app.run()
+
+        self.assertFalse(app.exception)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(
+            project_data["categories"]["Coal"]["label"],
+            "Custom Coal",
+        )
+
+        search = next(
+            control
+            for control in app.text_input
+            if control.label == "Search categories"
+        )
+        search.set_value("solar")
+        app.run()
+
+        self.assertFalse(app.exception)
+        category_labels = {control.label for control in app.text_input}
+        self.assertIn("Solar", category_labels)
+        self.assertNotIn("Coal", category_labels)
+
     def test_explicit_save_tracks_unsaved_changes(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"
