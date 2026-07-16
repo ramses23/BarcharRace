@@ -1,6 +1,21 @@
-"""Dataset automation contracts for BarChartStudio."""
+"""Automation contracts for BarChartStudio."""
 
-from automation.models import DatasetBuildResult
-from automation.workspace import ProductionWorkspace
+from automation.brief_loader import ProductionBriefError, load_production_brief
+from automation.models import (
+    DatasetBrief,
+    DatasetBuildResult,
+    FrozenParameters,
+    ProductionBrief,
+)
+from automation.workspace import ProductionWorkspace, validate_job_id
 
-__all__ = ["DatasetBuildResult", "ProductionWorkspace"]
+__all__ = [
+    "DatasetBrief",
+    "DatasetBuildResult",
+    "FrozenParameters",
+    "ProductionBrief",
+    "ProductionBriefError",
+    "ProductionWorkspace",
+    "load_production_brief",
+    "validate_job_id",
+]

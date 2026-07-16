@@ -279,6 +279,15 @@ The project is a usable MVP:
   builders or renders. Production briefs, a builder registry, orchestration,
   automatic logos, automatic project JSON, and a production CLI do not exist
   yet.
+- `ProductionBrief` and `DatasetBrief` define immutable production intent under
+  an independent version-1 brief schema. The strict JSON loader rejects unknown
+  and duplicate fields, resolves a portable local source path beneath an
+  explicit `root_dir`, and stores generic scalar parameters in deterministic,
+  deeply immutable form. Loading a brief reads no source content and executes
+  no workspace, builder, project, or render work.
+- Brief, workspace, dataset builder, project JSON, and render remain separate
+  contracts. A builder registry, production orchestrator/CLI, automatic logo
+  resolution, project assembler, and automatic render do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.

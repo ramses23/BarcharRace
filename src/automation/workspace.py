@@ -24,6 +24,23 @@ _WINDOWS_RESERVED_NAMES = frozenset(
 )
 
 
+def validate_job_id(job_id: str) -> str:
+    """Validate and return an unchanged portable production job identifier."""
+
+    if not isinstance(job_id, str) or not job_id:
+        raise ValueError("job_id must be a non-empty string.")
+    if len(job_id) > 64:
+        raise ValueError("job_id must not exceed 64 characters.")
+    if not _JOB_ID_PATTERN.fullmatch(job_id):
+        raise ValueError(
+            "job_id must start with a lowercase letter or digit and contain "
+            "only lowercase letters, digits, hyphens, or underscores."
+        )
+    if job_id.casefold() in _WINDOWS_RESERVED_NAMES:
+        raise ValueError(f"job_id uses a Windows-reserved name: {job_id}")
+    return job_id
+
+
 @dataclass(frozen=True)
 class ProductionWorkspace:
     """Canonical paths for one isolated production job.
@@ -47,7 +64,7 @@ class ProductionWorkspace:
     )
 
     def __post_init__(self) -> None:
-        self._validate_job_id(self.job_id)
+        validate_job_id(self.job_id)
         resolved_root = Path(self.root_path).resolve(strict=False)
         if resolved_root.name != self.job_id:
             raise ValueError("root_path must end with the exact job_id.")
@@ -60,7 +77,7 @@ class ProductionWorkspace:
         job_id: str,
         root_dir: str | Path | None = None,
     ) -> ProductionWorkspace:
-        cls._validate_job_id(job_id)
+        validate_job_id(job_id)
         jobs_root = Path(root_dir or DEFAULT_PRODUCTION_JOBS_ROOT).resolve(
             strict=False
         )
@@ -199,20 +216,6 @@ class ProductionWorkspace:
             "stage": "workspace",
             "message": "Production workspace created.",
         }
-
-    @staticmethod
-    def _validate_job_id(job_id: str) -> None:
-        if not isinstance(job_id, str) or not job_id:
-            raise ValueError("job_id must be a non-empty string.")
-        if len(job_id) > 64:
-            raise ValueError("job_id must not exceed 64 characters.")
-        if not _JOB_ID_PATTERN.fullmatch(job_id):
-            raise ValueError(
-                "job_id must start with a lowercase letter or digit and contain "
-                "only lowercase letters, digits, hyphens, or underscores."
-            )
-        if job_id.casefold() in _WINDOWS_RESERVED_NAMES:
-            raise ValueError(f"job_id uses a Windows-reserved name: {job_id}")
 
     @staticmethod
     def _require_direct_child(path: Path, parent: Path, job_id: str) -> None:

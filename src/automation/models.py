@@ -1,10 +1,70 @@
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
+import math
 from pathlib import Path
 from typing import TypeAlias
 
 
 EffectiveParameterValue: TypeAlias = str | int | bool | None | tuple[str, ...]
+JsonScalar: TypeAlias = str | int | float | bool | None
+
+
+@dataclass(frozen=True)
+class FrozenParameters(Mapping[str, JsonScalar]):
+    """Deterministically ordered, deeply immutable scalar parameters."""
+
+    _items: tuple[tuple[str, JsonScalar], ...]
+
+    def __post_init__(self) -> None:
+        normalized = tuple(self._items)
+        keys = [key for key, _value in normalized]
+        if any(not isinstance(key, str) for key in keys):
+            raise TypeError("Parameter keys must be strings.")
+        if len(keys) != len(set(keys)):
+            raise ValueError("Parameter keys must be unique.")
+        if keys != sorted(keys):
+            raise ValueError("Parameter keys must be sorted.")
+        for _key, value in normalized:
+            if value is not None and not isinstance(value, (str, int, float, bool)):
+                raise TypeError("Parameter values must be JSON scalars.")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("Float parameter values must be finite.")
+        object.__setattr__(self, "_items", normalized)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, JsonScalar]) -> "FrozenParameters":
+        return cls(tuple(sorted(values.items(), key=lambda item: item[0])))
+
+    def __getitem__(self, key: str) -> JsonScalar:
+        for item_key, value in self._items:
+            if item_key == key:
+                return value
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        return (key for key, _value in self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def to_dict(self) -> dict[str, JsonScalar]:
+        return dict(self._items)
+
+
+@dataclass(frozen=True)
+class DatasetBrief:
+    builder_id: str
+    source_csv: Path
+    expected_source_sha256: str | None
+    parameters: FrozenParameters
+
+
+@dataclass(frozen=True)
+class ProductionBrief:
+    schema_version: int
+    job_id: str
+    dataset: DatasetBrief
 
 
 @dataclass(frozen=True)
