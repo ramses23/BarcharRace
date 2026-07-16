@@ -227,8 +227,8 @@ The project is a usable MVP:
   format.
 - Unit tests and a real FFmpeg integration test.
 
-The latest technical direction is to make the engine robust for larger real
-datasets, then continue improving visual polish.
+The latest technical direction is to make local development and verification
+reproducible now that the editor/render workflow has stable modular boundaries.
 
 ## Architecture Contract
 
@@ -273,6 +273,10 @@ Important boundaries:
 - `Scene` is the renderer input.
 - `BarRenderer` receives a `Scene`; it should not fetch data or build timeline
   state.
+- `src/renderer/artists.py` owns the reusable Matplotlib image artist
+  primitives. `src/renderer/text_compositor.py` owns rasterized text, font
+  lookup, and text sprite caches. `BarRenderer` coordinates those pieces and
+  the bar appearance/layout paths.
 - `VideoExporter` exports PNG sequences or opens a raw RGBA FFmpeg stream.
 - `ChartConfig.frame_output_mode` selects `png_sequence` or `ffmpeg_stream`.
 - Project Studio's form may create a `ProjectDraft`, but only
@@ -282,11 +286,16 @@ Important boundaries:
   modules must never depend on Streamlit component result objects.
 - UI dataset caching belongs in `src/ui/dataset_cache.py`. Data importers and
   the render pipeline remain independent of Streamlit.
+- Render preflight/progress/cancel/status/profile presentation belongs in
+  `src/ui/render_workflow.py`, not in the project form or pipeline.
 - `src/studio/render_worker.py` may construct and run `RenderJob`, but it must
   not duplicate pipeline stages. Its responsibilities are process isolation,
   status transport, and atomic promotion of successful video output.
 - A UI cancel action must terminate the whole render process tree so an FFmpeg
   child cannot remain orphaned.
+- Pixel-exact Simple and Advanced frame signatures are renderer contracts. An
+  intentional visual change must be inspected before updating their expected
+  hashes.
 
 ## Model Meanings
 
@@ -502,9 +511,9 @@ in verified, published checkpoints:
 5. **Modern components — completed.** Font, layout, and bar controls use CCv2
    with isolated themed styles and controlled named state. Legacy iframe APIs
    are removed, and dependent Advanced controls are generated contextually.
-6. **Modular renderer and UI.** Split oversized modules at stable responsibility
-   boundaries and add deterministic/visual regression coverage for renderer
-   combinations.
+6. **Modular renderer and UI — completed.** Reusable image artists, the cached
+   text compositor, and render-workflow presentation have dedicated modules.
+   Pixel-exact Simple and Advanced frame signatures guard renderer output.
 7. **Reproducible development.** Provide a reliable launcher and doctor command,
    pin and document dependencies, add CI checks, and resolve the repository's
    unrelated `main`/`master` history without risking active work.

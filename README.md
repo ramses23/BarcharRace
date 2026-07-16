@@ -756,6 +756,7 @@ Current test coverage includes:
 - selected-year and transition preview rendering in Project Studio
 - category labels and colors from project files
 - explicit category logo paths from project files
+- deterministic simple/advanced renderer image signatures
 - real render integration test with FFmpeg
 
 ## Architecture
@@ -800,6 +801,11 @@ src/
   models/
   pipeline/
   renderer/
+    artists.py
+    bar_renderer.py
+    text_compositor.py
+  studio/
+  ui/
   utils/
   validators/
   main.py
@@ -807,6 +813,17 @@ src/
 projects/
 tests/
 ```
+
+The renderer is split at stable visual boundaries. `artists.py` owns reusable
+Matplotlib image artists, `text_compositor.py` owns rasterized text and its
+caches, and `bar_renderer.py` remains the scene/bar coordinator. In the UI,
+`render_workflow.py` owns preflight, background-process progress, cancellation,
+status, and render-profile presentation so `project_studio.py` can focus on the
+editor form and draft state.
+
+Two pixel-exact regression fixtures cover the Simple and Advanced appearance
+paths. If an intentional renderer change alters either signature, inspect the
+new frame first and update the reference hash in the same reviewed change.
 
 ## Important Concepts
 
@@ -1186,5 +1203,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Split the oversized UI and renderer modules at stable responsibility
-  boundaries and expand deterministic visual regression coverage.
+- Make local development reproducible with a launcher, environment doctor,
+  pinned dependencies, and continuous integration checks.
