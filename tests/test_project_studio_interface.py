@@ -8,6 +8,23 @@ from streamlit.testing.v1 import AppTest
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def _select_editor_section(self, app, section):
+        section_control = next(
+            control
+            for control in app.get("button_group")
+            if control.label == "Editor section"
+        )
+        section_control.set_value(section)
+        app.run()
+        self.assertEqual(
+            next(
+                control.value
+                for control in app.get("button_group")
+                if control.label == "Editor section"
+            ),
+            section,
+        )
+
     def test_project_switch_requires_confirmation_for_unsaved_draft(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"
@@ -59,6 +76,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Bars")
 
         self.assertFalse(app.exception)
         self.assertIn(
@@ -116,6 +134,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / f"ui_save_test_{uuid4().hex}.json"
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
+            self._select_editor_section(app, "Export")
             project_file = next(
                 control
                 for control in app.text_input
@@ -138,6 +157,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
                 any("Saved" in caption.value for caption in app.caption)
             )
 
+            self._select_editor_section(app, "Data")
             title = next(
                 control
                 for control in app.text_input
@@ -165,6 +185,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
 
         try:
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
+            self._select_editor_section(app, "Canvas")
             title_size = next(
                 control
                 for control in app.number_input
@@ -178,6 +199,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             title_size.set_value(73)
             title_color.set_value("#123456")
             app.run()
+            self._select_editor_section(app, "Bars")
 
             logo_folder_upload = next(
                 uploader
@@ -194,22 +216,9 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             app.run()
 
             self.assertFalse(app.exception)
-            self.assertEqual(
-                next(
-                    control.value
-                    for control in app.number_input
-                    if control.label == "Title size"
-                ),
-                73,
-            )
-            self.assertEqual(
-                next(
-                    control.value
-                    for control in app.color_picker
-                    if control.label == "Title color"
-                ),
-                "#123456",
-            )
+            project_data = json.loads(app.json[0].value)
+            self.assertEqual(project_data["chart"]["title_font_size"], 73)
+            self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
             self.assertEqual(
                 next(
                     control.value
@@ -229,15 +238,8 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             app.run()
 
             self.assertFalse(app.exception)
-            self.assertEqual(
-                next(
-                    control.value
-                    for control in app.number_input
-                    if control.label == "Title size"
-                ),
-                73,
-            )
             project_data = json.loads(app.json[0].value)
+            self.assertEqual(project_data["chart"]["title_font_size"], 73)
             self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
             self.assertEqual(
                 project_data["categories"]["Coal"]["logo"],
@@ -309,10 +311,16 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
 
         self.assertFalse(app.exception)
+        section_control = next(
+            control
+            for control in app.get("button_group")
+            if control.label == "Editor section"
+        )
         self.assertEqual(
-            [tab.label for tab in app.tabs],
+            section_control.options,
             ["Data", "Canvas", "Bars", "Export"],
         )
+        self.assertEqual(section_control.value, "Data")
         selectbox_labels = {selectbox.label for selectbox in app.selectbox}
         self.assertNotIn("Theme", selectbox_labels)
         self.assertNotIn("Typography", selectbox_labels)
@@ -320,11 +328,23 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             "Time column",
             "Category column",
             "Value column",
+        }.issubset(selectbox_labels))
+
+        self._select_editor_section(app, "Canvas")
+        self.assertIn(
             "Canvas layout",
+            {selectbox.label for selectbox in app.selectbox},
+        )
+        self._select_editor_section(app, "Bars")
+        self.assertIn(
             "Value format",
+            {selectbox.label for selectbox in app.selectbox},
+        )
+        self._select_editor_section(app, "Export")
+        self.assertTrue({
             "Motion mode",
             "Frame output mode",
-        }.issubset(selectbox_labels))
+        }.issubset({selectbox.label for selectbox in app.selectbox}))
         initial_metric = next(
             metric
             for metric in app.metric
@@ -361,6 +381,49 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(restored_duration, initial_duration)
 
+    def test_value_format_rerun_keeps_only_bars_section_mounted(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Bars")
+
+        value_format = next(
+            control
+            for control in app.selectbox
+            if control.label == "Value format"
+        )
+        alternate_format = next(
+            option
+            for option in value_format.options
+            if option != value_format.value
+        )
+        value_format.set_value(alternate_format)
+        app.run()
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            next(
+                control.value
+                for control in app.get("button_group")
+                if control.label == "Editor section"
+            ),
+            "Bars",
+        )
+        editor_sections = {
+            ":material/database: Data and content",
+            ":material/dashboard_customize: Canvas and text",
+            ":material/bar_chart: Bars and categories",
+            ":material/movie_filter: Animation and export",
+        }
+        visible_sections = {
+            subheader.value
+            for subheader in app.subheader
+            if subheader.value in editor_sections
+        }
+        self.assertEqual(
+            visible_sections,
+            {":material/bar_chart: Bars and categories"},
+        )
+
     def test_exposes_font_family_selector_for_each_text_element(self):
         app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
@@ -386,6 +449,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             {button.label for button in app.button},
         )
 
+        self._select_editor_section(app, "Canvas")
         number_inputs = {
             number_input.label: number_input
             for number_input in app.number_input
@@ -424,13 +488,6 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertIn("Image fit", {control.label for control in app.selectbox})
 
-        frame_output_mode = next(
-            selectbox
-            for selectbox in app.selectbox
-            if selectbox.label == "Frame output mode"
-        )
-        self.assertEqual(frame_output_mode.value, "ffmpeg_stream")
-
         title_color = next(
             color_picker
             for color_picker in app.color_picker
@@ -455,6 +512,13 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             "#FFFFFF",
         )
 
+        self._select_editor_section(app, "Export")
+        frame_output_mode = next(
+            selectbox
+            for selectbox in app.selectbox
+            if selectbox.label == "Frame output mode"
+        )
+        self.assertEqual(frame_output_mode.value, "ffmpeg_stream")
         motion_mode = next(
             selectbox
             for selectbox in app.selectbox
@@ -466,6 +530,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
 
         self.assertEqual(project_data["animation"]["motion_mode"], "continuous")
 
+        self._select_editor_section(app, "Canvas")
         background_type = next(
             control
             for control in app.get("button_group")

@@ -102,6 +102,7 @@ CURRENT_DRAFT_STATE = "current_project_draft"
 PENDING_PROJECT_ACTION_STATE = "pending_project_action"
 PROJECT_BUNDLE_EXPORT_STATE = "project_bundle_export"
 LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
+PREVIEW_SETTINGS_STATE = "project_preview_settings"
 
 
 st.set_page_config(
@@ -129,7 +130,7 @@ def main():
 
         loaded_project_data = st.session_state.get("loaded_project_data")
         loaded_project_path = st.session_state.get("loaded_project_path")
-        values = project_form_values(loaded_project_data)
+        values = _current_project_form_values(loaded_project_data)
 
         csv_path = _csv_source_panel(values, loaded_project_data)
 
@@ -229,6 +230,7 @@ def _initialize_studio_state():
     st.session_state.setdefault(LAST_PREFLIGHT_STATE, None)
     st.session_state.setdefault(PROJECT_BUNDLE_EXPORT_STATE, None)
     st.session_state.setdefault(LAST_BUNDLE_IMPORT_STATE, None)
+    st.session_state.setdefault(PREVIEW_SETTINGS_STATE, None)
 
 
 def _initialize_saved_draft(draft):
@@ -558,9 +560,11 @@ def _pending_project_action_dialog():
             current_draft.get("project_data"),
             dict,
         ):
+            restored_draft = copy.deepcopy(current_draft)
             st.session_state["loaded_project_data"] = copy.deepcopy(
-                current_draft["project_data"]
+                restored_draft["project_data"]
             )
+            st.session_state[CURRENT_DRAFT_STATE] = restored_draft
             st.session_state[SAVED_DRAFT_PENDING_STATE] = False
 
         if pending_action.get("action") == "change_csv":
@@ -645,6 +649,7 @@ def _reset_project_editor_state():
     st.session_state[LAST_PREFLIGHT_STATE] = None
     st.session_state[LAST_RENDER_STATUS_STATE] = None
     st.session_state[PROJECT_BUNDLE_EXPORT_STATE] = None
+    st.session_state[PREVIEW_SETTINGS_STATE] = None
     st.session_state.pop(CATEGORY_STYLE_DRAFT_STATE, None)
     _clear_logo_session_overrides()
 
@@ -695,6 +700,17 @@ def _csv_source_panel(values, loaded_project_data):
     return csv_path
 
 
+def _current_project_form_values(loaded_project_data):
+    current_draft = st.session_state.get(CURRENT_DRAFT_STATE)
+    if isinstance(current_draft, dict) and isinstance(
+        current_draft.get("project_data"),
+        dict,
+    ):
+        return project_form_values(current_draft["project_data"])
+
+    return project_form_values(loaded_project_data)
+
+
 def _project_form(
     csv_path,
     inspection,
@@ -705,14 +721,21 @@ def _project_form(
 ):
     theme, theme_settings = _resolved_theme(values)
     typography_preset, typography_settings = _resolved_typography(values)
-    data_tab, canvas_tab, bars_tab, animation_tab = st.tabs((
-        "Data",
-        "Canvas",
-        "Bars",
-        "Export",
-    ), key="studio_editor_tabs")
+    active_section = st.segmented_control(
+        "Editor section",
+        options=("Data", "Canvas", "Bars", "Export"),
+        default="Data",
+        key="studio_editor_section",
+        label_visibility="collapsed",
+        width="stretch",
+    ) or "Data"
 
-    with data_tab:
+    data_settings = _data_settings_from_values(
+        inspection,
+        values,
+        dataset,
+    )
+    if active_section == "Data":
         data_settings = _data_content_section(
             csv_path,
             inspection,
@@ -721,8 +744,12 @@ def _project_form(
         )
 
     paths = default_project_paths(data_settings["project_name"])
-
-    with canvas_tab:
+    canvas_settings = _canvas_settings_from_values(
+        values,
+        theme_settings=theme_settings,
+        typography_settings=typography_settings,
+    )
+    if active_section == "Canvas":
         canvas_settings = _canvas_text_section(
             values=values,
             title=data_settings["title"],
@@ -731,7 +758,8 @@ def _project_form(
             typography_settings=typography_settings,
         )
 
-    with bars_tab:
+    bars_settings = _bars_settings_from_values(values)
+    if active_section == "Bars":
         bars_settings = _bars_categories_section(
             csv_path=csv_path,
             name_column=data_settings["name_column"],
@@ -741,7 +769,13 @@ def _project_form(
             dataset=dataset,
         )
 
-    with animation_tab:
+    render_settings = _render_settings_from_values(
+        values,
+        paths=paths,
+        loaded_project_path=loaded_project_path,
+        available_years=data_settings["available_years"],
+    )
+    if active_section == "Export":
         render_settings = _animation_output_section(
             csv_path=csv_path,
             year_column=data_settings["year_column"],
@@ -834,6 +868,289 @@ def _resolved_typography(values):
         return typography, get_typography_preset(typography)
     except ValueError:
         return "editorial", get_typography_preset("editorial")
+
+
+def _data_settings_from_values(inspection, values, dataset):
+    title = values.get("title") or "Untitled project"
+    year_column = _resolved_dataset_column(
+        inspection,
+        values.get("year_column"),
+        inspection.year_candidates,
+        "year",
+    )
+    name_column = _resolved_dataset_column(
+        inspection,
+        values.get("name_column"),
+        inspection.name_candidates,
+        "country",
+    )
+    value_column = _resolved_dataset_column(
+        inspection,
+        values.get("value_column"),
+        inspection.value_candidates,
+        "value",
+    )
+    try:
+        available_years = year_values_from_dataframe(dataset, year_column)
+    except (OSError, ValueError):
+        available_years = ()
+
+    return {
+        "title": title,
+        "project_name": (
+            values.get("name") or project_name_from_title(title)
+        ),
+        "year_column": year_column,
+        "name_column": name_column,
+        "value_column": value_column,
+        "source_label": values.get("source_label") or "",
+        "available_years": available_years,
+    }
+
+
+def _resolved_dataset_column(inspection, selected, candidates, fallback):
+    if selected in inspection.columns:
+        return selected
+
+    return preferred_column(candidates, inspection.columns, fallback)
+
+
+def _canvas_settings_from_values(
+    values,
+    *,
+    theme_settings,
+    typography_settings,
+):
+    layouts = list_layout_presets()
+    layout_preset = values.get("layout_preset")
+    if layout_preset not in layouts:
+        layout_preset = layouts[0]
+    layout = get_layout_preset(layout_preset)
+    background_mode = values.get("background_mode", "color")
+    if background_mode not in ("color", "image"):
+        background_mode = "color"
+    background_fit = values.get("background_image_fit", "cover")
+    if background_fit not in ("cover", "contain", "stretch"):
+        background_fit = "cover"
+
+    return {
+        "layout_preset": layout_preset,
+        "max_visible": _positive_int_or_default(
+            values.get("max_visible_bars"),
+            8,
+        ),
+        "background": {
+            "mode": background_mode,
+            "color": _color_or_default(
+                values.get("background_color_override"),
+                theme_settings.background_color,
+            ),
+            "image_path": values.get("background_image_path"),
+            "image_fit": background_fit,
+        },
+        "title_font_family": values.get("title_font_family"),
+        "subtitle_font_family": values.get("subtitle_font_family"),
+        "label_font_family": values.get("label_font_family"),
+        "value_font_family": values.get("value_font_family"),
+        "time_label_font_family": values.get("time_label_font_family"),
+        "source_font_family": values.get("source_font_family"),
+        "rank_label_font_family": values.get("rank_label_font_family"),
+        "title_text_color": _color_or_default(
+            values.get("title_text_color"),
+            theme_settings.text_color,
+        ),
+        "subtitle_text_color": _color_or_default(
+            values.get("subtitle_text_color"),
+            theme_settings.muted_text_color,
+        ),
+        "label_text_color": _color_or_default(
+            values.get("label_text_color"),
+            theme_settings.text_color,
+        ),
+        "value_text_color": _color_or_default(
+            values.get("value_text_color"),
+            theme_settings.muted_text_color,
+        ),
+        "time_label_text_color": _color_or_default(
+            values.get("time_label_text_color"),
+            theme_settings.muted_text_color,
+        ),
+        "source_text_color": _color_or_default(
+            values.get("source_text_color"),
+            theme_settings.muted_text_color,
+        ),
+        "rank_label_text_color": _color_or_default(
+            values.get("rank_label_text_color"),
+            theme_settings.muted_text_color,
+        ),
+        "title_font_size": _positive_int_or_default(
+            values.get("title_font_size"),
+            typography_settings.title_font_size,
+        ),
+        "subtitle_font_size": _positive_int_or_default(
+            values.get("subtitle_font_size"),
+            typography_settings.subtitle_font_size,
+        ),
+        "label_font_size": _positive_int_or_default(
+            values.get("label_font_size"),
+            typography_settings.label_font_size,
+        ),
+        "value_font_size": _positive_int_or_default(
+            values.get("value_font_size"),
+            typography_settings.value_font_size,
+        ),
+        "time_label_font_size": _positive_int_or_default(
+            values.get("time_label_font_size"),
+            typography_settings.time_label_font_size,
+        ),
+        "source_font_size": _positive_int_or_default(
+            values.get("source_font_size"),
+            typography_settings.source_font_size,
+        ),
+        "rank_label_font_size": _positive_int_or_default(
+            values.get("rank_label_font_size"),
+            18,
+        ),
+        "title_x": int(
+            values["title_x"]
+            if values.get("title_x") is not None
+            else layout.left_margin
+        ),
+        "title_y": int(
+            values["title_y"]
+            if values.get("title_y") is not None
+            else layout.title_y
+        ),
+        "subtitle_x": int(
+            values["subtitle_x"]
+            if values.get("subtitle_x") is not None
+            else layout.left_margin
+        ),
+        "subtitle_y": int(
+            values["subtitle_y"]
+            if values.get("subtitle_y") is not None
+            else layout.subtitle_y
+        ),
+        "time_label_x": int(
+            values["time_label_x"]
+            if values.get("time_label_x") is not None
+            else layout.time_label_x
+        ),
+        "time_label_y": int(
+            values["time_label_y"]
+            if values.get("time_label_y") is not None
+            else layout.time_label_y
+        ),
+        "source_x": int(
+            values["source_x"]
+            if values.get("source_x") is not None
+            else layout.source_x
+        ),
+        "source_y": int(
+            values["source_y"]
+            if values.get("source_y") is not None
+            else layout.source_y
+        ),
+    }
+
+
+def _bars_settings_from_values(values):
+    value_formats = list_value_formats()
+    value_format = values.get("value_format")
+    if value_format not in value_formats:
+        value_format = value_formats[0]
+
+    return {
+        "value_format": value_format,
+        "top_n": _positive_int_or_default(values.get("top_n"), 8),
+        "aggregate_other": bool(values.get("aggregate_other", False)),
+        "bar_style": _bar_style_settings(values),
+        "category_styles": _clean_category_style_mapping(
+            values.get("categories", {})
+        ),
+    }
+
+
+def _render_settings_from_values(
+    values,
+    *,
+    paths,
+    loaded_project_path,
+    available_years,
+):
+    frame_output_mode = values.get("frame_output_mode", "ffmpeg_stream")
+    if frame_output_mode not in ("ffmpeg_stream", "png_sequence"):
+        frame_output_mode = "ffmpeg_stream"
+    motion_mode = values.get("motion_mode", "transition_easing")
+    if motion_mode not in ("transition_easing", "continuous"):
+        motion_mode = "transition_easing"
+
+    current_draft = st.session_state.get(CURRENT_DRAFT_STATE)
+    current_project_file = (
+        current_draft.get("project_file")
+        if isinstance(current_draft, dict)
+        else None
+    )
+    return {
+        "fps": _positive_int_or_default(values.get("fps"), 24),
+        "steps": _positive_int_or_default(
+            values.get("steps_per_transition"),
+            24,
+        ),
+        "motion_mode": motion_mode,
+        "frame_output_mode": frame_output_mode,
+        "png_compress_level": _int_in_range_or_default(
+            values.get("png_compress_level"),
+            default=1,
+            minimum=0,
+            maximum=9,
+        ),
+        "output_file": values.get("output_file") or paths["output_file"],
+        "frames_dir": values.get("frames_dir") or paths["frames_dir"],
+        "project_file": (
+            current_project_file
+            or loaded_project_path
+            or values.get("project_file")
+            or paths["project_file"]
+        ),
+        "preview_settings": _preview_settings_from_state(available_years),
+    }
+
+
+def _preview_settings_from_state(years):
+    if not years:
+        return {
+            "year": None,
+            "preview_mode": "year",
+            "transition_progress": 0.0,
+        }
+
+    settings = st.session_state.get(PREVIEW_SETTINGS_STATE)
+    if not isinstance(settings, dict):
+        settings = {}
+    preview_mode = settings.get("preview_mode", "year")
+    year = settings.get("year")
+
+    if preview_mode == "transition" and len(years) > 1:
+        valid_years = years[:-1]
+        if year not in valid_years:
+            year = valid_years[0]
+        return {
+            "year": year,
+            "preview_mode": "transition",
+            "transition_progress": min(
+                1.0,
+                max(0.0, float(settings.get("transition_progress", 0.5))),
+            ),
+        }
+
+    if year not in years:
+        year = years[0]
+    return {
+        "year": year,
+        "preview_mode": "year",
+        "transition_progress": 0.0,
+    }
 
 
 def _data_content_section(csv_path, inspection, values, dataset):
@@ -1451,6 +1768,7 @@ def _animation_output_section(
         year_column,
         years=available_years,
     )
+    st.session_state[PREVIEW_SETTINGS_STATE] = dict(preview_settings)
 
     return {
         "fps": int(fps),

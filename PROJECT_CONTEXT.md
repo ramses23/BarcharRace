@@ -163,11 +163,16 @@ The project is a usable MVP:
   `.streamlit/config.toml`: graphite surfaces, violet accent, native borders,
   Inter/JetBrains Mono typography, 512 MB upload/message limits, and a minimal
   toolbar. Do not replace the theme with injected CSS.
-- The workspace is a responsive editor/stage split. `Data`, `Canvas`, `Bars`,
-  and `Export` tabs live on the left; project actions, persistent preview,
-  render state/video, dataset snapshot, portable bundle, and generated JSON
-  live on the right. A compact out-of-order header shows project identity,
-  dataset dimensions, destination JSON, and dirty/saved state.
+- The workspace is a responsive editor/stage split. A segmented navigator for
+  `Data`, `Canvas`, `Bars`, and `Export` lives on the left and conditionally
+  mounts exactly one section; never replace it with static `st.tabs`, because
+  static tabs mount every panel and can expose all sections after component
+  reruns. Hidden-section values are reconstructed from `CURRENT_DRAFT_STATE`,
+  while preview-only controls use `PREVIEW_SETTINGS_STATE`, so section changes
+  preserve unsaved settings. Project actions, persistent preview, render
+  state/video, dataset snapshot, portable bundle, and generated JSON live on
+  the right. A compact out-of-order header shows project identity, dataset
+  dimensions, destination JSON, and dirty/saved state.
 - Project/CSV loading and bundle import remain in the sidebar project library.
   Unsaved destructive transitions use a non-dismissible `st.dialog`. Advanced
   controls use icon-labelled collapsed expanders to reduce initial density.
@@ -578,7 +583,9 @@ in verified, published checkpoints:
    editor/stage workspace, compact project header, sidebar project library,
    always-visible action card, focused dirty-draft dialog, Material icons, and
    collapsed advanced controls improve hierarchy without changing project or
-   renderer contracts.
+   renderer contracts. Segmented section navigation mounts only the active
+   editor panel and restores inactive values from the current draft, preventing
+   multi-panel exposure during widget/component reruns.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

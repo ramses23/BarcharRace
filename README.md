@@ -266,9 +266,13 @@ compact heading scale, and independently styled sidebar remain consistent in
 native widgets and CCv2 controls that consume Streamlit theme variables.
 
 The main workspace is split into two responsive columns. The left editor uses
-four compact tabs (`Data`, `Canvas`, `Bars`, and `Export`). The right stage keeps
-the save, preview, and final-render actions close to the persistent preview,
-render status, completed video, dataset snapshot, portable bundle action, and
+a segmented navigator for `Data`, `Canvas`, `Bars`, and `Export`, and mounts
+only the selected section. This prevents unrelated panels from appearing after
+a widget rerun and reduces the amount of UI rebuilt per edit. Values from
+hidden sections are reconstructed from the current in-memory draft, so moving
+between sections does not reset unsaved settings. The right stage keeps the
+save, preview, and final-render actions close to the persistent preview, render
+status, completed video, dataset snapshot, portable bundle action, and
 generated JSON. On narrower windows the columns stack naturally. A compact
 header identifies the project, destination JSON, dataset size, and saved/dirty
 state without consuming the editing area.
