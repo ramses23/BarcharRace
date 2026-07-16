@@ -227,8 +227,8 @@ The project is a usable MVP:
   format.
 - Unit tests and a real FFmpeg integration test.
 
-The latest technical direction is to make local development and verification
-reproducible now that the editor/render workflow has stable modular boundaries.
+The latest technical direction is portable project delivery and a cleaner
+finished-video handoff now that development and CI are reproducible.
 
 ## Architecture Contract
 
@@ -296,6 +296,12 @@ Important boundaries:
 - Pixel-exact Simple and Advanced frame signatures are renderer contracts. An
   intentional visual change must be inspected before updating their expected
   hashes.
+- `scripts/run_studio.ps1` is the canonical Windows entry point. It must invoke
+  `.venv\Scripts\python.exe` explicitly and run the environment doctor before
+  starting Streamlit.
+- `requirements.txt` is the fully pinned environment lock used locally and in
+  CI. Dependency changes must update the lock, pass `pip check`, and pass the
+  Windows/Python 3.13 workflow.
 
 ## Model Meanings
 
@@ -429,7 +435,14 @@ Useful CLI discovery commands:
 Project Studio command:
 
 ```powershell
-.venv\Scripts\python.exe -m streamlit run src\ui\project_studio.py
+.\scripts\run_studio.ps1
+```
+
+Environment-only validation:
+
+```powershell
+.\scripts\run_studio.ps1 -CheckOnly
+.venv\Scripts\python.exe src\tools\doctor.py
 ```
 
 Larger-dataset profiling command:
@@ -474,6 +487,11 @@ Primary branch:
 master
 ```
 
+GitHub and `origin/HEAD` both identify `master` as the default branch. No local
+or remote `main` branch exists in the current repository, so there is no
+unrelated history left to merge or rewrite. Do not create a replacement
+`main` branch unless the repository owner deliberately changes this policy.
+
 Current interface-editor work branch:
 
 ```text
@@ -514,9 +532,11 @@ in verified, published checkpoints:
 6. **Modular renderer and UI — completed.** Reusable image artists, the cached
    text compositor, and render-workflow presentation have dedicated modules.
    Pixel-exact Simple and Advanced frame signatures guard renderer output.
-7. **Reproducible development.** Provide a reliable launcher and doctor command,
-   pin and document dependencies, add CI checks, and resolve the repository's
-   unrelated `main`/`master` history without risking active work.
+7. **Reproducible development — completed.** The PowerShell launcher always
+   uses the repository `.venv`; the doctor validates Python, dependencies,
+   write access, sample configuration, FFmpeg, and FFprobe. Dependencies are
+   fully locked, Windows/Python 3.13 CI runs compile/tests/visual signatures,
+   and GitHub plus `origin/HEAD` confirm `master` as the sole default branch.
 8. **Portable delivery.** Export/import complete project bundles, surface the
    finished video cleanly in the UI, finish documentation, and run an integral
    end-to-end verification.

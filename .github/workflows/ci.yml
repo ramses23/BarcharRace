@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - project-studio-editor
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Verify dependency graph
+        run: python -m pip check
+
+      - name: Ensure FFmpeg is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --no-progress -y
+          }
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Run environment doctor
+        run: python src/tools/doctor.py --allow-global
+
+      - name: Compile source and tests
+        run: python -m compileall -q src tests
+
+      - name: Run test suite
+        run: python -m unittest discover -s tests

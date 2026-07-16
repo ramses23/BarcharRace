@@ -49,17 +49,43 @@ charts, animated scatter plots, and timeline animations.
 
 - Python 3.13
 - FFmpeg available in `PATH`
-- Python packages from `requirements.txt`
+- Exact Python packages from the locked `requirements.txt`
 
 The project already expects a local virtual environment at `.venv`.
 
 ## Setup
 
-From the project root:
+The recommended first run creates `.venv` when necessary, installs the locked
+packages, validates the environment, and then opens Project Studio:
+
+```powershell
+.\scripts\run_studio.ps1 -Setup
+```
+
+For an existing environment, install the lock directly with its interpreter:
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+Do not rely only on the `(.venv)` prompt text. If PowerShell resolves `python`
+to a global installation, packages such as Streamlit may appear missing. The
+launcher always calls the repository interpreter explicitly.
+
+Validate the environment without starting the web server:
+
+```powershell
+.\scripts\run_studio.ps1 -CheckOnly
+```
+
+The underlying diagnostic command is also available directly:
+
+```powershell
+.venv\Scripts\python.exe src\tools\doctor.py
+```
+
+It checks Python and `.venv`, locked core package versions, repository write
+access, the sample project, FFmpeg, and FFprobe.
 
 If the SQLite sample database needs to be recreated:
 
@@ -97,6 +123,12 @@ Run an external project file:
 ```
 
 Run the local project editor:
+
+```powershell
+.\scripts\run_studio.ps1
+```
+
+The explicit equivalent remains:
 
 ```powershell
 .venv\Scripts\python.exe -m streamlit run src\ui\project_studio.py
@@ -759,6 +791,10 @@ Current test coverage includes:
 - deterministic simple/advanced renderer image signatures
 - real render integration test with FFmpeg
 
+GitHub Actions runs the locked dependency install, `pip check`, FFmpeg/FFprobe
+checks, the environment doctor, compilation, the full unit/integration suite,
+and the pixel-exact renderer references on `windows-latest` with Python 3.13.
+
 ## Architecture
 
 Current render pipeline:
@@ -1203,5 +1239,5 @@ logos/Canada.png
 
 ## Next Engineering Steps
 
-- Make local development reproducible with a launcher, environment doctor,
-  pinned dependencies, and continuous integration checks.
+- Add portable project bundle import/export and surface finished videos with
+  clear playback and download actions inside Project Studio.
