@@ -1,0 +1,7 @@
+date,home_team,away_team,home_score,away_score,tournament,city,country,neutral
+2000-01-10,Alpha Republic,Beta Union,2,1,Friendly,Alpha City,Alpha Republic,FALSE
+2000-08-20,Beta Union,Gamma Isles,1,0,Friendly,Beta City,Beta Union,FALSE
+2001-03-03,Beta Union,Alpha Republic,0,2,Demo Cup,Beta City,Beta Union,FALSE
+2001-09-09,Gamma Isles,Beta Union,1,1,Friendly,Gamma Port,Gamma Isles,FALSE
+2002-04-04,Gamma Isles,Alpha Republic,2,1,Demo Cup,Gamma Port,Gamma Isles,FALSE
+2002-10-12,Alpha Republic,Beta Union,1,0,Friendly,Alpha City,Alpha Republic,FALSE

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "name": "automation_template",
+  "base_preset": "csv_sample",
+  "chart": {
+    "title": "Template title",
+    "output_file": "output/template.mp4",
+    "frames_dir": "output/template_frames",
+    "layout_preset": "square_social",
+    "theme": "midnight_contrast",
+    "value_format": "compact",
+    "typography_preset": "compact",
+    "fps": 27,
+    "steps_per_transition": 19,
+    "max_visible_bars": 4,
+    "background_mode": "color",
+    "background_color_override": "#101827",
+    "frame_output_mode": "ffmpeg_stream",
+    "png_compress_level": 2,
+    "bar_appearance_mode": "advanced",
+    "bar_fill_type": "gradient",
+    "bar_gradient_direction": "diagonal",
+    "bar_gradient_color_count": 3,
+    "bar_border_enabled": true,
+    "bar_border_color": "#DCE7F7",
+    "bar_border_width": 2.0,
+    "bar_shadow_enabled": true,
+    "bar_shadow_alpha": 0.25
+  },
+  "animation": {
+    "easing": "linear",
+    "enter_exit": false,
+    "value_smoothing": true,
+    "motion_mode": "continuous"
+  },
+  "selection": {
+    "top_n": 3,
+    "aggregate_other": false,
+    "other_label": "Remaining",
+    "other_color": "#64748B"
+  },
+  "categories": {
+    "Alpha Republic": {
+      "label": "Alpha",
+      "color": "#38BDF8"
+    },
+    "Obsolete Empire": {
+      "label": "Obsolete",
+      "color": "#F43F5E"
+    }
+  },
+  "data_source": {
+    "source_type": "csv",
+    "csv_path": "data/template.csv",
+    "source_label_override": "Template source"
+  },
+  "dataset": {
+    "year_column": "period",
+    "name_column": "category",
+    "value_column": "amount"
+  }
+}

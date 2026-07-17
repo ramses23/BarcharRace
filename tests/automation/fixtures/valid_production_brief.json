@@ -1,0 +1,15 @@
+{
+  "production_brief_schema_version": 1,
+  "job_id": "national-team-goals-1900-2025",
+  "dataset": {
+    "builder": "national_team_goals",
+    "source_csv": "tests/automation/fixtures/national_team_goals_source.csv",
+    "expected_source_sha256": null,
+    "parameters": {
+      "start_year": 1900,
+      "end_year": 2025,
+      "mode": "cumulative",
+      "duplicate_policy": "warn"
+    }
+  }
+}

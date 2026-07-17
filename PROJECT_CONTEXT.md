@@ -253,6 +253,150 @@ The project is a usable MVP:
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
   format.
 - Unit tests and a real FFmpeg integration test.
+- The automation workstream begins with a renderer-independent dataset layer in
+  `src/automation`. `DatasetBuilder` is the common structural contract and
+  `DatasetBuildResult` records immutable provenance, hashes, sizes, effective
+  parameters, warnings, and row statistics without retaining a DataFrame.
+- `NationalTeamGoalsDatasetBuilder` currently accepts only a local source CSV
+  plus an optional expected SHA-256. It builds deterministic annual or
+  cumulative `year,country,value` output, validates full match dates and
+  non-negative integer scores, explicitly rejects boolean scores, and never
+  overwrites an output. Publication currently uses a same-directory hardlink;
+  after the link succeeds, temporary-name cleanup is best effort and a residual
+  path is reported as a warning without invalidating the completed build.
+  Duplicate identity uses every available standard match field; `error` stops,
+  `warn` retains and reports, and `allow` retains silently.
+- The automated-production MVP is complete in `src/automation` and is exposed
+  by the thin `src/tools/run_production.py` command. One validated version-2
+  brief now composes dataset construction, optional local logo resolution,
+  project assembly, production preflight, and optional isolated rendering.
+  The flow reuses the current controller, worker, `RenderJob`, renderer, and
+  exporter; it does not create a second rendering pipeline. Dataset building
+  and logo resolution perform no network access, downloads, or remote caching.
+- `ProductionWorkspace` reserves one exclusive job directory under
+  `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
+  canonical artifact directories, and writes deterministic version-1 workspace
+  manifest and production-status JSON files. Workspace, production-status, and
+  project JSON schemas are independent. Failed initialization rolls back only
+  the job directory created by that attempt.
+- The workspace remains path infrastructure: it exposes canonical
+  `logos/primary`, `logos/secondary`, and
+  `manifests/logo_resolution.json` paths plus canonical project, video, and
+  project-assembly/preflight/render-manifest paths, but it does not execute
+  dataset builders, logo resolution, project assembly, preflight, or renders.
+- `ProductionBrief` and `DatasetBrief` preserve the exact immutable version-1
+  dataset-only contract. `ProductionBriefV2` extends that intent with required
+  assets, project, and render sections without silently migrating version 1.
+  The strict loader rejects unknown versions, unknown or duplicate fields,
+  resolves every source/template/logo path beneath an explicit `root_dir`, and
+  stores generic scalar parameters in deterministic, deeply immutable form.
+  Loading a brief reads no source content and executes no workspace, builder,
+  project, or render work.
+- `DatasetBuilderRegistry` is an explicit, immutable mapping from validated
+  builder IDs to zero-argument factories and optional parameter parsers. Its
+  default registry contains only `national_team_goals`; there is no
+  autodiscovery, plugin loading, or mutable global registry. Every builder
+  resolution invokes the registered factory and returns a newly validated
+  instance. Parameter parsing invokes only the selected parser and never
+  creates or executes a builder.
+- `NationalTeamGoalsBuildParameters` is the frozen, typed representation of the
+  four canonical brief parameters: `start_year`, `end_year`, `mode`, and
+  `duplicate_policy`. Its parser is a pure transformation from
+  `FrozenParameters`: it accepts no missing or unknown keys, performs no I/O,
+  and returns new builder-argument dictionaries on demand. The builder retains
+  its independent defensive validation for direct calls; the parser does not
+  replace it.
+- Registry construction, builder resolution, and parameter parsing do not read
+  or write files, create workspaces, or invoke `build()`.
+- `ProductionOrchestrator.prepare_dataset()` remains the compatible
+  dataset-only entry point for a validated version-1 or version-2 brief. It
+  validates containment and registry operations before creating one workspace,
+  invokes the builder once, validates the CSV through the existing
+  `DatasetValidator`, publishes deterministic `manifests/dataset_build.json`,
+  and finishes at `dataset_ready` without duplicating transformation rules.
+- `ProductionOrchestrator.run_production()` accepts only a validated version-2
+  brief and composes every reusable stage exactly once. Normal state order is
+  `dataset_running`, `dataset_ready`, `assets_ready`, `project_ready`,
+  `preflight_ready`, `rendering`, and `completed`; the workspace's initial
+  state is `created`. Render-disabled jobs stop at `preflight_ready`, and
+  `blocked`, `canceled`, and `failed` remain explicit terminal results.
+  General status artifacts are available, relative paths only.
+- Dataset-stage failures after workspace creation are recorded by best effort
+  as `failed` with a non-sensitive phase and exception type. The workspace,
+  generated CSV, and any exclusively published manifest are retained for
+  audit; failures before workspace creation leave no job directory.
+- `LocalLogoResolver` remains a reusable post-dataset component and is invoked
+  by the complete orchestrator only when either local logo directory is set.
+  It reads only the selected category column, reuses Project Studio's existing
+  `match_category_logos()` selection and normalization, resolves optional local
+  primary and secondary directories nonrecursively, and copies only selected
+  assets into the workspace. Safe deterministic names, SHA-256 values, sizes,
+  missing categories, detectable ambiguities, and warnings are recorded in the
+  independent deterministic `manifests/logo_resolution.json` schema.
+- Local logo resolution never downloads assets, calls the network, applies
+  category styles, creates a BarChartStudio project, or changes `status.json`.
+  A workspace at `dataset_ready` therefore remains at `dataset_ready`. A prior
+  logo-resolution manifest or nonempty primary/secondary target directory is
+  rejected instead of overwritten; publication failure rolls back only assets
+  and slot directories created by that attempt.
+- `ProductionProjectAssembler` remains the reusable project stage. It validates
+  a `DatasetProductionResult` and optional
+  `LogoResolutionResult`, loads and migrates a visual template through the
+  existing project APIs, filters obsolete category styles, applies both logo
+  slots through `apply_category_logo_matches()`, and delegates schema creation
+  and storage to `build_project_data()` and `save_project_data()`. The finished
+  `project/project.json` is reloaded through `load_project_file()` before the
+  independent deterministic `manifests/project_assembly.json` is published.
+- Assembled dataset, logo, project, template, frames, and MP4 references are
+  portable POSIX paths relative to an explicit project root. The result records
+  immutable project provenance, hashes, sizes, category/logo counts, output,
+  and warnings. Project assembly reserves its destination exclusively and
+  never creates the configured `render/video.mp4`. The component does not write
+  general production status; the complete orchestrator publishes
+  `project_ready`. A later-stage failure rolls back only the project created by
+  that attempt.
+- `ProductionPreflightRunner` remains the reusable readiness stage after
+  project assembly. It verifies assembly provenance and referenced
+  dataset/logo files, reloads the project, and delegates render readiness to the
+  existing `run_render_preflight()` exactly once. Blocking checks produce an
+  immutable `blocked` result instead of an exception; warnings do not block, and
+  technical validation, execution, adaptation, or publication failures remain
+  distinct exceptions with their original causes.
+- Production preflight publishes the independent deterministic
+  `manifests/production_preflight.json` schema with portable project/output
+  references, project hash, FFmpeg availability, sanitized errors and warnings,
+  and `ready` or `blocked` status. It does not modify `status.json`, correct
+  configuration, create frames or MP4 output, execute FFmpeg, or start a render.
+  The component does not write general status; the complete orchestrator
+  publishes `preflight_ready` or `blocked`.
+- `ProductionRenderExecutor` remains the reusable, blocking render stage after
+  a `ready` production preflight. It revalidates workspace identity, assembly and
+  preflight manifests, project hash/size, project loading, configured output,
+  and exclusive destination/partial-file state before launching anything. It
+  then reuses `start_background_render()`, `BackgroundRender.status()` and
+  `BackgroundRender.cancel()`, and `render_result_from_status()`; it never
+  creates a second rendering pipeline or invokes `RenderJob` or FFmpeg directly.
+- A completed render produces canonical `render/video.mp4` plus the independent
+  deterministic `manifests/production_render.json` schema. The immutable result
+  records the final status, MP4 SHA-256 and size, frames, transitions, FPS,
+  playback duration, stable `RenderProfile`, and immutable warnings. Worker
+  failures preserve their isolated status/log evidence and publish no success
+  manifest; manifest-publication failure preserves an already valid MP4.
+  Cancellation is represented explicitly through the controller contract and
+  cannot promote an incomplete final MP4.
+- The render executor deliberately does not modify general production
+  `status.json`; `ProductionOrchestrator` owns `rendering` and the final
+  `completed` or `canceled` transition around it. Brief, workspace, dataset
+  builder, registry, project JSON, worker status, and production status remain
+  separate versioned contracts.
+- The tracked synthetic example lives under `production/` and runs through
+  `.venv\Scripts\python.exe src\tools\run_production.py --brief
+  production\briefs\examples\national_team_goals_demo.json --root .`.
+  Each job reserves `output/.production_jobs/<job_id>/` without overwrite and
+  publishes its dataset, project, optional MP4, manifests, and portable status.
+- The MVP remains local and single-job: automatic downloads, remote logo
+  discovery, a production queue or scheduler, retry/resume recovery, cloud
+  publication, and a new Project Studio automation interface are out of scope.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
@@ -292,6 +436,8 @@ Important boundaries:
 - `RenderJob` may report progress, but UI-specific rendering of that progress
   belongs outside the pipeline.
 - Importers load data only. They should not know about rendering.
+- Automation dataset builders transform explicit local inputs only. They must
+  remain independent from Streamlit, project assembly, logos, and `RenderJob`.
 - Validators validate data only. They should not know about rendering.
 - `Timeline` exposes frame data by period.
 - `LayoutEngine` converts business data into visual bar sprites.
@@ -594,6 +740,13 @@ in verified, published checkpoints:
    renderer contracts. Segmented section navigation mounts only the active
    editor panel and restores inactive values from the current draft, preventing
    multi-panel exposure during widget/component reruns.
+
+10. **Automated production MVP - completed.** Strict version-2 briefs compose
+    the existing local dataset builder, optional two-slot logo resolver,
+    project assembler, preflight, controller, isolated worker, and renderer.
+    A tracked offline example, thin CLI, deterministic manifests, real-worker
+    E2E coverage, and explicit non-overwrite workspaces close the first local
+    automation workflow without adding downloads or a new UI.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

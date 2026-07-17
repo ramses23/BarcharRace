@@ -1,0 +1,10 @@
+date,home_team,away_team,home_score,away_score,tournament,city,country,neutral
+2000-01-10,Alpha Republic,Beta Union,2,1,Friendly,Alpha City,Alpha Republic,FALSE
+2000-02-20,Old Kingdom (historic),Alpha Republic,1,1,Heritage Cup,Old Town,Old Kingdom (historic),TRUE
+2001-03-03,Beta Union,Alpha Republic,0,0,Friendly,Beta City,Beta Union,FALSE
+2002-04-04,Gamma Isles,Beta Union,2,2,Island Cup,Gamma Port,Gamma Isles,TRUE
+2002-08-08,Alpha Republic,Gamma Isles,1,0,Friendly,Alpha City,Alpha Republic,FALSE
+2003-05-05,Beta Union,Alpha Republic,1,1,Continental Cup,Neutral Ground,Delta State,TRUE
+2003-09-09,Gamma Isles,Beta Union,1,0,Friendly,Gamma Port,Gamma Isles,FALSE
+2003-09-09,Gamma Isles,Beta Union,1,0,Friendly,Gamma Port,Gamma Isles,FALSE
+2004-01-01,Future Federation,Alpha Republic,1,0,Future Cup,Future City,Future Federation,FALSE
