@@ -278,8 +278,8 @@ The project is a usable MVP:
 - The workspace remains path infrastructure: it exposes canonical
   `logos/primary`, `logos/secondary`, and
   `manifests/logo_resolution.json` paths plus canonical project, video, and
-  project-assembly-manifest paths, but it does not execute dataset builders,
-  logo resolution, project assembly, or renders.
+  project-assembly/preflight-manifest paths, but it does not execute dataset
+  builders, logo resolution, project assembly, preflight, or renders.
 - `ProductionBrief` and `DatasetBrief` define immutable production intent under
   an independent version-1 brief schema. The strict JSON loader rejects unknown
   and duplicate fields, resolves a portable local source path beneath an
@@ -342,11 +342,24 @@ The project is a usable MVP:
   creates the configured `render/video.mp4`, and leaves `status.json` at
   `dataset_ready`; a later-stage failure rolls back only the project created by
   that attempt.
+- `ProductionPreflightRunner` is the independent, manually composed readiness
+  stage after project assembly. It verifies assembly provenance and referenced
+  dataset/logo files, reloads the project, and delegates render readiness to the
+  existing `run_render_preflight()` exactly once. Blocking checks produce an
+  immutable `blocked` result instead of an exception; warnings do not block, and
+  technical validation, execution, adaptation, or publication failures remain
+  distinct exceptions with their original causes.
+- Production preflight publishes the independent deterministic
+  `manifests/production_preflight.json` schema with portable project/output
+  references, project hash, FFmpeg availability, sanitized errors and warnings,
+  and `ready` or `blocked` status. It does not modify `status.json`, correct
+  configuration, create frames or MP4 output, execute FFmpeg, or start a render.
+  The workspace therefore remains at `dataset_ready` in either preflight state.
 - Brief, workspace, dataset builder, registry, project JSON, and render remain
   separate contracts. `ProductionBrief` has no logo or visual configuration,
-  and neither the local resolver nor project assembler is integrated
-  automatically into `ProductionOrchestrator`. Automatic preflight, automatic
-  render, a production CLI, job queue, and resume support do not exist yet.
+  and the local resolver, project assembler, and preflight runner are not
+  integrated automatically into `ProductionOrchestrator`. Automatic render, a
+  production CLI, job queue, and resume support do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.

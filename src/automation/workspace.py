@@ -183,6 +183,10 @@ class ProductionWorkspace:
         return self._file_path(self.manifests_dir, "project_assembly.json")
 
     @property
+    def production_preflight_manifest_path(self) -> Path:
+        return self._file_path(self.manifests_dir, "production_preflight.json")
+
+    @property
     def project_json_path(self) -> Path:
         return self._file_path(self.project_dir, "project.json")
 
@@ -209,6 +213,10 @@ class ProductionWorkspace:
     def publish_project_assembly_manifest(self, data: dict) -> None:
         """Publish the project manifest without overwriting an existing file."""
         self._write_json_exclusive(data, self.project_assembly_manifest_path)
+
+    def publish_production_preflight_manifest(self, data: dict) -> None:
+        """Publish the preflight manifest without overwriting an existing file."""
+        self._write_json_exclusive(data, self.production_preflight_manifest_path)
 
     def _child_path(self, name: str) -> Path:
         candidate = (self.root_path / name).resolve(strict=False)

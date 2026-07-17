@@ -39,6 +39,13 @@ from automation.project_assembler import (
     ProjectAssemblyOptions,
     ProjectAssemblyResult,
 )
+from automation.production_preflight import (
+    PRODUCTION_PREFLIGHT_MANIFEST_SCHEMA_VERSION,
+    ProductionPreflightError,
+    ProductionPreflightIssue,
+    ProductionPreflightResult,
+    ProductionPreflightRunner,
+)
 from automation.registry import (
     DatasetBuilderDefinition,
     DatasetBuilderRegistry,
@@ -70,9 +77,14 @@ __all__ = [
     "ProductionBriefError",
     "ProductionOrchestrationError",
     "ProductionOrchestrator",
+    "ProductionPreflightError",
+    "ProductionPreflightIssue",
+    "ProductionPreflightResult",
+    "ProductionPreflightRunner",
     "ProductionProjectAssembler",
     "ProductionWorkspace",
     "PROJECT_ASSEMBLY_MANIFEST_SCHEMA_VERSION",
+    "PRODUCTION_PREFLIGHT_MANIFEST_SCHEMA_VERSION",
     "ProjectAssemblyError",
     "ProjectAssemblyOptions",
     "ProjectAssemblyResult",
