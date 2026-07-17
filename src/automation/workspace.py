@@ -127,6 +127,14 @@ class ProductionWorkspace:
         return self._child_path("logos")
 
     @property
+    def primary_logos_dir(self) -> Path:
+        return self._file_path(self.logos_dir, "primary")
+
+    @property
+    def secondary_logos_dir(self) -> Path:
+        return self._file_path(self.logos_dir, "secondary")
+
+    @property
     def project_dir(self) -> Path:
         return self._child_path("project")
 
@@ -167,6 +175,10 @@ class ProductionWorkspace:
         return self._file_path(self.manifests_dir, "dataset_build.json")
 
     @property
+    def logo_resolution_manifest_path(self) -> Path:
+        return self._file_path(self.manifests_dir, "logo_resolution.json")
+
+    @property
     def project_json_path(self) -> Path:
         return self._file_path(self.project_dir, "project.json")
 
@@ -185,6 +197,10 @@ class ProductionWorkspace:
     def publish_dataset_build_manifest(self, data: dict) -> None:
         """Publish the dataset manifest without overwriting an existing file."""
         self._write_json_exclusive(data, self.dataset_build_manifest_path)
+
+    def publish_logo_resolution_manifest(self, data: dict) -> None:
+        """Publish the logo manifest without overwriting an existing file."""
+        self._write_json_exclusive(data, self.logo_resolution_manifest_path)
 
     def _child_path(self, name: str) -> Path:
         candidate = (self.root_path / name).resolve(strict=False)

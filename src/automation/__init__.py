@@ -11,6 +11,14 @@ from automation.builder_parameters import (
     NationalTeamGoalsBuildParameters,
     parse_national_team_goals_parameters,
 )
+from automation.logo_resolver import (
+    LOGO_RESOLUTION_MANIFEST_SCHEMA_VERSION,
+    SUPPORTED_LOGO_EXTENSIONS,
+    LocalLogoResolver,
+    LogoAsset,
+    LogoResolutionError,
+    LogoResolutionResult,
+)
 from automation.models import (
     DatasetBrief,
     DatasetBuildResult,
@@ -45,12 +53,18 @@ __all__ = [
     "DatasetProductionResult",
     "DATASET_BUILD_MANIFEST_SCHEMA_VERSION",
     "FrozenParameters",
+    "LOGO_RESOLUTION_MANIFEST_SCHEMA_VERSION",
+    "LocalLogoResolver",
+    "LogoAsset",
+    "LogoResolutionError",
+    "LogoResolutionResult",
     "NationalTeamGoalsBuildParameters",
     "ProductionBrief",
     "ProductionBriefError",
     "ProductionOrchestrationError",
     "ProductionOrchestrator",
     "ProductionWorkspace",
+    "SUPPORTED_LOGO_EXTENSIONS",
     "UnknownDatasetBuilderError",
     "create_default_dataset_builder_registry",
     "load_production_brief",

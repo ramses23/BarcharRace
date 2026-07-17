@@ -266,18 +266,19 @@ The project is a usable MVP:
   path is reported as a warning without invalidating the completed build.
   Duplicate identity uses every available standard match field; `error` stops,
   `warn` retains and reports, and `allow` retains silently.
-- Dataset automation still has no production CLI, logo workflow, automatic
-  project JSON, render preflight, or automatic render. The current builder
-  performs no network access or remote caching.
+- Dataset automation still has no production CLI, automatic project JSON,
+  render preflight, or automatic render. Dataset building and local logo
+  resolution perform no network access, downloads, or remote caching.
 - `ProductionWorkspace` reserves one exclusive job directory under
   `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
   canonical artifact directories, and writes deterministic version-1 workspace
   manifest and production-status JSON files. Workspace, production-status, and
   project JSON schemas are independent. Failed initialization rolls back only
   the job directory created by that attempt.
-- The workspace is path infrastructure only: it does not execute dataset
-  builders or renders. Orchestration, automatic logos, automatic project JSON,
-  and a production CLI do not exist yet.
+- The workspace remains path infrastructure: it exposes canonical
+  `logos/primary`, `logos/secondary`, and
+  `manifests/logo_resolution.json` paths, but it does not execute dataset
+  builders, logo resolution, project assembly, or renders.
 - `ProductionBrief` and `DatasetBrief` define immutable production intent under
   an independent version-1 brief schema. The strict JSON loader rejects unknown
   and duplicate fields, resolves a portable local source path beneath an
@@ -312,10 +313,24 @@ The project is a usable MVP:
   as `failed` with a non-sensitive phase and exception type. The workspace,
   generated CSV, and any exclusively published manifest are retained for
   audit; failures before workspace creation leave no job directory.
+- `LocalLogoResolver` is an independent, manually composed post-dataset stage.
+  It reads only the selected category column, reuses Project Studio's existing
+  `match_category_logos()` selection and normalization, resolves optional local
+  primary and secondary directories nonrecursively, and copies only selected
+  assets into the workspace. Safe deterministic names, SHA-256 values, sizes,
+  missing categories, detectable ambiguities, and warnings are recorded in the
+  independent deterministic `manifests/logo_resolution.json` schema.
+- Local logo resolution never downloads assets, calls the network, applies
+  category styles, creates a BarChartStudio project, or changes `status.json`.
+  A workspace at `dataset_ready` therefore remains at `dataset_ready`. A prior
+  logo-resolution manifest or nonempty primary/secondary target directory is
+  rejected instead of overwritten; publication failure rolls back only assets
+  and slot directories created by that attempt.
 - Brief, workspace, dataset builder, registry, project JSON, and render remain
-  separate contracts. Automatic logo resolution, a project assembler, render
-  preflight, automatic render, a production CLI, job queue, and resume support
-  do not exist yet.
+  separate contracts. `ProductionBrief` has no logo configuration, and the
+  local resolver is not integrated automatically into `ProductionOrchestrator`.
+  A project JSON assembler, automatic preflight, automatic render, a production
+  CLI, job queue, and resume support do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
