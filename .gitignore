@@ -8,6 +8,10 @@ __pycache__/
 # archivos de salida
 output/
 
+# fichas e inputs locales de automatización (los ejemplos sí se rastrean)
+production/inputs/local/
+production/briefs/local/
+
 # bases SQLite generadas
 data/database/*.db
 

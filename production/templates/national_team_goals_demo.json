@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "name": "national_team_goals_demo_template",
+  "base_preset": "csv_sample",
+  "chart": {
+    "title": "National Team Goals",
+    "output_file": "output/placeholder.mp4",
+    "frames_dir": "output/placeholder_frames",
+    "layout_preset": "compact_dashboard",
+    "width": 320,
+    "height": 180,
+    "dpi": 100,
+    "left_margin": 80,
+    "right_margin": 24,
+    "top_margin": 55,
+    "bottom_margin": 28,
+    "bar_height": 22,
+    "bar_gap": 4,
+    "title_y": 12,
+    "subtitle_y": 30,
+    "time_label_x": 260,
+    "time_label_y": 145,
+    "source_x": 80,
+    "source_y": 165,
+    "title_font_size": 12,
+    "subtitle_font_size": 8,
+    "time_label_font_size": 18,
+    "source_font_size": 7,
+    "label_font_size": 8,
+    "value_font_size": 8,
+    "rank_labels_enabled": false,
+    "logos_enabled": false,
+    "bar_shadow_enabled": false,
+    "bar_gradient_enabled": false,
+    "frame_output_mode": "ffmpeg_stream",
+    "fps": 5,
+    "steps_per_transition": 1,
+    "max_visible_bars": 4
+  },
+  "animation": {
+    "easing": "linear",
+    "enter_exit": false,
+    "value_smoothing": true,
+    "motion_mode": "transition_easing"
+  },
+  "selection": {
+    "top_n": 4,
+    "aggregate_other": false,
+    "other_label": "Other",
+    "other_color": "#64748B"
+  },
+  "data_source": {
+    "source_type": "csv",
+    "csv_path": "data/placeholder.csv",
+    "source_label_override": "Synthetic demonstration data"
+  },
+  "dataset": {
+    "year_column": "year",
+    "name_column": "country",
+    "value_column": "value"
+  }
+}

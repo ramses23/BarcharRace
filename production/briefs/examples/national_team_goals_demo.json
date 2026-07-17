@@ -1,0 +1,29 @@
+{
+  "production_brief_schema_version": 2,
+  "job_id": "national-team-goals-demo",
+  "dataset": {
+    "builder": "national_team_goals",
+    "source_csv": "production/inputs/examples/national_team_goals_source.csv",
+    "expected_source_sha256": null,
+    "parameters": {
+      "start_year": 2000,
+      "end_year": 2002,
+      "mode": "cumulative",
+      "duplicate_policy": "warn"
+    }
+  },
+  "assets": {
+    "primary_logo_dir": null,
+    "secondary_logo_dir": null,
+    "missing_policy": "warn"
+  },
+  "project": {
+    "template": "production/templates/national_team_goals_demo.json",
+    "name": "national-team-goals-demo",
+    "title": "National Team Goals",
+    "source_label": "Synthetic demonstration data"
+  },
+  "render": {
+    "enabled": true
+  }
+}
