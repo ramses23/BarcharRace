@@ -45,6 +45,9 @@ charts, animated scatter plots, and timeline animations.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
 - Report per-stage render profiling timings for larger-dataset tuning.
+- Run a complete local production from a strict version-2 brief, including
+  dataset construction, optional local logos, project assembly, preflight, and
+  an isolated MP4 render.
 - Run a minimal automated test suite with `unittest`.
 
 ## Requirements
@@ -202,6 +205,74 @@ Overrides can also be applied on top of an external project file:
 ```powershell
 .venv\Scripts\python.exe src\main.py --project projects/sample_project.json --layout square_social --typography compact --output output/custom.mp4
 ```
+
+## Automated Production MVP
+
+One local command can turn a version-2 production brief into a validated
+dataset, a normal BarChartStudio project, and optionally a finished MP4:
+
+```powershell
+.venv\Scripts\python.exe src\tools\run_production.py `
+  --brief production\briefs\examples\national_team_goals_demo.json `
+  --root .
+```
+
+The command composes the existing components instead of implementing another
+rendering path:
+
+```text
+ProductionBrief v2
+    -> ProductionOrchestrator
+        -> registered DatasetBuilder + DatasetValidator
+        -> optional LocalLogoResolver
+        -> ProductionProjectAssembler
+        -> ProductionPreflightRunner
+        -> optional ProductionRenderExecutor
+            -> background render controller
+            -> isolated render worker
+            -> existing RenderJob
+            -> MP4
+```
+
+A brief v2 has four required sections:
+
+- `dataset`: registered builder, local source CSV, optional source SHA-256, and
+  builder parameters.
+- `assets`: optional primary and secondary local logo directories plus the
+  missing-logo policy (`allow`, `warn`, or `error`).
+- `project`: a local BarChartStudio template, project name, title, and source
+  label.
+- `render`: `enabled: true` to render an MP4, or `false` to stop after a ready
+  preflight.
+
+All referenced paths must remain below the explicit `--root`. Each job reserves
+`output/.production_jobs/<job_id>/` exclusively and never overwrites an older
+workspace. The principal results are:
+
+```text
+dataset/dataset.csv
+project/project.json
+render/video.mp4
+manifests/*.json
+status.json
+```
+
+Normal state order is `created`, `dataset_running`, `dataset_ready`,
+`assets_ready`, `project_ready`, `preflight_ready`, `rendering`, and
+`completed`. A render-disabled brief ends at `preflight_ready`; other terminal
+states are `blocked`, `canceled`, and `failed`.
+
+Project Studio currently lists only `projects/*.json`. To inspect or edit a
+generated project there, copy the workspace's `project/project.json` to a new,
+unique file under `projects/`, keep the production workspace in place, launch
+Project Studio, and select the copied file from `Open project`. Its dataset and
+asset references remain root-relative. Before rendering an edited copy, choose
+a new output path so the completed production video is not reused.
+
+This MVP is intentionally local and single-job. It has no automatic downloads,
+remote logo discovery, scheduler or queue, retry/resume recovery, cloud
+publication, or new automation UI. See `production/README.md` for the complete
+example and brief format.
 
 ## Project Files
 
