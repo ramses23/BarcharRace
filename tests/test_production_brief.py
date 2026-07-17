@@ -192,8 +192,8 @@ class ProductionBriefTest(unittest.TestCase):
 
     def test_future_version_is_rejected(self):
         data = self.valid_data()
-        data["production_brief_schema_version"] = 2
-        self.assert_field_error(data, "Unsupported.*2")
+        data["production_brief_schema_version"] = 3
+        self.assert_field_error(data, "Unsupported.*3")
 
     def test_unknown_top_level_field_is_rejected(self):
         data = self.valid_data()

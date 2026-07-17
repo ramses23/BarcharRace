@@ -6,17 +6,36 @@ import re
 from pathlib import Path
 from typing import Any
 
-from automation.models import DatasetBrief, FrozenParameters, JsonScalar, ProductionBrief
+from automation.models import (
+    DatasetBrief,
+    FrozenParameters,
+    JsonScalar,
+    ProductionAssetsBrief,
+    ProductionBrief,
+    ProductionBriefV2,
+    ProductionProjectBrief,
+    ProductionRenderBrief,
+)
 from automation.workspace import validate_job_id
 
 
-PRODUCTION_BRIEF_SCHEMA_VERSION = 1
-_TOP_LEVEL_FIELDS = frozenset(
+PRODUCTION_BRIEF_SCHEMA_VERSION = 2
+_SUPPORTED_SCHEMA_VERSIONS = frozenset((1, 2))
+_V1_TOP_LEVEL_FIELDS = frozenset(
     ("production_brief_schema_version", "job_id", "dataset")
+)
+_V2_TOP_LEVEL_FIELDS = frozenset(
+    (*_V1_TOP_LEVEL_FIELDS, "assets", "project", "render")
 )
 _DATASET_FIELDS = frozenset(
     ("builder", "source_csv", "expected_source_sha256", "parameters")
 )
+_ASSETS_FIELDS = frozenset(
+    ("primary_logo_dir", "secondary_logo_dir", "missing_policy")
+)
+_PROJECT_FIELDS = frozenset(("template", "name", "title", "source_label"))
+_RENDER_FIELDS = frozenset(("enabled",))
+_MISSING_POLICIES = frozenset(("allow", "warn", "error"))
 _BUILDER_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9_]{0,63}\Z")
 _LOWERCASE_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _WINDOWS_DRIVE_PATTERN = re.compile(r"[a-zA-Z]:")
@@ -48,7 +67,6 @@ def load_production_brief(
     authorized_root = _resolve_root_dir(root_dir)
     data = _read_strict_json(brief_file)
     _require_object(data, "production brief", brief_file)
-    _reject_unknown_fields(data, _TOP_LEVEL_FIELDS, "production brief", brief_file)
 
     schema_version = _require_field(
         data,
@@ -59,14 +77,23 @@ def load_production_brief(
     if isinstance(schema_version, bool) or not isinstance(schema_version, int):
         raise _error(
             brief_file,
-            "Field 'production_brief_schema_version' must be integer 1.",
+            "Field 'production_brief_schema_version' must be integer 1 or 2.",
         )
-    if schema_version != PRODUCTION_BRIEF_SCHEMA_VERSION:
+    if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
         raise _error(
             brief_file,
             "Unsupported production_brief_schema_version "
-            f"{schema_version}; only version 1 is supported.",
+            f"{schema_version}; supported versions are 1 and 2.",
         )
+    allowed_top_level = (
+        _V1_TOP_LEVEL_FIELDS if schema_version == 1 else _V2_TOP_LEVEL_FIELDS
+    )
+    _reject_unknown_fields(
+        data,
+        allowed_top_level,
+        "production brief",
+        brief_file,
+    )
 
     job_id = _require_field(data, "job_id", "production brief", brief_file)
     try:
@@ -96,15 +123,100 @@ def load_production_brief(
         brief_file,
     )
 
-    return ProductionBrief(
+    dataset = DatasetBrief(
+        builder_id=builder_id,
+        source_csv=source_csv,
+        expected_source_sha256=expected_sha256,
+        parameters=parameters,
+    )
+    if schema_version == 1:
+        return ProductionBrief(
+            schema_version=schema_version,
+            job_id=validated_job_id,
+            dataset=dataset,
+        )
+
+    assets_data = _required_object_section(data, "assets", brief_file)
+    _reject_unknown_fields(assets_data, _ASSETS_FIELDS, "assets", brief_file)
+    assets = ProductionAssetsBrief(
+        primary_logo_dir=_resolve_optional_directory(
+            _require_field(
+                assets_data,
+                "primary_logo_dir",
+                "assets",
+                brief_file,
+            ),
+            field_name="assets.primary_logo_dir",
+            root_dir=authorized_root,
+            brief_file=brief_file,
+        ),
+        secondary_logo_dir=_resolve_optional_directory(
+            _require_field(
+                assets_data,
+                "secondary_logo_dir",
+                "assets",
+                brief_file,
+            ),
+            field_name="assets.secondary_logo_dir",
+            root_dir=authorized_root,
+            brief_file=brief_file,
+        ),
+        missing_policy=_validate_missing_policy(
+            _require_field(
+                assets_data,
+                "missing_policy",
+                "assets",
+                brief_file,
+            ),
+            brief_file,
+        ),
+    )
+
+    project_data = _required_object_section(data, "project", brief_file)
+    _reject_unknown_fields(project_data, _PROJECT_FIELDS, "project", brief_file)
+    project = ProductionProjectBrief(
+        template_path=_resolve_portable_path(
+            _require_field(project_data, "template", "project", brief_file),
+            field_name="project.template",
+            root_dir=authorized_root,
+            brief_file=brief_file,
+            expected_kind="file",
+        ),
+        name=_validate_project_text(
+            _require_field(project_data, "name", "project", brief_file),
+            field_name="project.name",
+            brief_file=brief_file,
+        ),
+        title=_validate_project_text(
+            _require_field(project_data, "title", "project", brief_file),
+            field_name="project.title",
+            brief_file=brief_file,
+        ),
+        source_label=_validate_project_text(
+            _require_field(
+                project_data,
+                "source_label",
+                "project",
+                brief_file,
+            ),
+            field_name="project.source_label",
+            brief_file=brief_file,
+        ),
+    )
+
+    render_data = _required_object_section(data, "render", brief_file)
+    _reject_unknown_fields(render_data, _RENDER_FIELDS, "render", brief_file)
+    render_enabled = _require_field(render_data, "enabled", "render", brief_file)
+    if not isinstance(render_enabled, bool):
+        raise _error(brief_file, "Field 'render.enabled' must be boolean.")
+
+    return ProductionBriefV2(
         schema_version=schema_version,
         job_id=validated_job_id,
-        dataset=DatasetBrief(
-            builder_id=builder_id,
-            source_csv=source_csv,
-            expected_source_sha256=expected_sha256,
-            parameters=parameters,
-        ),
+        dataset=dataset,
+        assets=assets,
+        project=project,
+        render=ProductionRenderBrief(enabled=render_enabled),
     )
 
 
@@ -238,6 +350,92 @@ def _resolve_source_csv(
     if not resolved.is_file():
         raise _error(brief_file, f"Dataset source CSV is not a file: {value}")
     return resolved
+
+
+def _required_object_section(data: dict, field: str, brief_file: Path) -> dict:
+    value = _require_field(data, field, "production brief", brief_file)
+    _require_object(value, field, brief_file)
+    return value
+
+
+def _resolve_optional_directory(
+    value: Any,
+    *,
+    field_name: str,
+    root_dir: Path,
+    brief_file: Path,
+) -> Path | None:
+    if value is None:
+        return None
+    return _resolve_portable_path(
+        value,
+        field_name=field_name,
+        root_dir=root_dir,
+        brief_file=brief_file,
+        expected_kind="directory",
+    )
+
+
+def _resolve_portable_path(
+    value: Any,
+    *,
+    field_name: str,
+    root_dir: Path,
+    brief_file: Path,
+    expected_kind: str,
+) -> Path:
+    if not isinstance(value, str) or not value:
+        raise _error(brief_file, f"Field '{field_name}' must be a non-empty string.")
+    if "\\" in value:
+        raise _error(brief_file, f"Field '{field_name}' must use '/' separators.")
+    if value.startswith("/") or value.startswith("//"):
+        raise _error(brief_file, f"Field '{field_name}' must be relative.")
+    if _WINDOWS_DRIVE_PATTERN.match(value):
+        raise _error(brief_file, f"Field '{field_name}' must not use a Windows drive.")
+    segments = value.split("/")
+    if any(segment == "" for segment in segments):
+        raise _error(brief_file, f"Field '{field_name}' contains an empty segment.")
+    if any(segment in (".", "..") for segment in segments):
+        raise _error(
+            brief_file,
+            f"Field '{field_name}' must not contain '.' or '..' segments.",
+        )
+
+    unresolved = root_dir.joinpath(*segments)
+    try:
+        resolved = unresolved.resolve(strict=True)
+    except OSError as exc:
+        raise _error(brief_file, f"Field '{field_name}' does not exist: {value}") from exc
+    if not resolved.is_relative_to(root_dir):
+        raise _error(brief_file, f"Field '{field_name}' escapes root_dir.")
+    if expected_kind == "file" and not resolved.is_file():
+        raise _error(brief_file, f"Field '{field_name}' is not a file: {value}")
+    if expected_kind == "directory" and not resolved.is_dir():
+        raise _error(brief_file, f"Field '{field_name}' is not a directory: {value}")
+    return resolved
+
+
+def _validate_missing_policy(value: Any, brief_file: Path) -> str:
+    if not isinstance(value, str) or value not in _MISSING_POLICIES:
+        raise _error(
+            brief_file,
+            "Field 'assets.missing_policy' must be 'allow', 'warn', or 'error'.",
+        )
+    return value
+
+
+def _validate_project_text(
+    value: Any,
+    *,
+    field_name: str,
+    brief_file: Path,
+) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise _error(
+            brief_file,
+            f"Field '{field_name}' must be a non-empty string.",
+        )
+    return value
 
 
 def _validate_expected_sha256(value: Any, brief_file: Path) -> str | None:

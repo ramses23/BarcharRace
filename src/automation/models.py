@@ -68,6 +68,35 @@ class ProductionBrief:
 
 
 @dataclass(frozen=True)
+class ProductionAssetsBrief:
+    primary_logo_dir: Path | None
+    secondary_logo_dir: Path | None
+    missing_policy: str
+
+
+@dataclass(frozen=True)
+class ProductionProjectBrief:
+    template_path: Path
+    name: str
+    title: str
+    source_label: str
+
+
+@dataclass(frozen=True)
+class ProductionRenderBrief:
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class ProductionBriefV2(ProductionBrief):
+    """Full immutable production intent introduced by brief schema v2."""
+
+    assets: ProductionAssetsBrief
+    project: ProductionProjectBrief
+    render: ProductionRenderBrief
+
+
+@dataclass(frozen=True)
 class DatasetBuildResult:
     """Immutable record of one completed dataset build.
 
