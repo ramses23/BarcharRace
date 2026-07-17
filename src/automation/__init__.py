@@ -32,6 +32,13 @@ from automation.orchestrator import (
     ProductionOrchestrationError,
     ProductionOrchestrator,
 )
+from automation.project_assembler import (
+    PROJECT_ASSEMBLY_MANIFEST_SCHEMA_VERSION,
+    ProductionProjectAssembler,
+    ProjectAssemblyError,
+    ProjectAssemblyOptions,
+    ProjectAssemblyResult,
+)
 from automation.registry import (
     DatasetBuilderDefinition,
     DatasetBuilderRegistry,
@@ -63,7 +70,12 @@ __all__ = [
     "ProductionBriefError",
     "ProductionOrchestrationError",
     "ProductionOrchestrator",
+    "ProductionProjectAssembler",
     "ProductionWorkspace",
+    "PROJECT_ASSEMBLY_MANIFEST_SCHEMA_VERSION",
+    "ProjectAssemblyError",
+    "ProjectAssemblyOptions",
+    "ProjectAssemblyResult",
     "SUPPORTED_LOGO_EXTENSIONS",
     "UnknownDatasetBuilderError",
     "create_default_dataset_builder_registry",

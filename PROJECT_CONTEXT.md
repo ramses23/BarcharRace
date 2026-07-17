@@ -277,8 +277,9 @@ The project is a usable MVP:
   the job directory created by that attempt.
 - The workspace remains path infrastructure: it exposes canonical
   `logos/primary`, `logos/secondary`, and
-  `manifests/logo_resolution.json` paths, but it does not execute dataset
-  builders, logo resolution, project assembly, or renders.
+  `manifests/logo_resolution.json` paths plus canonical project, video, and
+  project-assembly-manifest paths, but it does not execute dataset builders,
+  logo resolution, project assembly, or renders.
 - `ProductionBrief` and `DatasetBrief` define immutable production intent under
   an independent version-1 brief schema. The strict JSON loader rejects unknown
   and duplicate fields, resolves a portable local source path beneath an
@@ -326,11 +327,26 @@ The project is a usable MVP:
   logo-resolution manifest or nonempty primary/secondary target directory is
   rejected instead of overwritten; publication failure rolls back only assets
   and slot directories created by that attempt.
+- `ProductionProjectAssembler` is the independent, manually composed project
+  stage. It validates a `DatasetProductionResult` and optional
+  `LogoResolutionResult`, loads and migrates a visual template through the
+  existing project APIs, filters obsolete category styles, applies both logo
+  slots through `apply_category_logo_matches()`, and delegates schema creation
+  and storage to `build_project_data()` and `save_project_data()`. The finished
+  `project/project.json` is reloaded through `load_project_file()` before the
+  independent deterministic `manifests/project_assembly.json` is published.
+- Assembled dataset, logo, project, template, frames, and MP4 references are
+  portable POSIX paths relative to an explicit project root. The result records
+  immutable project provenance, hashes, sizes, category/logo counts, output,
+  and warnings. Project assembly reserves its destination exclusively, never
+  creates the configured `render/video.mp4`, and leaves `status.json` at
+  `dataset_ready`; a later-stage failure rolls back only the project created by
+  that attempt.
 - Brief, workspace, dataset builder, registry, project JSON, and render remain
-  separate contracts. `ProductionBrief` has no logo configuration, and the
-  local resolver is not integrated automatically into `ProductionOrchestrator`.
-  A project JSON assembler, automatic preflight, automatic render, a production
-  CLI, job queue, and resume support do not exist yet.
+  separate contracts. `ProductionBrief` has no logo or visual configuration,
+  and neither the local resolver nor project assembler is integrated
+  automatically into `ProductionOrchestrator`. Automatic preflight, automatic
+  render, a production CLI, job queue, and resume support do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
