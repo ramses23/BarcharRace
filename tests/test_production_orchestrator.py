@@ -874,7 +874,7 @@ class ProductionOrchestratorTest(unittest.TestCase):
             {
                 "production_status_schema_version": 1,
                 "job_id": "fake-job",
-                "state": "running",
+                "state": "dataset_running",
                 "stage": "dataset",
                 "message": "Building and validating dataset.",
             },

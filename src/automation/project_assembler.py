@@ -404,12 +404,17 @@ class ProductionProjectAssembler:
             raise ValueError("The production dataset must exist inside project_root_dir.")
 
         status = self._read_json_object(workspace.status_path, "workspace status")
+        allowed_statuses = {
+            ("dataset_ready", "dataset"),
+            ("assets_ready", "assets"),
+        }
         if (
-            status.get("state") != "dataset_ready"
-            or status.get("stage") != "dataset"
+            (status.get("state"), status.get("stage")) not in allowed_statuses
             or status.get("job_id") != workspace.job_id
         ):
-            raise ValueError("Workspace status must be dataset_ready for this job.")
+            raise ValueError(
+                "Workspace status must be dataset_ready or assets_ready for this job."
+            )
 
         dataset_size = dataset_path.stat().st_size
         dataset_sha256 = self._sha256(dataset_path)

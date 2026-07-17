@@ -35,6 +35,8 @@ from automation.orchestrator import (
     DatasetProductionResult,
     ProductionOrchestrationError,
     ProductionOrchestrator,
+    ProductionRunProgress,
+    ProductionRunResult,
 )
 from automation.project_assembler import (
     PROJECT_ASSEMBLY_MANIFEST_SCHEMA_VERSION,
@@ -90,6 +92,8 @@ __all__ = [
     "ProductionAssetsBrief",
     "ProductionOrchestrationError",
     "ProductionOrchestrator",
+    "ProductionRunProgress",
+    "ProductionRunResult",
     "ProductionPreflightError",
     "ProductionPreflightIssue",
     "ProductionPreflightResult",

@@ -220,12 +220,17 @@ class ProductionPreflightRunner:
             raise ValueError("Project SHA-256 does not match ProjectAssemblyResult.")
 
         status = self._read_json_object(workspace.status_path, "workspace status")
+        allowed_statuses = {
+            ("dataset_ready", "dataset"),
+            ("project_ready", "project"),
+        }
         if (
-            status.get("state") != "dataset_ready"
-            or status.get("stage") != "dataset"
+            (status.get("state"), status.get("stage")) not in allowed_statuses
             or status.get("job_id") != workspace.job_id
         ):
-            raise ValueError("Workspace status must remain dataset_ready for this job.")
+            raise ValueError(
+                "Workspace status must be dataset_ready or project_ready for this job."
+            )
 
         assembly_manifest = self._read_json_object(
             assembly_result.manifest_path,
