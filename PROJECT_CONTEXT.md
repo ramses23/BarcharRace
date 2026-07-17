@@ -266,9 +266,9 @@ The project is a usable MVP:
   path is reported as a warning without invalidating the completed build.
   Duplicate identity uses every available standard match field; `error` stops,
   `warn` retains and reports, and `allow` retains silently.
-- Dataset automation still has no production CLI, briefs, builder registry,
-  logo workflow, automatic project JSON, or automatic render. The current
-  builder performs no network access or remote caching.
+- Dataset automation still has no production CLI, builder-specific parameter
+  validation, logo workflow, automatic project JSON, or automatic render. The
+  current builder performs no network access or remote caching.
 - `ProductionWorkspace` reserves one exclusive job directory under
   `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
   canonical artifact directories, and writes deterministic version-1 workspace
@@ -276,18 +276,25 @@ The project is a usable MVP:
   project JSON schemas are independent. Failed initialization rolls back only
   the job directory created by that attempt.
 - The workspace is path infrastructure only: it does not execute dataset
-  builders or renders. Production briefs, a builder registry, orchestration,
-  automatic logos, automatic project JSON, and a production CLI do not exist
-  yet.
+  builders or renders. Orchestration, automatic logos, automatic project JSON,
+  and a production CLI do not exist yet.
 - `ProductionBrief` and `DatasetBrief` define immutable production intent under
   an independent version-1 brief schema. The strict JSON loader rejects unknown
   and duplicate fields, resolves a portable local source path beneath an
   explicit `root_dir`, and stores generic scalar parameters in deterministic,
   deeply immutable form. Loading a brief reads no source content and executes
   no workspace, builder, project, or render work.
-- Brief, workspace, dataset builder, project JSON, and render remain separate
-  contracts. A builder registry, production orchestrator/CLI, automatic logo
-  resolution, project assembler, and automatic render do not exist yet.
+- `DatasetBuilderRegistry` is an explicit, immutable mapping from validated
+  builder IDs to zero-argument factories. Its default registry contains only
+  `national_team_goals`; there is no autodiscovery, plugin loading, or mutable
+  global registry. Every resolution invokes the registered factory and returns
+  a newly validated builder instance. Registry construction and resolution do
+  not invoke `build()`, read or write files, create workspaces, or interpret
+  builder-specific parameters.
+- Brief, workspace, dataset builder, registry, project JSON, and render remain
+  separate contracts. Builder-specific parameter validation, a production
+  orchestrator/CLI, automatic logo resolution, a project assembler, and
+  automatic render do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.

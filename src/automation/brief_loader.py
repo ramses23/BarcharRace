@@ -26,6 +26,19 @@ class ProductionBriefError(ValueError):
     pass
 
 
+def validate_builder_id(builder_id: object) -> str:
+    """Validate and return a stable dataset builder identifier."""
+    if not isinstance(builder_id, str) or not _BUILDER_ID_PATTERN.fullmatch(
+        builder_id
+    ):
+        raise ValueError(
+            "builder_id must be 1-64 characters, begin with a lowercase "
+            "letter or digit, and contain only lowercase letters, digits, "
+            "or underscores."
+        )
+    return builder_id
+
+
 def load_production_brief(
     brief_path: str | Path,
     *,
@@ -181,14 +194,15 @@ def _require_field(data: dict, field: str, location: str, brief_file: Path) -> A
 
 
 def _validate_builder_id(value: Any, brief_file: Path) -> str:
-    if not isinstance(value, str) or not _BUILDER_ID_PATTERN.fullmatch(value):
+    try:
+        return validate_builder_id(value)
+    except ValueError as exc:
         raise _error(
             brief_file,
             "Field 'dataset.builder' must be 1-64 characters, begin with a "
             "lowercase letter or digit, and contain only lowercase letters, "
             "digits, or underscores.",
-        )
-    return value
+        ) from exc
 
 
 def _resolve_source_csv(
