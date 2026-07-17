@@ -8,6 +8,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from automation.builder_parameters import (
+    NATIONAL_TEAM_GOALS_DUPLICATE_POLICIES,
+    NATIONAL_TEAM_GOALS_MODES,
+)
 from automation.models import DatasetBuildResult
 
 
@@ -35,8 +39,8 @@ class NationalTeamGoalsDatasetBuilder:
         "country",
         "neutral",
     )
-    _MODES = frozenset(("annual", "cumulative"))
-    _DUPLICATE_POLICIES = frozenset(("error", "warn", "allow"))
+    _MODES = NATIONAL_TEAM_GOALS_MODES
+    _DUPLICATE_POLICIES = NATIONAL_TEAM_GOALS_DUPLICATE_POLICIES
 
     def build(
         self,

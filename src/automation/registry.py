@@ -6,7 +6,12 @@ from types import MappingProxyType
 from typing import Any
 
 from automation.brief_loader import validate_builder_id
+from automation.builder_parameters import (
+    DatasetBuilderParameterParser,
+    parse_national_team_goals_parameters,
+)
 from automation.builders import DatasetBuilder, NationalTeamGoalsDatasetBuilder
+from automation.models import FrozenParameters
 
 
 class DatasetBuilderRegistryError(ValueError):
@@ -19,10 +24,11 @@ class UnknownDatasetBuilderError(DatasetBuilderRegistryError):
 
 @dataclass(frozen=True)
 class DatasetBuilderDefinition:
-    """Immutable association between a stable ID and a zero-argument factory."""
+    """Immutable association of an ID, factory, and optional parameter parser."""
 
     builder_id: str
     factory: Callable[[], DatasetBuilder]
+    parameter_parser: DatasetBuilderParameterParser | None = None
 
 
 @dataclass(frozen=True, init=False)
@@ -31,6 +37,7 @@ class DatasetBuilderRegistry:
 
     _definitions: tuple[DatasetBuilderDefinition, ...]
     _factories: Mapping[str, Callable[[], DatasetBuilder]]
+    _parameter_parsers: Mapping[str, DatasetBuilderParameterParser | None]
     available_builder_ids: tuple[str, ...]
 
     def __init__(
@@ -39,6 +46,7 @@ class DatasetBuilderRegistry:
     ) -> None:
         copied_definitions = tuple(definitions)
         factories: dict[str, Callable[[], DatasetBuilder]] = {}
+        parameter_parsers: dict[str, DatasetBuilderParameterParser | None] = {}
 
         for index, definition in enumerate(copied_definitions):
             if not isinstance(definition, DatasetBuilderDefinition):
@@ -62,9 +70,17 @@ class DatasetBuilderRegistry:
                 raise DatasetBuilderRegistryError(
                     f"Factory for builder {builder_id!r} must be callable."
                 )
+            if (
+                definition.parameter_parser is not None
+                and not callable(definition.parameter_parser)
+            ):
+                raise DatasetBuilderRegistryError(
+                    f"Parameter parser for builder {builder_id!r} must be callable."
+                )
 
             _create_validated_builder(builder_id, definition.factory)
             factories[builder_id] = definition.factory
+            parameter_parsers[builder_id] = definition.parameter_parser
 
         ordered_definitions = tuple(
             sorted(copied_definitions, key=lambda item: item.builder_id)
@@ -73,8 +89,17 @@ class DatasetBuilderRegistry:
             definition.builder_id: factories[definition.builder_id]
             for definition in ordered_definitions
         }
+        ordered_parameter_parsers = {
+            definition.builder_id: parameter_parsers[definition.builder_id]
+            for definition in ordered_definitions
+        }
         object.__setattr__(self, "_definitions", ordered_definitions)
         object.__setattr__(self, "_factories", MappingProxyType(ordered_factories))
+        object.__setattr__(
+            self,
+            "_parameter_parsers",
+            MappingProxyType(ordered_parameter_parsers),
+        )
         object.__setattr__(
             self,
             "available_builder_ids",
@@ -83,6 +108,29 @@ class DatasetBuilderRegistry:
 
     def create(self, builder_id: object) -> DatasetBuilder:
         """Create and validate a new builder instance for ``builder_id``."""
+        validated_id = self._resolve_builder_id(builder_id)
+        return _create_validated_builder(validated_id, self._factories[validated_id])
+
+    def parse_parameters(
+        self,
+        builder_id: object,
+        parameters: FrozenParameters,
+    ) -> object:
+        """Parse immutable generic parameters without creating a builder."""
+        validated_id = self._resolve_builder_id(builder_id)
+        parser = self._parameter_parsers[validated_id]
+        if parser is None:
+            raise DatasetBuilderRegistryError(
+                f"Dataset builder {validated_id!r} has no parameter parser."
+            )
+        try:
+            return parser(parameters)
+        except Exception as exc:
+            raise DatasetBuilderRegistryError(
+                f"Parameter parser for builder {validated_id!r} failed: {exc}"
+            ) from exc
+
+    def _resolve_builder_id(self, builder_id: object) -> str:
         try:
             validated_id = validate_builder_id(builder_id)
         except ValueError as exc:
@@ -90,14 +138,13 @@ class DatasetBuilderRegistry:
                 f"Invalid requested builder ID {builder_id!r}: {exc}"
             ) from exc
 
-        factory = self._factories.get(validated_id)
-        if factory is None:
+        if validated_id not in self._factories:
             available = ", ".join(self.available_builder_ids) or "(none)"
             raise UnknownDatasetBuilderError(
                 f"Unknown dataset builder {validated_id!r}. "
                 f"Available builder IDs: {available}."
             )
-        return _create_validated_builder(validated_id, factory)
+        return validated_id
 
 
 def create_default_dataset_builder_registry() -> DatasetBuilderRegistry:
@@ -107,6 +154,7 @@ def create_default_dataset_builder_registry() -> DatasetBuilderRegistry:
             DatasetBuilderDefinition(
                 builder_id="national_team_goals",
                 factory=NationalTeamGoalsDatasetBuilder,
+                parameter_parser=parse_national_team_goals_parameters,
             ),
         )
     )

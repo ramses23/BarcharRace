@@ -266,8 +266,8 @@ The project is a usable MVP:
   path is reported as a warning without invalidating the completed build.
   Duplicate identity uses every available standard match field; `error` stops,
   `warn` retains and reports, and `allow` retains silently.
-- Dataset automation still has no production CLI, builder-specific parameter
-  validation, logo workflow, automatic project JSON, or automatic render. The
+- Dataset automation still has no production CLI, automatic brief execution,
+  logo workflow, automatic project JSON, preflight, or automatic render. The
   current builder performs no network access or remote caching.
 - `ProductionWorkspace` reserves one exclusive job directory under
   `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
@@ -285,16 +285,25 @@ The project is a usable MVP:
   deeply immutable form. Loading a brief reads no source content and executes
   no workspace, builder, project, or render work.
 - `DatasetBuilderRegistry` is an explicit, immutable mapping from validated
-  builder IDs to zero-argument factories. Its default registry contains only
-  `national_team_goals`; there is no autodiscovery, plugin loading, or mutable
-  global registry. Every resolution invokes the registered factory and returns
-  a newly validated builder instance. Registry construction and resolution do
-  not invoke `build()`, read or write files, create workspaces, or interpret
-  builder-specific parameters.
+  builder IDs to zero-argument factories and optional parameter parsers. Its
+  default registry contains only `national_team_goals`; there is no
+  autodiscovery, plugin loading, or mutable global registry. Every builder
+  resolution invokes the registered factory and returns a newly validated
+  instance. Parameter parsing invokes only the selected parser and never
+  creates or executes a builder.
+- `NationalTeamGoalsBuildParameters` is the frozen, typed representation of the
+  four canonical brief parameters: `start_year`, `end_year`, `mode`, and
+  `duplicate_policy`. Its parser is a pure transformation from
+  `FrozenParameters`: it accepts no missing or unknown keys, performs no I/O,
+  and returns new builder-argument dictionaries on demand. The builder retains
+  its independent defensive validation for direct calls; the parser does not
+  replace it.
+- Registry construction, builder resolution, and parameter parsing do not read
+  or write files, create workspaces, or invoke `build()`.
 - Brief, workspace, dataset builder, registry, project JSON, and render remain
-  separate contracts. Builder-specific parameter validation, a production
-  orchestrator/CLI, automatic logo resolution, a project assembler, and
-  automatic render do not exist yet.
+  separate contracts. A production orchestrator/CLI, automatic brief
+  execution, automatic logo resolution, a project assembler, automatic
+  preflight, and automatic render do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
