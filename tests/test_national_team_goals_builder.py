@@ -1,4 +1,5 @@
 import hashlib
+import os
 import socket
 import sys
 import tempfile
@@ -486,11 +487,25 @@ class NationalTeamGoalsDatasetBuilderTest(unittest.TestCase):
             result = self.build()
 
         self.assertTrue(result.csv_path.exists())
+        self.assertEqual(self.rows(result.csv_path), ANNUAL_GOLDEN)
         residuals = self.temporary_csv_files()
         self.assertEqual(len(residuals), 1)
-        warning = " ".join(result.warnings)
+        self.assertTrue(residuals[0].exists())
+        cleanup_warnings = tuple(
+            warning
+            for warning in result.warnings
+            if "temporary file cleanup failed" in warning
+        )
+        self.assertEqual(len(cleanup_warnings), 1)
+        warning = cleanup_warnings[0]
         self.assertIn("published successfully", warning)
-        self.assertIn(str(residuals[0]), warning)
+        self.assertIn("simulated cleanup lock", warning)
+        warning_path_text = warning.split("residual file: ", 1)[1].rsplit(
+            ". Error: ", 1
+        )[0]
+        warning_path = Path(warning_path_text)
+        self.assertTrue(warning_path.exists())
+        self.assertTrue(os.path.samefile(warning_path, residuals[0]))
         residuals[0].unlink()
 
     def test_cleanup_failure_does_not_hide_publication_failure(self):
