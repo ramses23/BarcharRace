@@ -266,9 +266,11 @@ The project is a usable MVP:
   path is reported as a warning without invalidating the completed build.
   Duplicate identity uses every available standard match field; `error` stops,
   `warn` retains and reports, and `allow` retains silently.
-- Dataset automation still has no production CLI, automatic project JSON,
-  render preflight, or automatic render. Dataset building and local logo
-  resolution perform no network access, downloads, or remote caching.
+- The automation workstream still has no production CLI or automatically
+  composed end-to-end flow. Its project assembly, render preflight, and render
+  execution stages exist as independent APIs that callers must compose
+  explicitly. Dataset building and local logo resolution perform no network
+  access, downloads, or remote caching.
 - `ProductionWorkspace` reserves one exclusive job directory under
   `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
   canonical artifact directories, and writes deterministic version-1 workspace
@@ -278,8 +280,8 @@ The project is a usable MVP:
 - The workspace remains path infrastructure: it exposes canonical
   `logos/primary`, `logos/secondary`, and
   `manifests/logo_resolution.json` paths plus canonical project, video, and
-  project-assembly/preflight-manifest paths, but it does not execute dataset
-  builders, logo resolution, project assembly, preflight, or renders.
+  project-assembly/preflight/render-manifest paths, but it does not execute
+  dataset builders, logo resolution, project assembly, preflight, or renders.
 - `ProductionBrief` and `DatasetBrief` define immutable production intent under
   an independent version-1 brief schema. The strict JSON loader rejects unknown
   and duplicate fields, resolves a portable local source path beneath an
@@ -355,11 +357,29 @@ The project is a usable MVP:
   and `ready` or `blocked` status. It does not modify `status.json`, correct
   configuration, create frames or MP4 output, execute FFmpeg, or start a render.
   The workspace therefore remains at `dataset_ready` in either preflight state.
+- `ProductionRenderExecutor` is the independent, blocking render stage after a
+  `ready` production preflight. It revalidates workspace identity, assembly and
+  preflight manifests, project hash/size, project loading, configured output,
+  and exclusive destination/partial-file state before launching anything. It
+  then reuses `start_background_render()`, `BackgroundRender.status()` and
+  `BackgroundRender.cancel()`, and `render_result_from_status()`; it never
+  creates a second rendering pipeline or invokes `RenderJob` or FFmpeg directly.
+- A completed render produces canonical `render/video.mp4` plus the independent
+  deterministic `manifests/production_render.json` schema. The immutable result
+  records the final status, MP4 SHA-256 and size, frames, transitions, FPS,
+  playback duration, stable `RenderProfile`, and immutable warnings. Worker
+  failures preserve their isolated status/log evidence and publish no success
+  manifest; manifest-publication failure preserves an already valid MP4.
+  Cancellation is represented explicitly through the controller contract and
+  cannot promote an incomplete final MP4.
+- The independent render executor does not modify the general production
+  `status.json` and is not yet called by `ProductionOrchestrator`. Full staged
+  integration, production CLI, job queue, and resume/recovery support remain
+  pending.
 - Brief, workspace, dataset builder, registry, project JSON, and render remain
   separate contracts. `ProductionBrief` has no logo or visual configuration,
-  and the local resolver, project assembler, and preflight runner are not
-  integrated automatically into `ProductionOrchestrator`. Automatic render, a
-  production CLI, job queue, and resume support do not exist yet.
+  and the local resolver, project assembler, preflight runner, and render
+  executor are not integrated automatically into `ProductionOrchestrator`.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.

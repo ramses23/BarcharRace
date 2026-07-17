@@ -46,6 +46,13 @@ from automation.production_preflight import (
     ProductionPreflightResult,
     ProductionPreflightRunner,
 )
+from automation.render_executor import (
+    PRODUCTION_RENDER_MANIFEST_SCHEMA_VERSION,
+    ProductionRenderError,
+    ProductionRenderExecutor,
+    ProductionRenderProgress,
+    ProductionRenderResult,
+)
 from automation.registry import (
     DatasetBuilderDefinition,
     DatasetBuilderRegistry,
@@ -81,10 +88,15 @@ __all__ = [
     "ProductionPreflightIssue",
     "ProductionPreflightResult",
     "ProductionPreflightRunner",
+    "ProductionRenderError",
+    "ProductionRenderExecutor",
+    "ProductionRenderProgress",
+    "ProductionRenderResult",
     "ProductionProjectAssembler",
     "ProductionWorkspace",
     "PROJECT_ASSEMBLY_MANIFEST_SCHEMA_VERSION",
     "PRODUCTION_PREFLIGHT_MANIFEST_SCHEMA_VERSION",
+    "PRODUCTION_RENDER_MANIFEST_SCHEMA_VERSION",
     "ProjectAssemblyError",
     "ProjectAssemblyOptions",
     "ProjectAssemblyResult",
