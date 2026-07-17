@@ -178,6 +178,14 @@ class ProductionWorkspace:
     def production_log_path(self) -> Path:
         return self._file_path(self.logs_dir, "production.log")
 
+    def replace_status(self, data: dict) -> None:
+        """Atomically replace this workspace's existing production status."""
+        self._write_json_replacing(data, self.status_path)
+
+    def publish_dataset_build_manifest(self, data: dict) -> None:
+        """Publish the dataset manifest without overwriting an existing file."""
+        self._write_json_exclusive(data, self.dataset_build_manifest_path)
+
     def _child_path(self, name: str) -> Path:
         candidate = (self.root_path / name).resolve(strict=False)
         if candidate.parent != self.root_path:
@@ -239,6 +247,58 @@ class ProductionWorkspace:
 
     @staticmethod
     def _write_json_exclusive(data: dict, destination: Path) -> None:
+        temporary_path = ProductionWorkspace._write_json_temporary(
+            data,
+            destination,
+        )
+        try:
+            try:
+                os.link(temporary_path, destination)
+            except FileExistsError as exc:
+                raise FileExistsError(
+                    f"JSON destination already exists: {destination}"
+                ) from exc
+            except OSError as exc:
+                raise OSError(
+                    "Atomic JSON publication failed while creating a hardlink "
+                    f"for {destination}."
+                ) from exc
+        except BaseException as original_error:
+            ProductionWorkspace._cleanup_json_temporary_after_error(
+                temporary_path,
+                original_error,
+            )
+            raise
+
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            raise OSError(
+                f"Published JSON temporary cleanup failed: {temporary_path}"
+            ) from cleanup_error
+
+    @staticmethod
+    def _write_json_replacing(data: dict, destination: Path) -> None:
+        temporary_path = ProductionWorkspace._write_json_temporary(
+            data,
+            destination,
+        )
+        try:
+            try:
+                os.replace(temporary_path, destination)
+            except OSError as exc:
+                raise OSError(
+                    f"Atomic JSON replacement failed for {destination}."
+                ) from exc
+        except BaseException as original_error:
+            ProductionWorkspace._cleanup_json_temporary_after_error(
+                temporary_path,
+                original_error,
+            )
+            raise
+
+    @staticmethod
+    def _write_json_temporary(data: dict, destination: Path) -> Path:
         serialized = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         temporary_path = None
         try:
@@ -255,32 +315,24 @@ class ProductionWorkspace:
                 temporary_file.write(serialized)
                 temporary_file.flush()
                 os.fsync(temporary_file.fileno())
-
-            try:
-                os.link(temporary_path, destination)
-            except FileExistsError as exc:
-                raise FileExistsError(
-                    f"JSON destination already exists: {destination}"
-                ) from exc
-            except OSError as exc:
-                raise OSError(
-                    "Atomic JSON publication failed while creating a hardlink "
-                    f"for {destination}."
-                ) from exc
         except BaseException as original_error:
             if temporary_path is not None:
-                try:
-                    temporary_path.unlink(missing_ok=True)
-                except BaseException as cleanup_error:
-                    original_error.add_note(
-                        "Temporary JSON cleanup also failed for "
-                        f"{temporary_path}: {cleanup_error}"
-                    )
+                ProductionWorkspace._cleanup_json_temporary_after_error(
+                    temporary_path,
+                    original_error,
+                )
             raise
+        return temporary_path
 
+    @staticmethod
+    def _cleanup_json_temporary_after_error(
+        temporary_path: Path,
+        original_error: BaseException,
+    ) -> None:
         try:
             temporary_path.unlink(missing_ok=True)
-        except OSError as cleanup_error:
-            raise OSError(
-                f"Published JSON temporary cleanup failed: {temporary_path}"
-            ) from cleanup_error
+        except BaseException as cleanup_error:
+            original_error.add_note(
+                "Temporary JSON cleanup also failed for "
+                f"{temporary_path}: {cleanup_error}"
+            )

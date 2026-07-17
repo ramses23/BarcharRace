@@ -266,9 +266,9 @@ The project is a usable MVP:
   path is reported as a warning without invalidating the completed build.
   Duplicate identity uses every available standard match field; `error` stops,
   `warn` retains and reports, and `allow` retains silently.
-- Dataset automation still has no production CLI, automatic brief execution,
-  logo workflow, automatic project JSON, preflight, or automatic render. The
-  current builder performs no network access or remote caching.
+- Dataset automation still has no production CLI, logo workflow, automatic
+  project JSON, render preflight, or automatic render. The current builder
+  performs no network access or remote caching.
 - `ProductionWorkspace` reserves one exclusive job directory under
   `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
   canonical artifact directories, and writes deterministic version-1 workspace
@@ -300,10 +300,22 @@ The project is a usable MVP:
   replace it.
 - Registry construction, builder resolution, and parameter parsing do not read
   or write files, create workspaces, or invoke `build()`.
+- `ProductionOrchestrator.prepare_dataset()` is limited to the dataset stage.
+  It accepts an already validated `ProductionBrief` and an explicitly injected
+  registry, validates source containment and all registry operations before
+  creating one workspace, then writes `running`, invokes the builder once,
+  validates the CSV through the existing `DatasetValidator`, publishes the
+  deterministic `manifests/dataset_build.json`, and finishes at
+  `dataset_ready`. It does not duplicate builder transformation rules or
+  `DatasetValidator` checks.
+- Dataset-stage failures after workspace creation are recorded by best effort
+  as `failed` with a non-sensitive phase and exception type. The workspace,
+  generated CSV, and any exclusively published manifest are retained for
+  audit; failures before workspace creation leave no job directory.
 - Brief, workspace, dataset builder, registry, project JSON, and render remain
-  separate contracts. A production orchestrator/CLI, automatic brief
-  execution, automatic logo resolution, a project assembler, automatic
-  preflight, and automatic render do not exist yet.
+  separate contracts. Automatic logo resolution, a project assembler, render
+  preflight, automatic render, a production CLI, job queue, and resume support
+  do not exist yet.
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.

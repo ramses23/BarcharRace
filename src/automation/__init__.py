@@ -17,6 +17,13 @@ from automation.models import (
     FrozenParameters,
     ProductionBrief,
 )
+from automation.orchestrator import (
+    DATASET_BUILD_MANIFEST_SCHEMA_VERSION,
+    DatasetBuildParameterArguments,
+    DatasetProductionResult,
+    ProductionOrchestrationError,
+    ProductionOrchestrator,
+)
 from automation.registry import (
     DatasetBuilderDefinition,
     DatasetBuilderRegistry,
@@ -34,10 +41,15 @@ __all__ = [
     "DatasetBuilderRegistry",
     "DatasetBuilderRegistryError",
     "DatasetBuildResult",
+    "DatasetBuildParameterArguments",
+    "DatasetProductionResult",
+    "DATASET_BUILD_MANIFEST_SCHEMA_VERSION",
     "FrozenParameters",
     "NationalTeamGoalsBuildParameters",
     "ProductionBrief",
     "ProductionBriefError",
+    "ProductionOrchestrationError",
+    "ProductionOrchestrator",
     "ProductionWorkspace",
     "UnknownDatasetBuilderError",
     "create_default_dataset_builder_registry",
