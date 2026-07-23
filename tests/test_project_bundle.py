@@ -62,6 +62,177 @@ class ProjectBundleTest(unittest.TestCase):
             )
             self.assertEqual(load_project_file(imported_path).name, "portable_project")
 
+    def test_imports_valid_extracted_bundle_folder_without_modifying_source(self):
+        with (
+            tempfile.TemporaryDirectory() as source_dir,
+            tempfile.TemporaryDirectory() as package_dir,
+            tempfile.TemporaryDirectory() as target_dir,
+        ):
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+            package_root = self._extract_bundle_folder(
+                exported.data,
+                Path(package_dir),
+            )
+            original_package = self._file_snapshot(package_root)
+
+            imported = import_project_bundle(package_root, root_dir=target_root)
+
+            self.assertTrue(Path(imported.project_path).is_file())
+            self.assertTrue(Path(imported.asset_directory).is_dir())
+            self.assertEqual(self._file_snapshot(package_root), original_package)
+
+    def test_zip_path_and_folder_imports_are_equivalent(self):
+        with (
+            tempfile.TemporaryDirectory() as source_dir,
+            tempfile.TemporaryDirectory() as package_dir,
+            tempfile.TemporaryDirectory() as zip_target_dir,
+            tempfile.TemporaryDirectory() as folder_target_dir,
+        ):
+            source_root = Path(source_dir)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+            package_parent = Path(package_dir)
+            zip_path = package_parent / exported.filename
+            zip_path.write_bytes(exported.data)
+            package_root = self._extract_bundle_folder(
+                exported.data,
+                package_parent,
+            )
+
+            zip_import = import_project_bundle(
+                zip_path,
+                root_dir=Path(zip_target_dir),
+            )
+            folder_import = import_project_bundle(
+                package_root,
+                root_dir=Path(folder_target_dir),
+            )
+
+            zip_project = json.loads(
+                Path(zip_import.project_path).read_text(encoding="utf-8")
+            )
+            folder_project = json.loads(
+                Path(folder_import.project_path).read_text(encoding="utf-8")
+            )
+            self.assertEqual(zip_project, folder_project)
+            self.assertEqual(
+                self._file_snapshot(Path(zip_import.asset_directory)),
+                self._file_snapshot(Path(folder_import.asset_directory)),
+            )
+
+    def test_rejects_folder_with_incorrect_hash_without_publishing(self):
+        with (
+            tempfile.TemporaryDirectory() as source_dir,
+            tempfile.TemporaryDirectory() as package_dir,
+            tempfile.TemporaryDirectory() as target_dir,
+        ):
+            source_root = Path(source_dir)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+            package_root = self._extract_bundle_folder(
+                exported.data,
+                Path(package_dir),
+            )
+            manifest = json.loads(
+                (package_root / MANIFEST_PATH).read_text(encoding="utf-8")
+            )
+            dataset_path = next(
+                record["path"]
+                for record in manifest["files"]
+                if record["path"].startswith("data/")
+            )
+            dataset_file = package_root.joinpath(*Path(dataset_path).parts)
+            tampered = bytearray(dataset_file.read_bytes())
+            tampered[-2] ^= 0x01
+            dataset_file.write_bytes(tampered)
+
+            with self.assertRaisesRegex(ProjectBundleError, "Checksum failed"):
+                import_project_bundle(package_root, root_dir=Path(target_dir))
+
+            self._assert_failed_import_is_clean(Path(target_dir))
+
+    def test_rejects_semantically_invalid_folder_dataset_before_publishing(self):
+        with (
+            tempfile.TemporaryDirectory() as source_dir,
+            tempfile.TemporaryDirectory() as package_dir,
+            tempfile.TemporaryDirectory() as target_dir,
+        ):
+            source_root = Path(source_dir)
+            project = self._project_fixture(source_root)
+            (source_root / "data" / "source.csv").write_text(
+                "year,name,value\n2020,Alpha,invalid\n2021,Alpha,12\n",
+                encoding="utf-8",
+            )
+            exported = build_project_bundle(project, root_dir=source_root)
+            package_root = self._extract_bundle_folder(
+                exported.data,
+                Path(package_dir),
+            )
+
+            with self.assertRaisesRegex(ProjectBundleError, "non-numeric values"):
+                import_project_bundle(package_root, root_dir=Path(target_dir))
+
+            self._assert_failed_import_is_clean(Path(target_dir))
+
+    def test_rejects_symbolic_link_in_bundle_folder(self):
+        with (
+            tempfile.TemporaryDirectory() as source_dir,
+            tempfile.TemporaryDirectory() as package_dir,
+            tempfile.TemporaryDirectory() as target_dir,
+        ):
+            source_root = Path(source_dir)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+            package_parent = Path(package_dir)
+            package_root = self._extract_bundle_folder(
+                exported.data,
+                package_parent,
+            )
+            outside_file = package_parent / "outside.txt"
+            outside_file.write_text("outside", encoding="utf-8")
+            link_path = package_root / "external-link.txt"
+            try:
+                link_path.symlink_to(outside_file)
+            except (NotImplementedError, OSError) as exc:
+                self.skipTest(f"Symbolic links are unavailable: {exc}")
+
+            with self.assertRaisesRegex(ProjectBundleError, "Symbolic links"):
+                import_project_bundle(package_root, root_dir=Path(target_dir))
+
+            self._assert_failed_import_is_clean(Path(target_dir))
+
+    def test_rejects_missing_path_and_non_zip_file(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+
+            with self.assertRaisesRegex(ProjectBundleError, "does not exist"):
+                import_project_bundle(
+                    source_root / "missing.barchart.zip",
+                    root_dir=target_root,
+                )
+
+            text_file = source_root / "not-a-bundle.txt"
+            text_file.write_text("not a bundle", encoding="utf-8")
+            with self.assertRaisesRegex(
+                ProjectBundleError,
+                r"\.zip file or a directory",
+            ):
+                import_project_bundle(text_file, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
+
     def test_rejects_non_numeric_dataset_before_publishing(self):
         with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
             source_root = Path(source_dir)
@@ -352,6 +523,22 @@ class ProjectBundleTest(unittest.TestCase):
             (root / "projects" / "imported" / "portable_project").exists()
         )
         self.assertEqual(list(root.rglob("*.tmp")), [])
+
+    @staticmethod
+    def _extract_bundle_folder(bundle_data, parent):
+        package_root = parent / "extracted-package"
+        package_root.mkdir()
+        with zipfile.ZipFile(io.BytesIO(bundle_data)) as archive:
+            archive.extractall(package_root)
+        return package_root
+
+    @staticmethod
+    def _file_snapshot(root):
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        }
 
 
 if __name__ == "__main__":
