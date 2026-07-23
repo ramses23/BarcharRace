@@ -102,6 +102,7 @@ CURRENT_DRAFT_STATE = "current_project_draft"
 PENDING_PROJECT_ACTION_STATE = "pending_project_action"
 PROJECT_BUNDLE_EXPORT_STATE = "project_bundle_export"
 LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
+BUNDLE_IMPORT_UPLOAD_NONCE_STATE = "project_bundle_import_upload_nonce"
 PREVIEW_SETTINGS_STATE = "project_preview_settings"
 
 
@@ -230,6 +231,7 @@ def _initialize_studio_state():
     st.session_state.setdefault(LAST_PREFLIGHT_STATE, None)
     st.session_state.setdefault(PROJECT_BUNDLE_EXPORT_STATE, None)
     st.session_state.setdefault(LAST_BUNDLE_IMPORT_STATE, None)
+    st.session_state.setdefault(BUNDLE_IMPORT_UPLOAD_NONCE_STATE, 0)
     st.session_state.setdefault(PREVIEW_SETTINGS_STATE, None)
 
 
@@ -465,38 +467,85 @@ def _project_source_panel():
 
 def _portable_bundle_import_panel(*, render_active):
     with st.expander(
-        "Import portable ZIP",
+        "Importar paquete de producción",
         icon=":material/unarchive:",
+        expanded=False,
+        type="compact",
     ):
         imported = st.session_state.get(LAST_BUNDLE_IMPORT_STATE)
         if isinstance(imported, dict):
             st.success(
-                f"Imported {imported.get('project', 'project bundle')}",
+                f"Imported project {imported.get('name', 'project bundle')}",
                 icon=":material/inventory_2:",
             )
             st.caption(
+                f"Editable project: `{imported.get('project', '')}` · "
                 f"{imported.get('files', 0):,} verified files · "
                 f"{format_file_size(imported.get('uncompressed_size', 0))} unpacked"
             )
 
-        uploaded = st.file_uploader(
-            "Project bundle",
-            type=["zip"],
-            help="Select a .barchart.zip file exported by BarChartStudio.",
-            key=_widget_key("project_bundle_upload"),
-        )
-        if st.button(
-            "Import and open",
-            icon=":material/unarchive:",
+        source = st.segmented_control(
+            "Package source",
+            options=("ZIP file", "Local folder"),
+            default="ZIP file",
+            key="project_bundle_import_source",
             width="stretch",
-            disabled=uploaded is None or render_active,
-            key="import_project_bundle",
+        )
+        uploaded = None
+        folder_path = ""
+        with st.form(
+            "project_bundle_import_form",
+            clear_on_submit=False,
+            border=False,
         ):
+            if source == "Local folder":
+                folder_path = st.text_input(
+                    "Production folder path",
+                    key=_widget_key("project_bundle_folder_path"),
+                    help=(
+                        "Local path to an extracted production package. "
+                        "The source folder is never modified."
+                    ),
+                )
+            else:
+                upload_nonce = st.session_state.get(
+                    BUNDLE_IMPORT_UPLOAD_NONCE_STATE,
+                    0,
+                )
+                uploaded = st.file_uploader(
+                    "Project bundle",
+                    type=["zip"],
+                    help="Select a .barchart.zip file exported by BarChartStudio.",
+                    key=f"project_bundle_upload_{upload_nonce}",
+                )
+            submitted = st.form_submit_button(
+                "Import and open",
+                icon=":material/unarchive:",
+                width="stretch",
+                disabled=render_active,
+            )
+
+        if not submitted:
+            return
+        if source == "Local folder":
+            folder_path = folder_path.strip()
+            if not folder_path:
+                st.error("Enter a local production folder path.")
+                return
             _request_project_action(
                 "import_bundle",
-                bundle=uploaded.getvalue(),
-                filename=uploaded.name,
+                bundle=Path(folder_path),
+                filename=folder_path,
             )
+            return
+        if uploaded is None:
+            st.error("Select a production package ZIP.")
+            return
+        _request_project_action(
+            "import_bundle",
+            bundle=uploaded.getvalue(),
+            filename=uploaded.name,
+        )
 
 
 def _request_project_action(action, **payload):
@@ -602,10 +651,14 @@ def _import_project_bundle_action(bundle, *, filename):
 
     project_path = _project_relative_path(Path(imported.project_path))
     st.session_state[LAST_BUNDLE_IMPORT_STATE] = {
+        "name": Path(project_path).stem,
         "project": project_path,
         "files": imported.file_count,
         "uncompressed_size": imported.uncompressed_size,
     }
+    st.session_state[BUNDLE_IMPORT_UPLOAD_NONCE_STATE] = (
+        st.session_state.get(BUNDLE_IMPORT_UPLOAD_NONCE_STATE, 0) + 1
+    )
     _load_selected_project(project_path, preserve_bundle_import=True)
 
 
@@ -2656,7 +2709,7 @@ def _project_files():
         return ()
 
     return tuple(
-        str(path.relative_to(ROOT_DIR))
+        path.relative_to(ROOT_DIR).as_posix()
         for path in sorted(projects_dir.glob("*.json"))
     )
 
