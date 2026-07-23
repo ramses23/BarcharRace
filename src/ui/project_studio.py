@@ -1,6 +1,7 @@
 import copy
+import os
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pandas as pd
 import streamlit as st
@@ -104,6 +105,9 @@ PROJECT_BUNDLE_EXPORT_STATE = "project_bundle_export"
 LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
 BUNDLE_IMPORT_UPLOAD_NONCE_STATE = "project_bundle_import_upload_nonce"
 PREVIEW_SETTINGS_STATE = "project_preview_settings"
+AUTOLOAD_PROJECT_ENV = "BARCHARTSTUDIO_AUTOLOAD_PROJECT"
+AUTOLOAD_TOKEN_ENV = "BARCHARTSTUDIO_AUTOLOAD_TOKEN"
+AUTOLOAD_TOKEN_STATE = "autoload_consumed_token"
 
 
 st.set_page_config(
@@ -124,6 +128,7 @@ st.logo(
 
 def main():
     _initialize_studio_state()
+    _autoload_requested_project()
     header_slot = st.empty()
 
     with st.sidebar:
@@ -233,6 +238,76 @@ def _initialize_studio_state():
     st.session_state.setdefault(LAST_BUNDLE_IMPORT_STATE, None)
     st.session_state.setdefault(BUNDLE_IMPORT_UPLOAD_NONCE_STATE, 0)
     st.session_state.setdefault(PREVIEW_SETTINGS_STATE, None)
+    st.session_state.setdefault(AUTOLOAD_TOKEN_STATE, None)
+
+
+def _autoload_requested_project():
+    requested_project = os.environ.get(AUTOLOAD_PROJECT_ENV)
+    token = os.environ.get(AUTOLOAD_TOKEN_ENV)
+    if requested_project is None and token is None:
+        return
+
+    token = token or ""
+    if st.session_state.get(AUTOLOAD_TOKEN_STATE) == token:
+        return
+    st.session_state[AUTOLOAD_TOKEN_STATE] = token
+
+    if not token.strip():
+        st.error(
+            "Auto-load request rejected: the launch token is missing."
+        )
+        return
+    if requested_project is None or not requested_project.strip():
+        st.error(
+            "Auto-load request rejected: the project path is missing."
+        )
+        return
+
+    try:
+        selected_project = _validated_autoload_project(requested_project)
+    except (OSError, ValueError) as exc:
+        st.error(f"Auto-load request rejected: {exc}")
+        return
+
+    _load_selected_project(selected_project)
+
+
+def _validated_autoload_project(requested_project):
+    raw_path = requested_project.strip()
+    portable_path = PurePosixPath(raw_path.replace("\\", "/"))
+    windows_path = PureWindowsPath(raw_path)
+    if (
+        portable_path.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or ".." in portable_path.parts
+    ):
+        raise ValueError(
+            "project path must be a portable relative path inside projects/."
+        )
+    if (
+        len(portable_path.parts) != 2
+        or portable_path.parts[0] != "projects"
+        or portable_path.suffix.lower() != ".json"
+    ):
+        raise ValueError(
+            "project path must identify a JSON file directly inside projects/."
+        )
+
+    selected_project = portable_path.as_posix()
+    if selected_project not in _project_files():
+        raise ValueError(
+            f"project is not available in the Project Studio library: "
+            f"{selected_project}"
+        )
+
+    projects_root = (ROOT_DIR / "projects").resolve()
+    project_path = (ROOT_DIR / Path(*portable_path.parts)).resolve(strict=True)
+    if not project_path.is_relative_to(projects_root) or not project_path.is_file():
+        raise ValueError(
+            "project path resolves outside the Project Studio library."
+        )
+    return selected_project
 
 
 def _initialize_saved_draft(draft):
