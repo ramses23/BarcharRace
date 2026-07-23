@@ -5,6 +5,7 @@ from contextlib import chdir
 from pathlib import Path
 
 import _test_path
+from PIL import Image
 from studio.package_paths import resolve_project_path
 from studio.render_preflight import run_render_preflight
 
@@ -103,7 +104,7 @@ class RenderPreflightTest(unittest.TestCase):
             ):
                 asset = root / relative_path
                 asset.parent.mkdir(parents=True, exist_ok=True)
-                asset.write_bytes(b"test asset")
+                Image.new("RGB", (2, 2), (10, 20, 30)).save(asset)
             other_cwd = root / "other"
             other_cwd.mkdir()
 
@@ -135,6 +136,89 @@ class RenderPreflightTest(unittest.TestCase):
             ),
         )
         self.assertNotIn("logos", checks)
+
+    def test_rejects_corrupt_background_with_clear_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            background = root / "assets" / "corrupt.png"
+            background.parent.mkdir()
+            background.write_text("not an image", encoding="utf-8")
+            project_path = self._write_project(
+                root,
+                chart={
+                    "background_mode": "image",
+                    "background_image_path": "assets/corrupt.png",
+                },
+            )
+
+            result = run_render_preflight(
+                project_path,
+                root_dir=root,
+                ffmpeg_path="ffmpeg",
+            )
+
+        background_check = next(
+            check for check in result.checks if check.key == "background"
+        )
+        self.assertEqual(background_check.level, "error")
+        self.assertIn("corrupt or unsupported", background_check.message)
+        self.assertIn("chart.background_image_path", background_check.message)
+        self.assertIn("assets/corrupt.png", background_check.message)
+        self.assertIn(str(background.resolve()), background_check.message)
+
+    def test_warns_for_corrupt_logo_with_category_and_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            logo = root / "assets" / "logo.png"
+            logo.parent.mkdir()
+            logo.write_bytes(b"not an image")
+            project_path = self._write_project(
+                root,
+                dataset={
+                    "category_logos": {"A": "assets/logo.png"},
+                },
+            )
+
+            result = run_render_preflight(
+                project_path,
+                root_dir=root,
+                ffmpeg_path="ffmpeg",
+            )
+
+        logo_check = next(check for check in result.checks if check.key == "logos")
+        self.assertEqual(logo_check.level, "warning")
+        self.assertIn("corrupt or unsupported", logo_check.message)
+        self.assertIn("category_logos['A']", logo_check.message)
+        self.assertIn("assets/logo.png", logo_check.message)
+        self.assertIn(str(logo.resolve()), logo_check.message)
+
+    def test_accepts_absolute_background_for_manual_project(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            background = root / "external-background.jpg"
+            Image.new("RGB", (2, 2), (10, 20, 30)).save(
+                background,
+                format="JPEG",
+            )
+            project_path = self._write_project(
+                root,
+                chart={
+                    "background_mode": "image",
+                    "background_image_path": str(background),
+                },
+            )
+
+            result = run_render_preflight(
+                project_path,
+                root_dir=root,
+                ffmpeg_path="ffmpeg",
+            )
+
+        self.assertTrue(result.ready)
+        background_check = next(
+            check for check in result.checks if check.key == "background"
+        )
+        self.assertEqual(background_check.message, str(background.resolve()))
 
     def test_accepts_existing_absolute_dataset_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:

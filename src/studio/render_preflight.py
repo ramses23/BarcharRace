@@ -5,6 +5,7 @@ from pathlib import Path
 
 from config.project_file_loader import ProjectFileError, load_project_file
 from importers.data_source_loader import DataSourceLoader
+from studio.image_validation import ImageValidationError, validate_image_file
 from studio.package_paths import (
     DEFAULT_PROJECT_ROOT,
     ProjectPathError,
@@ -262,13 +263,14 @@ def _image_asset_check(*, key, label, field_name, value, root_path):
     except ProjectPathError as exc:
         return _error(key, label, str(exc))
 
-    if not resolved.is_file():
-        return _error(
-            key,
-            label,
-            f"Image not found for {field_name}: value={value!r}; "
-            f"resolved path: {resolved}",
+    try:
+        validate_image_file(
+            resolved,
+            field_name=field_name,
+            original_value=value,
         )
+    except ImageValidationError as exc:
+        return _error(key, label, str(exc))
     return _ok(key, label, str(resolved))
 
 
@@ -294,11 +296,14 @@ def _missing_logo_messages(dataset_config, root_path):
             except ProjectPathError as exc:
                 messages.append(str(exc))
                 continue
-            if not resolved.is_file():
-                messages.append(
-                    f"Logo not found for category {category!r} in {field_name}: "
-                    f"value={value!r}; resolved path: {resolved}"
+            try:
+                validate_image_file(
+                    resolved,
+                    field_name=item_name,
+                    original_value=value,
                 )
+            except ImageValidationError as exc:
+                messages.append(str(exc))
     return messages
 
 

@@ -284,6 +284,137 @@ class ProjectBundleTest(unittest.TestCase):
 
             self._assert_failed_import_is_clean(target_root)
 
+    def test_rejects_corrupt_logo_before_publishing(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+            with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+                project = json.loads(archive.read("project.json"))
+            logo_path = project["categories"]["Alpha"]["logo"]
+            corrupt_bundle = self._rewrite_bundle(
+                exported.data,
+                payload_updates={logo_path: b"not an image"},
+            )
+
+            with self.assertRaisesRegex(
+                ProjectBundleError,
+                r"corrupt or unsupported.*categories\['Alpha'\]\.logo",
+            ):
+                import_project_bundle(corrupt_bundle, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
+
+    def test_rejects_missing_secondary_logo_before_publishing(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+
+            def use_missing_secondary_logo(project):
+                project["categories"]["Alpha"]["secondary_logo"] = (
+                    "assets/logos/secondary/missing.png"
+                )
+
+            missing_bundle = self._rewrite_bundle(
+                exported.data,
+                project_mutator=use_missing_secondary_logo,
+            )
+
+            with self.assertRaisesRegex(
+                ProjectBundleError,
+                r"not found.*categories\['Alpha'\]\.secondary_logo",
+            ):
+                import_project_bundle(missing_bundle, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
+
+    def test_imports_bundle_with_valid_background(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            project = self._project_fixture(source_root)
+            project["categories"] = {}
+            project["chart"]["bar_texture_enabled"] = False
+            project["chart"].pop("bar_texture_custom_image")
+            exported = build_project_bundle(project, root_dir=source_root)
+
+            imported = import_project_bundle(exported.data, root_dir=target_root)
+
+            imported_project = json.loads(
+                Path(imported.project_path).read_text(encoding="utf-8")
+            )
+            background = target_root / imported_project["chart"][
+                "background_image_path"
+            ]
+            self.assertTrue(background.is_file())
+
+    def test_imports_dataset_logo_maps_as_portable_images(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            project = self._project_fixture(source_root)
+            project["categories"] = {}
+            project["dataset"]["category_logos"] = {
+                "Alpha": "logos/alpha.png"
+            }
+            project["dataset"]["category_secondary_logos"] = {
+                "Alpha": "logos_secondary/alpha.png"
+            }
+            exported = build_project_bundle(project, root_dir=source_root)
+
+            imported = import_project_bundle(exported.data, root_dir=target_root)
+
+            imported_project = json.loads(
+                Path(imported.project_path).read_text(encoding="utf-8")
+            )
+            dataset = imported_project["dataset"]
+            logo_paths = (
+                dataset["category_logos"]["Alpha"],
+                dataset["category_secondary_logos"]["Alpha"],
+            )
+            self.assertTrue(
+                all(path.startswith("projects/imported/") for path in logo_paths)
+            )
+            self.assertTrue(all((target_root / path).is_file() for path in logo_paths))
+
+    def test_rejects_absolute_external_image_path_in_portable_bundle(self):
+        with (
+            tempfile.TemporaryDirectory() as source_dir,
+            tempfile.TemporaryDirectory() as external_dir,
+            tempfile.TemporaryDirectory() as target_dir,
+        ):
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            external_image = Path(external_dir) / "external.png"
+            Image.new("RGB", (2, 2), (10, 20, 30)).save(external_image)
+            exported = build_project_bundle(
+                self._project_fixture(source_root),
+                root_dir=source_root,
+            )
+
+            def use_absolute_background(project):
+                project["chart"]["background_image_path"] = str(external_image)
+
+            non_portable_bundle = self._rewrite_bundle(
+                exported.data,
+                project_mutator=use_absolute_background,
+            )
+
+            with self.assertRaisesRegex(
+                ProjectBundleError,
+                "portable relative path",
+            ):
+                import_project_bundle(non_portable_bundle, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
+
     def test_export_is_deterministic_and_manifest_checksums_every_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -539,6 +670,44 @@ class ProjectBundleTest(unittest.TestCase):
             for path in root.rglob("*")
             if path.is_file()
         }
+
+    @staticmethod
+    def _rewrite_bundle(
+        bundle_data,
+        *,
+        project_mutator=None,
+        payload_updates=None,
+    ):
+        with zipfile.ZipFile(io.BytesIO(bundle_data)) as archive:
+            payloads = {name: archive.read(name) for name in archive.namelist()}
+
+        if project_mutator is not None:
+            project = json.loads(payloads["project.json"])
+            project_mutator(project)
+            payloads["project.json"] = json.dumps(
+                project,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        for path, payload in (payload_updates or {}).items():
+            payloads[path] = payload
+
+        manifest = json.loads(payloads[MANIFEST_PATH])
+        for record in manifest["files"]:
+            payload = payloads[record["path"]]
+            record["size"] = len(payload)
+            record["sha256"] = hashlib.sha256(payload).hexdigest()
+        payloads[MANIFEST_PATH] = json.dumps(
+            manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, payload in payloads.items():
+                archive.writestr(name, payload)
+        return output.getvalue()
 
 
 if __name__ == "__main__":

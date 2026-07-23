@@ -14,6 +14,8 @@ from uuid import uuid4
 from config.project_file_loader import load_project_file
 from config.project_schema import migrate_project_data
 from importers.data_source_loader import DataSourceLoader
+from studio.image_validation import ImageValidationError, validate_image_file
+from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_storage import atomic_write_json
 from validators.dataset_validator import DatasetValidator
 
@@ -59,6 +61,8 @@ class _PathReference:
     container: dict
     key: str
     bucket: str
+    field_name: str | None = None
+    is_image: bool = False
 
 
 def build_project_bundle(project_data, *, root_dir):
@@ -171,6 +175,10 @@ def import_project_bundle(bundle, *, root_dir):
         preset = load_project_file(staging_project_path)
         _validate_staged_project_dataset(
             preset,
+            staging_directory=staging_directory,
+        )
+        _validate_staged_project_images(
+            project_data,
             staging_directory=staging_directory,
         )
 
@@ -461,22 +469,74 @@ def _path_references(project_data):
     if isinstance(data_source, dict):
         source_type = data_source.get("source_type", "csv")
         if source_type == "sqlite":
-            yield _PathReference(data_source, "sqlite_database_path", "data")
+            yield _PathReference(
+                data_source,
+                "sqlite_database_path",
+                "data",
+                "data_source.sqlite_database_path",
+            )
         else:
-            yield _PathReference(data_source, "csv_path", "data")
+            yield _PathReference(
+                data_source,
+                "csv_path",
+                "data",
+                "data_source.csv_path",
+            )
 
     chart = project_data.get("chart")
     if isinstance(chart, dict):
-        yield _PathReference(chart, "background_image_path", "assets/backgrounds")
-        yield _PathReference(chart, "bar_texture_custom_image", "assets/textures")
+        yield _PathReference(
+            chart,
+            "background_image_path",
+            "assets/backgrounds",
+            "chart.background_image_path",
+            True,
+        )
+        yield _PathReference(
+            chart,
+            "bar_texture_custom_image",
+            "assets/textures",
+            "chart.bar_texture_custom_image",
+            True,
+        )
+
+    dataset = project_data.get("dataset")
+    if isinstance(dataset, dict):
+        for key, bucket in (
+            ("category_logos", "assets/logos/primary"),
+            ("category_secondary_logos", "assets/logos/secondary"),
+        ):
+            values = dataset.get(key)
+            if not isinstance(values, dict):
+                continue
+            for category in values:
+                yield _PathReference(
+                    values,
+                    category,
+                    bucket,
+                    f"dataset.{key}[{category!r}]",
+                    True,
+                )
 
     categories = project_data.get("categories")
     if isinstance(categories, dict):
-        for style in categories.values():
+        for category, style in categories.items():
             if not isinstance(style, dict):
                 continue
-            yield _PathReference(style, "logo", "assets/logos/primary")
-            yield _PathReference(style, "secondary_logo", "assets/logos/secondary")
+            yield _PathReference(
+                style,
+                "logo",
+                "assets/logos/primary",
+                f"categories[{category!r}].logo",
+                True,
+            )
+            yield _PathReference(
+                style,
+                "secondary_logo",
+                "assets/logos/secondary",
+                f"categories[{category!r}].secondary_logo",
+                True,
+            )
 
 
 def _read_staged_project_data(project_path):
@@ -503,6 +563,44 @@ def _validate_staged_project_dataset(
         raise ProjectBundleError(
             f"Bundled dataset is invalid: {exc}"
         ) from exc
+
+
+def _validate_staged_project_images(project_data, *, staging_directory):
+    staging_root = staging_directory.resolve()
+    for reference in _path_references(project_data):
+        if not reference.is_image:
+            continue
+        original_value = reference.container.get(reference.key)
+        if not original_value:
+            continue
+
+        portable_path = Path(str(original_value).replace("\\", "/"))
+        if portable_path.is_absolute() or portable_path.anchor:
+            raise ProjectBundleError(
+                f"Bundled image reference {reference.field_name} must use a "
+                f"portable relative path; value={original_value!r}."
+            )
+
+        try:
+            staged_path = resolve_project_path(
+                original_value,
+                project_root=staging_root,
+                required=True,
+                field_name=reference.field_name,
+            )
+        except ProjectPathError as exc:
+            raise ProjectBundleError(
+                f"Bundled image reference is invalid: {exc}"
+            ) from exc
+
+        try:
+            validate_image_file(
+                staged_path,
+                field_name=reference.field_name,
+                original_value=original_value,
+            )
+        except ImageValidationError as exc:
+            raise ProjectBundleError(f"Bundled image is invalid: {exc}") from exc
 
 
 def _staged_data_source_config(
