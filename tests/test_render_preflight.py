@@ -1,9 +1,11 @@
 import json
 import tempfile
 import unittest
+from contextlib import chdir
 from pathlib import Path
 
 import _test_path
+from studio.package_paths import resolve_project_path
 from studio.render_preflight import run_render_preflight
 
 
@@ -66,7 +68,92 @@ class RenderPreflightTest(unittest.TestCase):
         self.assertIn("periods", errors)
         self.assertIn("background", errors)
 
-    def _write_project(self, root, csv_text=None, chart=None):
+        background = next(check for check in result.checks if check.key == "background")
+        self.assertIn("chart.background_image_path", background.message)
+        self.assertIn("backgrounds/missing.png", background.message)
+        self.assertIn(
+            str((root / "backgrounds" / "missing.png").resolve()),
+            background.message,
+        )
+
+    def test_resolves_dataset_and_assets_against_root_independent_of_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            project_path = self._write_project(
+                root,
+                chart={
+                    "background_mode": "image",
+                    "background_image_path": "assets/background.png",
+                    "bar_texture_enabled": True,
+                    "bar_texture_preset": "custom_image",
+                    "bar_texture_custom_image": r"assets\texture.png",
+                },
+                dataset={
+                    "category_logos": {"A": "assets/logos/a.png"},
+                    "category_secondary_logos": {
+                        "A": r"assets\secondary\a.png"
+                    },
+                },
+            )
+            for relative_path in (
+                "assets/background.png",
+                "assets/texture.png",
+                "assets/logos/a.png",
+                "assets/secondary/a.png",
+            ):
+                asset = root / relative_path
+                asset.parent.mkdir(parents=True, exist_ok=True)
+                asset.write_bytes(b"test asset")
+            other_cwd = root / "other"
+            other_cwd.mkdir()
+
+            with chdir(other_cwd):
+                result = run_render_preflight(
+                    "projects/project.json",
+                    root_dir=root,
+                    ffmpeg_path="ffmpeg",
+                )
+
+        self.assertTrue(result.ready)
+        checks = {check.key: check for check in result.checks}
+        self.assertEqual(
+            checks["background"].message,
+            str(
+                resolve_project_path(
+                    "assets/background.png",
+                    project_root=root,
+                )
+            ),
+        )
+        self.assertEqual(
+            checks["texture"].message,
+            str(
+                resolve_project_path(
+                    r"assets\texture.png",
+                    project_root=root,
+                )
+            ),
+        )
+        self.assertNotIn("logos", checks)
+
+    def test_accepts_existing_absolute_dataset_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            project_path = self._write_project(root)
+            project = json.loads(project_path.read_text(encoding="utf-8"))
+            absolute_csv = (root / "data" / "dataset.csv").resolve()
+            project["data_source"]["csv_path"] = str(absolute_csv)
+            project_path.write_text(json.dumps(project), encoding="utf-8")
+
+            result = run_render_preflight(
+                project_path,
+                root_dir=root,
+                ffmpeg_path="ffmpeg",
+            )
+
+        self.assertTrue(result.ready)
+
+    def _write_project(self, root, csv_text=None, chart=None, dataset=None):
         data_dir = root / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         csv_path = data_dir / "dataset.csv"
@@ -82,6 +169,7 @@ class RenderPreflightTest(unittest.TestCase):
                 "year_column": "year",
                 "name_column": "name",
                 "value_column": "value",
+                **(dataset or {}),
             },
             "chart": {
                 "output_file": "output/video.mp4",
