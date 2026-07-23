@@ -34,6 +34,7 @@ class ProjectBundleTest(unittest.TestCase):
             imported = import_project_bundle(exported.data, root_dir=target_root)
 
             imported_path = Path(imported.project_path)
+            imported_asset_directory = Path(imported.asset_directory)
             imported_data = json.loads(imported_path.read_text(encoding="utf-8"))
             referenced_paths = (
                 imported_data["data_source"]["csv_path"],
@@ -46,6 +47,8 @@ class ProjectBundleTest(unittest.TestCase):
             self.assertEqual(project, original)
             self.assertEqual(exported.filename, "portable_project.barchart.zip")
             self.assertEqual(imported_path.name, "portable_project.json")
+            self.assertTrue(imported_path.is_file())
+            self.assertTrue(imported_asset_directory.is_dir())
             self.assertEqual(imported_data["name"], "portable_project")
             self.assertEqual(
                 imported_data["chart"]["output_file"],
@@ -58,6 +61,57 @@ class ProjectBundleTest(unittest.TestCase):
                 "year,name,value\n2020,Alpha,10\n2021,Alpha,12\n",
             )
             self.assertEqual(load_project_file(imported_path).name, "portable_project")
+
+    def test_rejects_non_numeric_dataset_before_publishing(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            project = self._project_fixture(source_root)
+            (source_root / "data" / "source.csv").write_text(
+                "year,name,value\n2020,Alpha,not-a-number\n2021,Alpha,12\n",
+                encoding="utf-8",
+            )
+            exported = build_project_bundle(project, root_dir=source_root)
+
+            with self.assertRaisesRegex(ProjectBundleError, "non-numeric values"):
+                import_project_bundle(exported.data, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
+
+    def test_rejects_duplicate_dataset_rows_before_publishing(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            project = self._project_fixture(source_root)
+            (source_root / "data" / "source.csv").write_text(
+                "year,name,value\n2020,Alpha,10\n2020,Alpha,12\n",
+                encoding="utf-8",
+            )
+            exported = build_project_bundle(project, root_dir=source_root)
+
+            with self.assertRaisesRegex(
+                ProjectBundleError,
+                "Duplicate year/name combinations",
+            ):
+                import_project_bundle(exported.data, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
+
+    def test_failure_after_staging_preparation_leaves_no_temporaries(self):
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as target_dir:
+            source_root = Path(source_dir)
+            target_root = Path(target_dir)
+            project = self._project_fixture(source_root)
+            project["data_source"]["source_type"] = "unsupported"
+            exported = build_project_bundle(project, root_dir=source_root)
+
+            with self.assertRaisesRegex(
+                ProjectBundleError,
+                "unsupported data source type",
+            ):
+                import_project_bundle(exported.data, root_dir=target_root)
+
+            self._assert_failed_import_is_clean(target_root)
 
     def test_export_is_deterministic_and_manifest_checksums_every_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -291,6 +345,13 @@ class ProjectBundleTest(unittest.TestCase):
                 }
             },
         }
+
+    def _assert_failed_import_is_clean(self, root):
+        self.assertFalse((root / "projects" / "portable_project.json").exists())
+        self.assertFalse(
+            (root / "projects" / "imported" / "portable_project").exists()
+        )
+        self.assertEqual(list(root.rglob("*.tmp")), [])
 
 
 if __name__ == "__main__":

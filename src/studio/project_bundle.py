@@ -7,13 +7,15 @@ import re
 import shutil
 import stat
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 from config.project_file_loader import load_project_file
 from config.project_schema import migrate_project_data
+from importers.data_source_loader import DataSourceLoader
 from studio.project_storage import atomic_write_json
+from validators.dataset_validator import DatasetValidator
 
 
 BUNDLE_SCHEMA_VERSION = 1
@@ -197,6 +199,11 @@ def import_project_bundle(bundle, *, root_dir):
         chart["output_file"] = f"output/{slug}.mp4"
         chart["frames_dir"] = f"output/{slug}_frames"
         project_data["name"] = slug
+        _validate_staged_project_dataset(
+            project_data,
+            staging_directory=staging_directory,
+            imported_relative_root=imported_relative_root,
+        )
         os.replace(staging_directory, asset_directory)
 
         try:
@@ -362,6 +369,68 @@ def _path_references(project_data):
                 continue
             yield _PathReference(style, "logo", "assets/logos/primary")
             yield _PathReference(style, "secondary_logo", "assets/logos/secondary")
+
+
+def _validate_staged_project_dataset(
+    project_data,
+    *,
+    staging_directory,
+    imported_relative_root,
+):
+    staging_project_path = staging_directory / PROJECT_PATH
+
+    try:
+        atomic_write_json(project_data, staging_project_path)
+        preset = load_project_file(staging_project_path)
+        data_source_config = _staged_data_source_config(
+            preset.data_source_config,
+            staging_directory=staging_directory,
+            imported_relative_root=imported_relative_root,
+        )
+
+        try:
+            dataframe = DataSourceLoader(data_source_config).load()
+            DatasetValidator(config=preset.dataset_config).validate(dataframe)
+        except (OSError, ValueError) as exc:
+            raise ProjectBundleError(
+                f"Bundled dataset is invalid: {exc}"
+            ) from exc
+    finally:
+        staging_project_path.unlink(missing_ok=True)
+
+
+def _staged_data_source_config(
+    config,
+    *,
+    staging_directory,
+    imported_relative_root,
+):
+    if config.source_type == "csv":
+        field_name = "csv_path"
+    elif config.source_type == "sqlite":
+        field_name = "sqlite_database_path"
+    else:
+        raise ProjectBundleError(
+            f"Bundled project uses unsupported data source type: {config.source_type}"
+        )
+
+    configured_path = PurePosixPath(getattr(config, field_name))
+    imported_root = PurePosixPath(imported_relative_root.as_posix())
+    try:
+        archive_path = configured_path.relative_to(imported_root)
+    except ValueError as exc:
+        raise ProjectBundleError(
+            "Bundled project dataset must resolve inside the staged bundle."
+        ) from exc
+
+    staged_path = staging_directory.joinpath(*archive_path.parts).resolve()
+    staging_root = staging_directory.resolve()
+    if not staged_path.is_relative_to(staging_root) or not staged_path.is_file():
+        raise ProjectBundleError(
+            "Bundled project dataset was not found inside the staged bundle."
+        )
+
+    return replace(config, **{field_name: str(staged_path)})
 
 
 def _resolve_source_path(path, root_path):
