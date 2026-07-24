@@ -52,6 +52,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             imported_assets = (
                 studio_root / "projects" / "imported" / "e2e_production"
             )
+            resolved_imported_assets = imported_assets.resolve()
 
             with chdir(studio_root):
                 app = AppTest.from_file(
@@ -144,7 +145,9 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
                 field_name="data_source.csv_path",
             )
             self.assertTrue(dataset_path.is_file())
-            self.assertTrue(dataset_path.is_relative_to(imported_assets))
+            self.assertTrue(
+                dataset_path.is_relative_to(resolved_imported_assets)
+            )
 
             preview_dataset = _resolved_dataset_config(
                 preset.dataset_config,
@@ -168,7 +171,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             ):
                 path = Path(resolved_path)
                 self.assertTrue(path.is_file())
-                self.assertTrue(path.is_relative_to(imported_assets))
+                self.assertTrue(path.is_relative_to(resolved_imported_assets))
 
             checks = {check.key: check for check in preflight.checks}
             self.assertNotIn("logos", checks)
@@ -182,7 +185,9 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
                 checks["background"].message,
                 str(expected_background),
             )
-            self.assertTrue(expected_background.is_relative_to(imported_assets))
+            self.assertTrue(
+                expected_background.is_relative_to(resolved_imported_assets)
+            )
             self.assertEqual(list(studio_root.rglob("*.tmp")), [])
 
         self.assertIsNotNone(sandbox_root)
