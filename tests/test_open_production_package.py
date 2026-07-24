@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -16,6 +17,10 @@ from streamlit.testing.v1 import AppTest
 
 import _test_path
 from src.tools import open_production_package
+from studio.production_package_binding import (
+    BINDING_FILENAME,
+    binding_path_for_package,
+)
 from studio.project_bundle import build_project_bundle
 
 
@@ -163,6 +168,376 @@ class OpenProductionPackageCommandTest(unittest.TestCase):
         token = environment[open_production_package.AUTOLOAD_TOKEN_ENV]
         self.assertRegex(token, r"^[0-9a-f]{32}$")
 
+    def test_second_open_reuses_exact_project_without_importing_again(self):
+        root = self._new_root("linked-root")
+        first_stdout = io.StringIO()
+        with contextlib.redirect_stdout(first_stdout):
+            first_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+
+        project_path = root / "projects" / "command_project.json"
+        saved_project = json.loads(project_path.read_text(encoding="utf-8"))
+        saved_project["chart"]["title"] = "Saved after first import"
+        project_path.write_text(
+            json.dumps(saved_project, sort_keys=True),
+            encoding="utf-8",
+        )
+        second_stdout = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package,
+            "import_project_bundle",
+        ) as importer, contextlib.redirect_stdout(second_stdout):
+            second_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(first_exit, 0)
+        self.assertEqual(second_exit, 0)
+        importer.assert_not_called()
+        self.assertEqual(
+            json.loads(project_path.read_text(encoding="utf-8"))["chart"][
+                "title"
+            ],
+            "Saved after first import",
+        )
+        self.assertFalse(
+            (root / "projects" / "command_project_2.json").exists()
+        )
+        summary = second_stdout.getvalue()
+        self.assertIn("Production package already linked", summary)
+        self.assertIn(
+            "Editable path: projects/command_project.json",
+            summary,
+        )
+        self.assertIn("No package import was performed", summary)
+
+    def test_reimport_creates_new_project_and_updates_binding(self):
+        root = self._new_root("reimport-root")
+        with contextlib.redirect_stdout(io.StringIO()):
+            first_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+        stdout = io.StringIO()
+        with mock.patch.object(
+            open_production_package.subprocess,
+            "run",
+        ) as launch, contextlib.redirect_stdout(stdout):
+            second_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--reimport",
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(first_exit, 0)
+        self.assertEqual(second_exit, 0)
+        launch.assert_not_called()
+        self.assertTrue(
+            (root / "projects" / "command_project.json").is_file()
+        )
+        self.assertTrue(
+            (root / "projects" / "command_project_2.json").is_file()
+        )
+        binding = self._binding_data(self.folder_path)
+        self.assertEqual(
+            binding["project_path"],
+            "projects/command_project_2.json",
+        )
+        summary = stdout.getvalue()
+        self.assertIn("Production package reimported", summary)
+        self.assertIn(
+            "Editable path: projects/command_project_2.json",
+            summary,
+        )
+        self.assertIn("Binding updated:", summary)
+
+    def test_adopt_project_links_existing_project_without_importing(self):
+        root = self._new_root("adopt-root")
+        adopted = self._write_existing_project(
+            root,
+            "existing_project_3",
+            title="Existing edited project",
+        )
+        stdout = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package,
+            "import_project_bundle",
+        ) as importer, mock.patch.object(
+            open_production_package.subprocess,
+            "run",
+        ) as launch, contextlib.redirect_stdout(stdout):
+            exit_code = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--adopt-project",
+                    str(adopted.relative_to(root)),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        importer.assert_not_called()
+        launch.assert_not_called()
+        binding = self._binding_data(self.folder_path)
+        self.assertEqual(
+            binding["project_path"],
+            "projects/existing_project_3.json",
+        )
+        summary = stdout.getvalue()
+        self.assertIn("Existing project adopted", summary)
+        self.assertIn("Project: Existing edited project", summary)
+        self.assertIn("Binding created:", summary)
+
+    def test_adopt_project_rejects_paths_outside_projects(self):
+        root = self._new_root("outside-adopt-root")
+        outside = root / "outside.json"
+        outside.write_text("{}\n", encoding="utf-8")
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package,
+            "import_project_bundle",
+        ) as importer, contextlib.redirect_stderr(stderr):
+            exit_code = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--adopt-project",
+                    str(outside),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        importer.assert_not_called()
+        self.assertIn("inside root/projects", stderr.getvalue())
+        self.assertFalse(
+            binding_path_for_package(self.folder_path).exists()
+        )
+
+    def test_modified_manifest_invalidates_binding_without_reimport(self):
+        root = self._new_root("changed-manifest-root")
+        with contextlib.redirect_stdout(io.StringIO()):
+            first_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+        manifest_path = self.folder_path / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["project_name"] = "changed_package_name"
+        manifest_path.write_text(
+            json.dumps(manifest, sort_keys=True),
+            encoding="utf-8",
+        )
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package,
+            "import_project_bundle",
+        ) as importer, contextlib.redirect_stderr(stderr):
+            second_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(first_exit, 0)
+        self.assertEqual(second_exit, 1)
+        importer.assert_not_called()
+        error = stderr.getvalue()
+        self.assertIn("manifest changed", error)
+        self.assertIn("--reimport", error)
+        self.assertFalse(
+            (root / "projects" / "command_project_2.json").exists()
+        )
+
+    def test_deleted_linked_project_reports_recovery_options(self):
+        root = self._new_root("deleted-project-root")
+        with contextlib.redirect_stdout(io.StringIO()):
+            first_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+        (root / "projects" / "command_project.json").unlink()
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package,
+            "import_project_bundle",
+        ) as importer, contextlib.redirect_stderr(stderr):
+            second_exit = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(first_exit, 0)
+        self.assertEqual(second_exit, 1)
+        importer.assert_not_called()
+        error = stderr.getvalue()
+        self.assertIn("linked editable project was deleted", error)
+        self.assertIn("--reimport", error)
+        self.assertIn("--adopt-project PROJECT_PATH", error)
+
+    def test_corrupt_binding_stops_without_replacing_or_importing(self):
+        root = self._new_root("corrupt-binding-root")
+        state_path = binding_path_for_package(self.folder_path)
+        state_path.write_text("{not valid json", encoding="utf-8")
+        original_state = state_path.read_bytes()
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package,
+            "import_project_bundle",
+        ) as importer, contextlib.redirect_stderr(stderr):
+            exit_code = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+        importer.assert_not_called()
+        self.assertEqual(state_path.read_bytes(), original_state)
+        self.assertIn("Binding file is corrupt", stderr.getvalue())
+
+    def test_folder_binding_is_outside_package_atomic_and_portable(self):
+        root = self._new_root("portable-binding-root")
+        manifest_path = self.folder_path / "manifest.json"
+        manifest_before = manifest_path.read_bytes()
+        package_files_before = sorted(
+            path.relative_to(self.folder_path).as_posix()
+            for path in self.folder_path.rglob("*")
+            if path.is_file()
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            exit_code = open_production_package.main(
+                [
+                    str(self.folder_path),
+                    "--root",
+                    str(root),
+                    "--no-launch",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        state_path = binding_path_for_package(self.folder_path)
+        self.assertEqual(
+            state_path,
+            self.folder_path.parent / BINDING_FILENAME,
+        )
+        self.assertFalse(state_path.is_relative_to(self.folder_path))
+        binding = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(binding["schema_version"], 1)
+        self.assertEqual(
+            binding["project_path"],
+            "projects/command_project.json",
+        )
+        self.assertFalse(Path(binding["project_path"]).is_absolute())
+        self.assertEqual(
+            binding["package_reference"],
+            self.folder_path.name,
+        )
+        self.assertEqual(
+            binding["package_manifest_sha256"],
+            hashlib.sha256(manifest_before).hexdigest(),
+        )
+        self.assertIn("+00:00", binding["bound_at"])
+        self.assertEqual(manifest_path.read_bytes(), manifest_before)
+        self.assertEqual(
+            sorted(
+                path.relative_to(self.folder_path).as_posix()
+                for path in self.folder_path.rglob("*")
+                if path.is_file()
+            ),
+            package_files_before,
+        )
+        self.assertEqual(list(state_path.parent.glob("*.tmp")), [])
+
+    def test_zip_and_folder_use_deterministic_sidecar_paths(self):
+        folder_binding = binding_path_for_package(self.folder_path)
+        zip_binding = binding_path_for_package(self.zip_path)
+
+        self.assertEqual(
+            folder_binding,
+            self.folder_path.parent / BINDING_FILENAME,
+        )
+        self.assertEqual(
+            zip_binding,
+            self.zip_path.with_name(
+                f"{self.zip_path.name}.barchartstudio-launch.json"
+            ),
+        )
+        self.assertNotEqual(folder_binding, zip_binding)
+        self.assertFalse(folder_binding.is_relative_to(self.folder_path))
+        self.assertEqual(zip_binding.parent, self.zip_path.parent)
+
+    def test_keyboard_interrupt_returns_130_without_traceback(self):
+        root = self._new_root("interrupt-root")
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            open_production_package.subprocess,
+            "run",
+            side_effect=KeyboardInterrupt,
+        ), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+            stderr
+        ):
+            exit_code = open_production_package.main(
+                [
+                    str(self.zip_path),
+                    "--root",
+                    str(root),
+                ]
+            )
+
+        self.assertEqual(exit_code, 130)
+        error = stderr.getvalue()
+        self.assertIn("Project Studio stopped by user.", error)
+        self.assertNotIn("Traceback", error)
+
     @staticmethod
     def _build_bundle(source_root):
         dataset_path = source_root / "data" / "dataset.csv"
@@ -208,6 +583,56 @@ class OpenProductionPackageCommandTest(unittest.TestCase):
         root = self.temp_path / name
         root.mkdir()
         return root
+
+    @staticmethod
+    def _write_existing_project(root, slug, *, title):
+        dataset_path = root / "data" / f"{slug}.csv"
+        dataset_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_path.write_text(
+            "year,name,value\n2000,Alpha,10\n2001,Alpha,12\n",
+            encoding="utf-8",
+        )
+        project_path = root / "projects" / f"{slug}.json"
+        project_path.parent.mkdir(parents=True, exist_ok=True)
+        project_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "name": title,
+                    "chart": {
+                        "title": title,
+                        "width": 320,
+                        "height": 180,
+                        "dpi": 80,
+                        "logos_enabled": False,
+                        "max_visible_bars": 1,
+                        "output_file": f"output/{slug}.mp4",
+                        "frames_dir": f"output/{slug}-frames",
+                    },
+                    "selection": {
+                        "top_n": 1,
+                        "aggregate_other": False,
+                    },
+                    "data_source": {
+                        "source_type": "csv",
+                        "csv_path": f"data/{slug}.csv",
+                    },
+                    "dataset": {
+                        "year_column": "year",
+                        "name_column": "name",
+                        "value_column": "value",
+                    },
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return project_path
+
+    @staticmethod
+    def _binding_data(package_path):
+        state_path = binding_path_for_package(package_path)
+        return json.loads(state_path.read_text(encoding="utf-8"))
 
 
 class ProjectStudioAutoloadTest(unittest.TestCase):
