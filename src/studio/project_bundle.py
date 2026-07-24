@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import stat
+import tempfile
 import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -52,6 +53,14 @@ class ProjectBundleExport:
 class ProjectBundleImport:
     project_path: str
     asset_directory: str
+    file_count: int
+    uncompressed_size: int
+
+
+@dataclass(frozen=True)
+class ProjectBundleInspection:
+    manifest_sha256: str
+    project_name: str
     file_count: int
     uncompressed_size: int
 
@@ -221,6 +230,27 @@ def import_project_bundle(bundle, *, root_dir):
     return ProjectBundleImport(
         project_path=str(project_path),
         asset_directory=str(asset_directory),
+        file_count=file_count,
+        uncompressed_size=total_size,
+    )
+
+
+def inspect_project_bundle(bundle):
+    """Validate a bundle without importing it and return stable identity data."""
+    source = _bundle_source(bundle)
+    with tempfile.TemporaryDirectory(
+        prefix="barchart-bundle-inspection-"
+    ) as temporary_directory:
+        staging_directory = Path(temporary_directory)
+        _materialize_bundle_source(source, staging_directory)
+        manifest, _records, total_size, file_count = _validate_staged_bundle(
+            staging_directory
+        )
+        manifest_payload = (staging_directory / MANIFEST_PATH).read_bytes()
+
+    return ProjectBundleInspection(
+        manifest_sha256=hashlib.sha256(manifest_payload).hexdigest(),
+        project_name=str(manifest.get("project_name") or ""),
         file_count=file_count,
         uncompressed_size=total_size,
     )
