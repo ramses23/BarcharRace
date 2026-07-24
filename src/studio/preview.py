@@ -1,4 +1,4 @@
-from pathlib import Path
+from dataclasses import replace
 
 from config.project_file_loader import load_project_file
 from core.bar_selector import BarSelector
@@ -8,6 +8,7 @@ from core.timeline import Timeline
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
+from studio.package_paths import DEFAULT_PROJECT_ROOT, resolve_project_path
 from validators.dataset_validator import DatasetValidator
 
 
@@ -17,18 +18,35 @@ def render_project_preview(
     year=None,
     preview_mode="year",
     transition_progress=0.0,
+    *,
+    root_dir=None,
 ):
+    root_path = _project_root(root_dir)
+    project_path = resolve_project_path(
+        project_path,
+        project_root=root_path,
+        required=True,
+        field_name="project file",
+    )
     preset = load_project_file(project_path)
-    dataframe = DataSourceLoader(preset.data_source_config).load()
-    dataframe = DatasetValidator(config=preset.dataset_config).validate(dataframe)
-    timeline = Timeline(dataframe, config=preset.dataset_config)
+    source_label = preset.data_source_config.source_label
+    data_source_config = _resolved_data_source_config(
+        preset.data_source_config,
+        root_path,
+    )
+    dataset_config = _resolved_dataset_config(preset.dataset_config, root_path)
+    chart_config = _resolved_chart_config(preset.chart_config, root_path)
+
+    dataframe = DataSourceLoader(data_source_config).load()
+    dataframe = DatasetValidator(config=dataset_config).validate(dataframe)
+    timeline = Timeline(dataframe, config=dataset_config)
     years = timeline.get_years()
 
     if not years:
         raise ValueError("Preview requires at least one time period.")
 
-    selector = BarSelector(config=preset.chart_config.selection)
-    layout = LayoutEngine(config=preset.chart_config)
+    selector = BarSelector(config=chart_config.selection)
+    layout = LayoutEngine(config=chart_config)
     preview_mode = _preview_mode(preview_mode, years)
 
     if preview_mode == "transition":
@@ -37,7 +55,7 @@ def render_project_preview(
             timeline=timeline,
             selector=selector,
             layout=layout,
-            animation_config=preset.chart_config.animation,
+            animation_config=chart_config.animation,
             year_a=year_a,
             year_b=year_b,
             progress=transition_progress,
@@ -53,20 +71,128 @@ def render_project_preview(
         time_label = str(selected_year)
 
     scene = Scene(
-        title=preset.chart_config.title,
+        title=chart_config.title,
         subtitle=subtitle,
         time_label=time_label,
-        source_label=preset.data_source_config.source_label,
+        source_label=source_label,
         bars=sprites,
     )
 
-    output_path = Path(output_dir)
-    renderer = BarRenderer(output_dir=str(output_path), config=preset.chart_config)
+    output_path = resolve_project_path(
+        output_dir,
+        project_root=root_path,
+        required=True,
+        field_name="preview output directory",
+    )
+    renderer = BarRenderer(output_dir=str(output_path), config=chart_config)
 
     try:
         return renderer.render(scene, filename="preview.png")
     finally:
         renderer.close()
+
+
+def _project_root(root_dir):
+    return resolve_project_path(
+        root_dir if root_dir is not None else DEFAULT_PROJECT_ROOT,
+        project_root=DEFAULT_PROJECT_ROOT,
+        required=True,
+        field_name="project root",
+    )
+
+
+def _resolved_data_source_config(config, project_root):
+    if config.source_type == "csv":
+        return replace(
+            config,
+            csv_path=str(
+                resolve_project_path(
+                    config.csv_path,
+                    project_root=project_root,
+                    required=True,
+                    field_name="data_source.csv_path",
+                )
+            ),
+        )
+
+    if config.source_type == "sqlite":
+        return replace(
+            config,
+            sqlite_database_path=str(
+                resolve_project_path(
+                    config.sqlite_database_path,
+                    project_root=project_root,
+                    required=True,
+                    field_name="data_source.sqlite_database_path",
+                )
+            ),
+        )
+
+    return config
+
+
+def _resolved_dataset_config(config, project_root):
+    return replace(
+        config,
+        category_logos=_resolved_path_map(
+            config.category_logos,
+            project_root=project_root,
+            field_name="dataset.category_logos",
+        ),
+        category_secondary_logos=_resolved_path_map(
+            config.category_secondary_logos,
+            project_root=project_root,
+            field_name="dataset.category_secondary_logos",
+        ),
+    )
+
+
+def _resolved_path_map(values, *, project_root, field_name):
+    return {
+        category: str(
+            resolve_project_path(
+                value,
+                project_root=project_root,
+                required=True,
+                field_name=f"{field_name}[{category!r}]",
+            )
+        )
+        for category, value in values.items()
+    }
+
+
+def _resolved_chart_config(config, project_root):
+    background_path = resolve_project_path(
+        config.background_image_path,
+        project_root=project_root,
+        required=config.background_mode == "image",
+        field_name="chart.background_image_path",
+    )
+    texture_path = resolve_project_path(
+        config.bar_texture_custom_image,
+        project_root=project_root,
+        required=(
+            config.bar_texture_enabled
+            and config.bar_texture_preset == "custom_image"
+        ),
+        field_name="chart.bar_texture_custom_image",
+    )
+    logos_dir = resolve_project_path(
+        config.logos_dir,
+        project_root=project_root,
+        required=True,
+        field_name="chart.logos_dir",
+    )
+    return replace(
+        config,
+        background_image_path=(
+            str(background_path) if background_path is not None else None
+        ),
+        bar_texture_custom_image=(
+            str(texture_path) if texture_path is not None else None
+        ),
+        logos_dir=str(logos_dir),
+    )
 
 
 def _selected_year(year, years):

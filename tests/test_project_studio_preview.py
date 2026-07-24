@@ -1,11 +1,17 @@
 import json
 import tempfile
 import unittest
+from contextlib import chdir
 from pathlib import Path
 
 import _test_path
+from config.chart_config import ChartConfig
+from config.dataset_config import DatasetConfig
+from studio.package_paths import resolve_project_path
 from studio.preview import (
     _clamped_progress,
+    _resolved_chart_config,
+    _resolved_dataset_config,
     _selected_transition_years,
     _selected_year,
     render_project_preview,
@@ -197,6 +203,124 @@ class ProjectStudioPreviewTest(unittest.TestCase):
             self.assertTrue(preview_path.name.endswith("preview.png"))
             self.assertTrue(preview_path.exists())
             self.assertGreater(preview_path.stat().st_size, 0)
+
+    def test_renders_relative_dataset_independent_of_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            data_dir = root / "data"
+            project_dir = root / "projects"
+            other_cwd = root / "other"
+            data_dir.mkdir()
+            project_dir.mkdir()
+            other_cwd.mkdir()
+            (data_dir / "relative.csv").write_text(
+                "year,country,value\n"
+                "2020,Coal,100\n"
+                "2021,Coal,120\n",
+                encoding="utf-8",
+            )
+            (project_dir / "relative.json").write_text(
+                json.dumps(
+                    {
+                        "name": "relative_preview",
+                        "chart": {
+                            "width": 320,
+                            "height": 180,
+                            "dpi": 80,
+                            "logos_enabled": False,
+                            "max_visible_bars": 1,
+                        },
+                        "data_source": {
+                            "csv_path": "data/relative.csv",
+                        },
+                        "dataset": {
+                            "year_column": "year",
+                            "name_column": "country",
+                            "value_column": "value",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with chdir(other_cwd):
+                preview_path = Path(
+                    render_project_preview(
+                        "projects/relative.json",
+                        output_dir="output/preview",
+                        year=2021,
+                        root_dir=root,
+                    )
+                )
+
+            expected = root / "output" / "preview" / "preview.png"
+            self.assertEqual(preview_path, expected)
+            self.assertTrue(preview_path.is_file())
+
+    def test_renderer_assets_use_shared_project_path_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            chart = _resolved_chart_config(
+                ChartConfig(
+                    background_mode="image",
+                    background_image_path="assets/background.png",
+                    bar_texture_enabled=True,
+                    bar_texture_preset="custom_image",
+                    bar_texture_custom_image=r"assets\texture.png",
+                    logos_dir="assets/logos",
+                ),
+                root,
+            )
+            dataset = _resolved_dataset_config(
+                DatasetConfig(
+                    category_logos={"A": "assets/logos/a.png"},
+                    category_secondary_logos={
+                        "A": r"assets\secondary\a.png"
+                    },
+                ),
+                root,
+            )
+
+            self.assertEqual(
+                chart.background_image_path,
+                str(
+                    resolve_project_path(
+                        "assets/background.png",
+                        project_root=root,
+                    )
+                ),
+            )
+            self.assertEqual(
+                chart.bar_texture_custom_image,
+                str(
+                    resolve_project_path(
+                        r"assets\texture.png",
+                        project_root=root,
+                    )
+                ),
+            )
+            self.assertEqual(
+                chart.logos_dir,
+                str(resolve_project_path("assets/logos", project_root=root)),
+            )
+            self.assertEqual(
+                dataset.category_logos["A"],
+                str(
+                    resolve_project_path(
+                        "assets/logos/a.png",
+                        project_root=root,
+                    )
+                ),
+            )
+            self.assertEqual(
+                dataset.category_secondary_logos["A"],
+                str(
+                    resolve_project_path(
+                        r"assets\secondary\a.png",
+                        project_root=root,
+                    )
+                ),
+            )
 
 
 if __name__ == "__main__":

@@ -7,13 +7,17 @@ import re
 import shutil
 import stat
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 from config.project_file_loader import load_project_file
 from config.project_schema import migrate_project_data
+from importers.data_source_loader import DataSourceLoader
+from studio.image_validation import ImageValidationError, validate_image_file
+from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_storage import atomic_write_json
+from validators.dataset_validator import DatasetValidator
 
 
 BUNDLE_SCHEMA_VERSION = 1
@@ -57,6 +61,8 @@ class _PathReference:
     container: dict
     key: str
     bucket: str
+    field_name: str | None = None
+    is_image: bool = False
 
 
 def build_project_bundle(project_data, *, root_dir):
@@ -144,59 +150,57 @@ def build_project_bundle(project_data, *, root_dir):
 
 def import_project_bundle(bundle, *, root_dir):
     root_path = Path(root_dir).resolve()
-    bundle_bytes = _bundle_bytes(bundle)
-    if len(bundle_bytes) > MAX_BUNDLE_BYTES:
-        raise ProjectBundleError("Bundle exceeds the 512 MB compressed size limit.")
-
-    manifest, payloads, total_size = _read_bundle(bundle_bytes)
-    project_file = manifest.get("project_file")
-    if project_file != PROJECT_PATH or project_file not in payloads:
-        raise ProjectBundleError("Bundle manifest must reference project.json.")
-
-    try:
-        project_data = json.loads(payloads[project_file].decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProjectBundleError(f"Bundled project JSON is invalid: {exc}") from exc
-
-    project_data = migrate_project_data(project_data).data
-    slug = _unique_import_slug(
-        root_path,
-        manifest.get("project_name") or project_data.get("name") or "project",
-    )
+    source = _bundle_source(bundle)
     import_root = root_path / "projects" / "imported"
-    asset_directory = import_root / slug
-    staging_directory = import_root / f".{slug}.{uuid4().hex}.tmp"
-    project_path = root_path / "projects" / f"{slug}.json"
-    imported_relative_root = Path("projects") / "imported" / slug
+    staging_directory = import_root / f".bundle.{uuid4().hex}.tmp"
+    if source[0] == "directory" and staging_directory.is_relative_to(source[1]):
+        raise ProjectBundleError(
+            "Bundle source directory cannot contain the import staging area."
+        )
+    asset_directory = None
+    project_path = None
 
     try:
         staging_directory.mkdir(parents=True, exist_ok=False)
-        payload_paths = set(payloads)
+        _materialize_bundle_source(source, staging_directory)
+        manifest, records, total_size, file_count = _validate_staged_bundle(
+            staging_directory
+        )
+        project_file = manifest.get("project_file")
+        if project_file != PROJECT_PATH or project_file not in records:
+            raise ProjectBundleError("Bundle manifest must reference project.json.")
 
-        for reference in _path_references(project_data):
-            archive_path = reference.container.get(reference.key)
-            if not archive_path:
-                continue
-            _validate_member_name(archive_path)
-            if archive_path == PROJECT_PATH or archive_path not in payload_paths:
-                raise ProjectBundleError(
-                    f"Project references a file missing from the bundle: {archive_path}"
-                )
-            reference.container[reference.key] = (
-                imported_relative_root / Path(PurePosixPath(archive_path))
-            ).as_posix()
+        staging_project_path = staging_directory / PROJECT_PATH
+        project_data = _read_staged_project_data(staging_project_path)
+        preset = load_project_file(staging_project_path)
+        _validate_staged_project_dataset(
+            preset,
+            staging_directory=staging_directory,
+        )
+        _validate_staged_project_images(
+            project_data,
+            staging_directory=staging_directory,
+        )
 
-        for archive_path, payload in payloads.items():
-            if archive_path == PROJECT_PATH:
-                continue
-            destination = staging_directory / Path(PurePosixPath(archive_path))
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(payload)
+        slug = _unique_import_slug(
+            root_path,
+            manifest.get("project_name") or project_data.get("name") or "project",
+        )
+        asset_directory = import_root / slug
+        project_path = root_path / "projects" / f"{slug}.json"
+        imported_relative_root = Path("projects") / "imported" / slug
+        _rewrite_project_references(
+            project_data,
+            payload_paths=set(records),
+            imported_relative_root=imported_relative_root,
+        )
 
         chart = project_data.setdefault("chart", {})
         chart["output_file"] = f"output/{slug}.mp4"
         chart["frames_dir"] = f"output/{slug}_frames"
         project_data["name"] = slug
+        staging_project_path.unlink()
+        (staging_directory / MANIFEST_PATH).unlink()
         os.replace(staging_directory, asset_directory)
 
         try:
@@ -217,14 +221,54 @@ def import_project_bundle(bundle, *, root_dir):
     return ProjectBundleImport(
         project_path=str(project_path),
         asset_directory=str(asset_directory),
-        file_count=len(payloads) + 1,
+        file_count=file_count,
         uncompressed_size=total_size,
     )
 
 
-def _read_bundle(bundle_bytes):
+def _bundle_source(bundle):
+    if isinstance(bundle, (str, os.PathLike)):
+        path = Path(bundle)
+        if not path.exists():
+            raise ProjectBundleError(f"Bundle path does not exist: {path}")
+        if _is_link(path):
+            raise ProjectBundleError("Bundle source must not be a symbolic link.")
+        if path.is_dir():
+            return "directory", path.resolve(strict=True)
+        if path.is_file() and path.suffix.lower() == ".zip":
+            if path.stat().st_size > MAX_BUNDLE_BYTES:
+                raise ProjectBundleError(
+                    "Bundle exceeds the 512 MB compressed size limit."
+                )
+            return "zip_path", path.resolve(strict=True)
+        if path.is_file():
+            raise ProjectBundleError(
+                "Bundle path must reference a .zip file or a directory."
+            )
+        raise ProjectBundleError(
+            "Bundle path must reference a regular .zip file or a directory."
+        )
+
+    bundle_bytes = _bundle_bytes(bundle)
+    if len(bundle_bytes) > MAX_BUNDLE_BYTES:
+        raise ProjectBundleError("Bundle exceeds the 512 MB compressed size limit.")
+    return "zip_bytes", bundle_bytes
+
+
+def _materialize_bundle_source(source, staging_directory):
+    source_type, source_value = source
+    if source_type == "directory":
+        _copy_bundle_directory(source_value, staging_directory)
+        return
+    _extract_bundle_zip(source_value, staging_directory, from_bytes=(
+        source_type == "zip_bytes"
+    ))
+
+
+def _extract_bundle_zip(source, staging_directory, *, from_bytes):
     try:
-        archive = zipfile.ZipFile(io.BytesIO(bundle_bytes), mode="r")
+        archive_source = io.BytesIO(source) if from_bytes else source
+        archive = zipfile.ZipFile(archive_source, mode="r")
     except zipfile.BadZipFile as exc:
         raise ProjectBundleError("Uploaded file is not a valid ZIP bundle.") from exc
 
@@ -246,35 +290,114 @@ def _read_bundle(bundle_bytes):
             if total_size > MAX_BUNDLE_BYTES:
                 raise ProjectBundleError("Bundle exceeds the 512 MB size limit.")
 
-        if MANIFEST_PATH not in names:
-            raise ProjectBundleError("Bundle manifest.json is missing.")
-
-        try:
-            manifest = json.loads(
-                _read_zip_entry(archive, MANIFEST_PATH).decode("utf-8")
+        for info in file_infos:
+            payload = _read_zip_entry(archive, info.filename)
+            destination = staging_directory.joinpath(
+                *PurePosixPath(info.filename).parts
             )
-        except (UnicodeDecodeError, json.JSONDecodeError, KeyError) as exc:
-            raise ProjectBundleError(f"Bundle manifest is invalid: {exc}") from exc
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(payload)
 
-        records = _manifest_records(manifest)
-        expected_names = {MANIFEST_PATH, *records}
-        if set(names) != expected_names:
-            raise ProjectBundleError(
-                "Bundle file list does not match the signed manifest."
+
+def _copy_bundle_directory(source_directory, staging_directory):
+    file_count = 0
+    total_size = 0
+    seen_names = set()
+
+    for current_root, directory_names, file_names in os.walk(
+        source_directory,
+        followlinks=False,
+    ):
+        current_path = Path(current_root)
+        for directory_name in directory_names:
+            if _is_link(current_path / directory_name):
+                raise ProjectBundleError(
+                    "Symbolic links are not allowed in project bundle folders."
+                )
+
+        for file_name in file_names:
+            source_path = current_path / file_name
+            if _is_link(source_path):
+                raise ProjectBundleError(
+                    "Symbolic links are not allowed in project bundle folders."
+                )
+            if not source_path.is_file():
+                raise ProjectBundleError(
+                    "Bundle folder contains an unsupported filesystem entry."
+                )
+
+            resolved_source = source_path.resolve(strict=True)
+            if not resolved_source.is_relative_to(source_directory):
+                raise ProjectBundleError(
+                    "Bundle folder contains a path outside its root."
+                )
+            relative_path = source_path.relative_to(source_directory).as_posix()
+            _validate_member_name(relative_path)
+            folded_name = relative_path.casefold()
+            if folded_name in seen_names:
+                raise ProjectBundleError("Bundle contains duplicate file names.")
+            seen_names.add(folded_name)
+
+            file_count += 1
+            total_size += source_path.stat().st_size
+            if file_count > MAX_BUNDLE_FILES:
+                raise ProjectBundleError("Bundle contains too many files.")
+            if total_size > MAX_BUNDLE_BYTES:
+                raise ProjectBundleError("Bundle exceeds the 512 MB size limit.")
+
+            destination = staging_directory.joinpath(
+                *PurePosixPath(relative_path).parts
             )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with source_path.open("rb") as source_file, destination.open("xb") as target:
+                shutil.copyfileobj(source_file, target)
 
-        payloads = {}
-        for path, record in records.items():
-            payload = _read_zip_entry(archive, path)
-            expected_size = record.get("size")
-            expected_digest = record.get("sha256")
-            if len(payload) != expected_size:
-                raise ProjectBundleError(f"Size check failed for {path}.")
-            if hashlib.sha256(payload).hexdigest() != expected_digest:
-                raise ProjectBundleError(f"Checksum failed for {path}.")
-            payloads[path] = payload
 
-    return manifest, payloads, total_size
+def _validate_staged_bundle(staging_directory):
+    staged_files = tuple(
+        path
+        for path in staging_directory.rglob("*")
+        if path.is_file()
+    )
+    if len(staged_files) > MAX_BUNDLE_FILES:
+        raise ProjectBundleError("Bundle contains too many files.")
+
+    names = [path.relative_to(staging_directory).as_posix() for path in staged_files]
+    if len(names) != len(set(names)) or len(names) != len(
+        {name.casefold() for name in names}
+    ):
+        raise ProjectBundleError("Bundle contains duplicate file names.")
+    for name in names:
+        _validate_member_name(name)
+
+    total_size = sum(path.stat().st_size for path in staged_files)
+    if total_size > MAX_BUNDLE_BYTES:
+        raise ProjectBundleError("Bundle exceeds the 512 MB size limit.")
+    if MANIFEST_PATH not in names:
+        raise ProjectBundleError("Bundle manifest.json is missing.")
+
+    manifest_path = staging_directory / MANIFEST_PATH
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
+        raise ProjectBundleError(f"Bundle manifest is invalid: {exc}") from exc
+
+    records = _manifest_records(manifest)
+    expected_names = {MANIFEST_PATH, *records}
+    if set(names) != expected_names:
+        raise ProjectBundleError(
+            "Bundle file list does not match the signed manifest."
+        )
+
+    for path, record in records.items():
+        staged_path = staging_directory.joinpath(*PurePosixPath(path).parts)
+        expected_size = record.get("size")
+        if staged_path.stat().st_size != expected_size:
+            raise ProjectBundleError(f"Size check failed for {path}.")
+        if _sha256_file(staged_path) != record.get("sha256"):
+            raise ProjectBundleError(f"Checksum failed for {path}.")
+
+    return manifest, records, total_size, len(staged_files)
 
 
 def _manifest_records(manifest):
@@ -346,22 +469,199 @@ def _path_references(project_data):
     if isinstance(data_source, dict):
         source_type = data_source.get("source_type", "csv")
         if source_type == "sqlite":
-            yield _PathReference(data_source, "sqlite_database_path", "data")
+            yield _PathReference(
+                data_source,
+                "sqlite_database_path",
+                "data",
+                "data_source.sqlite_database_path",
+            )
         else:
-            yield _PathReference(data_source, "csv_path", "data")
+            yield _PathReference(
+                data_source,
+                "csv_path",
+                "data",
+                "data_source.csv_path",
+            )
 
     chart = project_data.get("chart")
     if isinstance(chart, dict):
-        yield _PathReference(chart, "background_image_path", "assets/backgrounds")
-        yield _PathReference(chart, "bar_texture_custom_image", "assets/textures")
+        yield _PathReference(
+            chart,
+            "background_image_path",
+            "assets/backgrounds",
+            "chart.background_image_path",
+            True,
+        )
+        yield _PathReference(
+            chart,
+            "bar_texture_custom_image",
+            "assets/textures",
+            "chart.bar_texture_custom_image",
+            True,
+        )
+
+    dataset = project_data.get("dataset")
+    if isinstance(dataset, dict):
+        for key, bucket in (
+            ("category_logos", "assets/logos/primary"),
+            ("category_secondary_logos", "assets/logos/secondary"),
+        ):
+            values = dataset.get(key)
+            if not isinstance(values, dict):
+                continue
+            for category in values:
+                yield _PathReference(
+                    values,
+                    category,
+                    bucket,
+                    f"dataset.{key}[{category!r}]",
+                    True,
+                )
 
     categories = project_data.get("categories")
     if isinstance(categories, dict):
-        for style in categories.values():
+        for category, style in categories.items():
             if not isinstance(style, dict):
                 continue
-            yield _PathReference(style, "logo", "assets/logos/primary")
-            yield _PathReference(style, "secondary_logo", "assets/logos/secondary")
+            yield _PathReference(
+                style,
+                "logo",
+                "assets/logos/primary",
+                f"categories[{category!r}].logo",
+                True,
+            )
+            yield _PathReference(
+                style,
+                "secondary_logo",
+                "assets/logos/secondary",
+                f"categories[{category!r}].secondary_logo",
+                True,
+            )
+
+
+def _read_staged_project_data(project_path):
+    try:
+        project_data = json.loads(project_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
+        raise ProjectBundleError(f"Bundled project JSON is invalid: {exc}") from exc
+    return migrate_project_data(project_data).data
+
+
+def _validate_staged_project_dataset(
+    preset,
+    *,
+    staging_directory,
+):
+    data_source_config = _staged_data_source_config(
+        preset.data_source_config,
+        staging_directory=staging_directory,
+    )
+    try:
+        dataframe = DataSourceLoader(data_source_config).load()
+        DatasetValidator(config=preset.dataset_config).validate(dataframe)
+    except (OSError, ValueError) as exc:
+        raise ProjectBundleError(
+            f"Bundled dataset is invalid: {exc}"
+        ) from exc
+
+
+def _validate_staged_project_images(project_data, *, staging_directory):
+    staging_root = staging_directory.resolve()
+    for reference in _path_references(project_data):
+        if not reference.is_image:
+            continue
+        original_value = reference.container.get(reference.key)
+        if not original_value:
+            continue
+
+        portable_path = Path(str(original_value).replace("\\", "/"))
+        if portable_path.is_absolute() or portable_path.anchor:
+            raise ProjectBundleError(
+                f"Bundled image reference {reference.field_name} must use a "
+                f"portable relative path; value={original_value!r}."
+            )
+
+        try:
+            staged_path = resolve_project_path(
+                original_value,
+                project_root=staging_root,
+                required=True,
+                field_name=reference.field_name,
+            )
+        except ProjectPathError as exc:
+            raise ProjectBundleError(
+                f"Bundled image reference is invalid: {exc}"
+            ) from exc
+
+        try:
+            validate_image_file(
+                staged_path,
+                field_name=reference.field_name,
+                original_value=original_value,
+            )
+        except ImageValidationError as exc:
+            raise ProjectBundleError(f"Bundled image is invalid: {exc}") from exc
+
+
+def _staged_data_source_config(
+    config,
+    *,
+    staging_directory,
+):
+    if config.source_type == "csv":
+        field_name = "csv_path"
+    elif config.source_type == "sqlite":
+        field_name = "sqlite_database_path"
+    else:
+        raise ProjectBundleError(
+            f"Bundled project uses unsupported data source type: {config.source_type}"
+        )
+
+    configured_value = getattr(config, field_name)
+    _validate_member_name(configured_value)
+    archive_path = PurePosixPath(configured_value)
+    staged_path = staging_directory.joinpath(*archive_path.parts).resolve()
+    staging_root = staging_directory.resolve()
+    if not staged_path.is_relative_to(staging_root) or not staged_path.is_file():
+        raise ProjectBundleError(
+            "Bundled project dataset was not found inside the staged bundle."
+        )
+
+    return replace(config, **{field_name: str(staged_path)})
+
+
+def _rewrite_project_references(
+    project_data,
+    *,
+    payload_paths,
+    imported_relative_root,
+):
+    for reference in _path_references(project_data):
+        archive_path = reference.container.get(reference.key)
+        if not archive_path:
+            continue
+        _validate_member_name(archive_path)
+        if archive_path == PROJECT_PATH or archive_path not in payload_paths:
+            raise ProjectBundleError(
+                f"Project references a file missing from the bundle: {archive_path}"
+            )
+        reference.container[reference.key] = (
+            imported_relative_root / Path(PurePosixPath(archive_path))
+        ).as_posix()
+
+
+def _is_link(path):
+    return path.is_symlink() or (
+        hasattr(path, "is_junction") and path.is_junction()
+    )
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _resolve_source_path(path, root_path):

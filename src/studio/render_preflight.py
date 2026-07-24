@@ -5,6 +5,12 @@ from pathlib import Path
 
 from config.project_file_loader import ProjectFileError, load_project_file
 from importers.data_source_loader import DataSourceLoader
+from studio.image_validation import ImageValidationError, validate_image_file
+from studio.package_paths import (
+    DEFAULT_PROJECT_ROOT,
+    ProjectPathError,
+    resolve_project_path,
+)
 from validators.dataset_validator import DatasetValidator
 
 
@@ -42,9 +48,19 @@ class RenderPreflight:
 
 
 def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
-    project_path = Path(project_file).resolve()
-    root_path = Path(root_dir or Path.cwd()).resolve()
     checks = []
+
+    try:
+        root_path = _project_root(root_dir)
+        project_path = resolve_project_path(
+            project_file,
+            project_root=root_path,
+            required=True,
+            field_name="project file",
+        )
+    except ProjectPathError as exc:
+        checks.append(_error("project", "Project JSON", str(exc)))
+        return RenderPreflight(str(project_file), tuple(checks))
 
     try:
         preset = load_project_file(project_path)
@@ -53,14 +69,14 @@ def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
         return RenderPreflight(str(project_path), tuple(checks))
 
     checks.append(_ok("project", "Project JSON", "Configuration is valid."))
-    data_source_config = _absolute_data_source_config(
-        preset.data_source_config,
-        root_path,
-    )
-
     try:
+        data_source_config = _absolute_data_source_config(
+            preset.data_source_config,
+            root_path,
+        )
         dataframe = DataSourceLoader(data_source_config).load()
-    except (ValueError, OSError) as exc:
+    except (ProjectPathError, ValueError, OSError) as exc:
+        data_source_config = None
         checks.append(_error("data_source", "Data source", str(exc)))
     else:
         checks.append(
@@ -115,12 +131,21 @@ def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
             )
         )
 
-    output_path = _resolve_path(preset.chart_config.output_file, root_path)
-    output_error = _output_error(output_path, project_path, data_source_config)
-    if output_error:
-        checks.append(_error("output", "Video output", output_error))
+    try:
+        output_path = resolve_project_path(
+            preset.chart_config.output_file,
+            project_root=root_path,
+            required=True,
+            field_name="chart.output_file",
+        )
+    except ProjectPathError as exc:
+        checks.append(_error("output", "Video output", str(exc)))
     else:
-        checks.append(_ok("output", "Video output", str(output_path)))
+        output_error = _output_error(output_path, project_path, data_source_config)
+        if output_error:
+            checks.append(_error("output", "Video output", output_error))
+        else:
+            checks.append(_ok("output", "Video output", str(output_path)))
 
     checks.extend(_asset_checks(preset, root_path))
     return RenderPreflight(str(project_path), tuple(checks))
@@ -130,14 +155,26 @@ def _absolute_data_source_config(config, root_path):
     if config.source_type == "csv":
         return replace(
             config,
-            csv_path=str(_resolve_path(config.csv_path, root_path)),
+            csv_path=str(
+                resolve_project_path(
+                    config.csv_path,
+                    project_root=root_path,
+                    required=True,
+                    field_name="data_source.csv_path",
+                )
+            ),
         )
 
     if config.source_type == "sqlite":
         return replace(
             config,
             sqlite_database_path=str(
-                _resolve_path(config.sqlite_database_path, root_path)
+                resolve_project_path(
+                    config.sqlite_database_path,
+                    project_root=root_path,
+                    required=True,
+                    field_name="data_source.sqlite_database_path",
+                )
             ),
         )
 
@@ -151,7 +188,7 @@ def _output_error(output_path, project_path, data_source_config):
     if output_path == project_path:
         return "Video output cannot overwrite the project JSON."
 
-    if data_source_config.source_type == "csv":
+    if data_source_config is not None and data_source_config.source_type == "csv":
         input_path = Path(data_source_config.csv_path).resolve()
         if output_path == input_path:
             return "Video output cannot overwrite the source CSV."
@@ -171,63 +208,103 @@ def _asset_checks(preset, root_path):
     chart = preset.chart_config
 
     if chart.background_mode == "image":
-        background_path = _resolve_path(chart.background_image_path or "", root_path)
-        if not chart.background_image_path or not background_path.is_file():
-            checks.append(
-                _error(
-                    "background",
-                    "Background image",
-                    f"Image not found: {background_path}",
-                )
+        checks.append(
+            _image_asset_check(
+                key="background",
+                label="Background image",
+                field_name="chart.background_image_path",
+                value=chart.background_image_path,
+                root_path=root_path,
             )
-        else:
-            checks.append(
-                _ok("background", "Background image", str(background_path))
-            )
+        )
 
     if chart.bar_texture_enabled and chart.bar_texture_preset == "custom_image":
-        texture_path = _resolve_path(
-            chart.bar_texture_custom_image or "",
-            root_path,
-        )
-        if not chart.bar_texture_custom_image or not texture_path.is_file():
-            checks.append(
-                _error(
-                    "texture",
-                    "Custom texture",
-                    f"Image not found: {texture_path}",
-                )
+        checks.append(
+            _image_asset_check(
+                key="texture",
+                label="Custom texture",
+                field_name="chart.bar_texture_custom_image",
+                value=chart.bar_texture_custom_image,
+                root_path=root_path,
             )
-        else:
-            checks.append(_ok("texture", "Custom texture", str(texture_path)))
+        )
 
-    logo_paths = (
-        *preset.dataset_config.category_logos.values(),
-        *preset.dataset_config.category_secondary_logos.values(),
-    )
-    missing_logos = [
-        path
-        for path in logo_paths
-        if path and not _resolve_path(path, root_path).is_file()
-    ]
+    missing_logos = _missing_logo_messages(preset.dataset_config, root_path)
     if missing_logos:
         checks.append(
             PreflightCheck(
                 key="logos",
                 label="Category logos",
                 level="warning",
-                message=f"{len(missing_logos)} logo files were not found.",
+                message="; ".join(missing_logos),
             )
         )
 
     return checks
 
 
-def _resolve_path(path, root_path):
-    resolved = Path(str(path).strip())
-    if not resolved.is_absolute():
-        resolved = root_path / resolved
-    return resolved.resolve()
+def _project_root(root_dir):
+    return resolve_project_path(
+        root_dir if root_dir is not None else DEFAULT_PROJECT_ROOT,
+        project_root=DEFAULT_PROJECT_ROOT,
+        required=True,
+        field_name="project root",
+    )
+
+
+def _image_asset_check(*, key, label, field_name, value, root_path):
+    try:
+        resolved = resolve_project_path(
+            value,
+            project_root=root_path,
+            required=True,
+            field_name=field_name,
+        )
+    except ProjectPathError as exc:
+        return _error(key, label, str(exc))
+
+    try:
+        validate_image_file(
+            resolved,
+            field_name=field_name,
+            original_value=value,
+        )
+    except ImageValidationError as exc:
+        return _error(key, label, str(exc))
+    return _ok(key, label, str(resolved))
+
+
+def _missing_logo_messages(dataset_config, root_path):
+    messages = []
+    logo_maps = (
+        ("dataset.category_logos", dataset_config.category_logos),
+        (
+            "dataset.category_secondary_logos",
+            dataset_config.category_secondary_logos,
+        ),
+    )
+    for field_name, values in logo_maps:
+        for category, value in sorted(values.items()):
+            item_name = f"{field_name}[{category!r}]"
+            try:
+                resolved = resolve_project_path(
+                    value,
+                    project_root=root_path,
+                    required=True,
+                    field_name=item_name,
+                )
+            except ProjectPathError as exc:
+                messages.append(str(exc))
+                continue
+            try:
+                validate_image_file(
+                    resolved,
+                    field_name=item_name,
+                    original_value=value,
+                )
+            except ImageValidationError as exc:
+                messages.append(str(exc))
+    return messages
 
 
 def _ok(key, label, message):
