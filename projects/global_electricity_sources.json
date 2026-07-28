@@ -1,7 +1,8 @@
 {
+  "schema_version": 1,
   "name": "global_electricity_sources",
   "chart": {
-    "title": "Electricity by Source",
+    "title": "Global Electricity Sources",
     "output_file": "output/global_electricity_sources.mp4",
     "frames_dir": "output/global_electricity_sources_frames",
     "layout_preset": "youtube_1080p",
