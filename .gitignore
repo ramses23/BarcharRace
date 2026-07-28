@@ -20,3 +20,13 @@ data/database/*.db
 
 # vscode (opcional)
 .vscode/
+
+# Local productions and imported package material
+/PRODUCCIONES/
+/PRODUCCIONES_AUTOMATICAS/
+/projects/imported/
+/production/templates/local/
+
+# Local package state and archives
+**/.barchartstudio-launch.json
+*.barchart.zip
