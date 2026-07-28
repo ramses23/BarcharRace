@@ -2,12 +2,14 @@ import contextlib
 import inspect
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from uuid import uuid4
 
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -38,6 +40,38 @@ EXAMPLE_SOURCE = (
     / "examples"
     / "national_team_goals_source.csv"
 )
+PRODUCTION_TEXT_SUFFIXES = frozenset(
+    {".csv", ".json", ".md", ".py", ".toml", ".txt", ".yaml", ".yml"}
+)
+
+
+def tracked_production_text_files():
+    completed = subprocess.run(
+        [
+            "git",
+            "-c",
+            f"safe.directory={ROOT_DIR}",
+            "-C",
+            str(ROOT_DIR),
+            "ls-files",
+            "--",
+            "production",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    production_dir = (ROOT_DIR / "production").resolve()
+    tracked_files = []
+    for relative_path in completed.stdout.splitlines():
+        path = (ROOT_DIR / relative_path).resolve()
+        if (
+            path.is_relative_to(production_dir)
+            and path.is_file()
+            and path.suffix.lower() in PRODUCTION_TEXT_SUFFIXES
+        ):
+            tracked_files.append(path)
+    return tuple(tracked_files)
 
 
 class FakeOrchestrator:
@@ -261,8 +295,7 @@ class RunProductionCliTest(unittest.TestCase):
         self.assertFalse(preset.chart_config.logos_enabled)
 
     def test_tracked_example_is_independent_of_tests_and_personal_paths(self):
-        files = tuple((ROOT_DIR / "production").rglob("*"))
-        tracked_files = tuple(path for path in files if path.is_file())
+        tracked_files = tracked_production_text_files()
         self.assertGreaterEqual(len(tracked_files), 4)
 
         for path in tracked_files:
@@ -273,6 +306,20 @@ class RunProductionCliTest(unittest.TestCase):
                 self.assertNotIn(str(Path.home()), text)
                 self.assertNotIn(str(ROOT_DIR), text)
                 self.assertNotRegex(text, r"(?i)[a-z]:[\\/]")
+
+    def test_ignored_local_png_does_not_affect_tracked_example_check(self):
+        local_dir = ROOT_DIR / "production" / "inputs" / "local"
+        created_local_dir = not local_dir.exists()
+        local_dir.mkdir(parents=True, exist_ok=True)
+        private_path = local_dir / f"private-{uuid4().hex}.png"
+        try:
+            private_path.write_bytes(b"\x89PNG\r\n\x1a\nprivate fixture")
+            self.assertNotIn(private_path.resolve(), tracked_production_text_files())
+            self.test_tracked_example_is_independent_of_tests_and_personal_paths()
+        finally:
+            private_path.unlink(missing_ok=True)
+            if created_local_dir:
+                local_dir.rmdir()
 
     def test_example_source_is_synthetic_and_bounded(self):
         rows = EXAMPLE_SOURCE.read_text(encoding="utf-8").splitlines()
