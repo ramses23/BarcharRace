@@ -1,0 +1,1 @@
+Trigger the licensed player photo workflow on asset-photo-test.
