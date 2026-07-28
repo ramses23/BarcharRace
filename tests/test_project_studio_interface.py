@@ -1,13 +1,27 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 from uuid import uuid4
 
 from streamlit.testing.v1 import AppTest
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def setUp(self):
+        isolated_environment = dict(os.environ)
+        isolated_environment.pop("BARCHARTSTUDIO_AUTOLOAD_PROJECT", None)
+        isolated_environment.pop("BARCHARTSTUDIO_AUTOLOAD_TOKEN", None)
+        self.environment_patcher = mock.patch.dict(
+            os.environ,
+            isolated_environment,
+            clear=True,
+        )
+        self.environment_patcher.start()
+        self.addCleanup(self.environment_patcher.stop)
+
     def _select_editor_section(self, app, section):
         section_control = next(
             control
