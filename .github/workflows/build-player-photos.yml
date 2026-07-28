@@ -1,0 +1,48 @@
+name: Build licensed player photos
+
+on:
+  push:
+    branches:
+      - asset-photo-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  build-photos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out temporary branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install image tooling
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0
+
+      - name: Download, transform, validate, and package photos
+        id: build
+        continue-on-error: true
+        run: python scripts/build_player_photos.py
+
+      - name: Upload photos.zip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: photos
+          path: photos.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce complete set
+        if: steps.build.outcome != 'success'
+        run: |
+          echo "One or more player photos failed. See photos/DOWNLOAD_FAILURES.log and manifest.json inside the artifact."
+          exit 1
