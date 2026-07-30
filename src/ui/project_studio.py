@@ -35,6 +35,7 @@ from ui.category_editor import (
 from ui.dataset_cache import load_csv_dataset
 from ui.bar_style_editor import bar_style_editor
 from ui.font_picker import font_family_picker
+from ui.floating_preview import floating_preview_controller
 from ui.render_workflow import (
     BACKGROUND_RENDER_STATE,
     LAST_PREFLIGHT_STATE,
@@ -43,7 +44,6 @@ from ui.render_workflow import (
     start_render_with_preflight,
 )
 from ui.studio_shell import (
-    apply_studio_layout_styles,
     section_intro,
     show_dataset_snapshot,
     show_empty_preview,
@@ -131,7 +131,6 @@ st.logo(
 
 
 def main():
-    apply_studio_layout_styles()
     _initialize_studio_state()
     _autoload_requested_project()
     header_slot = st.empty()
@@ -226,6 +225,8 @@ def main():
             icon=":material/data_object:",
         ):
             st.json(project_data, expanded=False)
+
+    floating_preview_controller(key="latest_preview_controller")
 
 
 def _initialize_studio_state():

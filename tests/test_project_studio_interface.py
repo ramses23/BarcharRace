@@ -41,21 +41,17 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             section,
         )
 
-    def test_latest_preview_sticks_on_wide_screens_only(self):
+    def test_latest_preview_uses_viewport_controller(self):
         root_dir = Path(__file__).resolve().parents[1]
-        shell_source = (
-            root_dir / "src" / "ui" / "studio_shell.py"
-        ).read_text(encoding="utf-8")
         studio_source = (
             root_dir / "src" / "ui" / "project_studio.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn(".st-key-latest_preview", shell_source)
-        self.assertIn("position: sticky", shell_source)
-        self.assertIn("top: 0.75rem", shell_source)
-        self.assertIn("@media (max-width: 900px)", shell_source)
-        self.assertIn("position: static", shell_source)
-        self.assertIn("apply_studio_layout_styles()", studio_source)
+        self.assertIn(
+            'floating_preview_controller(key="latest_preview_controller")',
+            studio_source,
+        )
+        self.assertNotIn("apply_studio_layout_styles()", studio_source)
 
     def test_project_switch_requires_confirmation_for_unsaved_draft(self):
         root_dir = Path(__file__).resolve().parents[1]

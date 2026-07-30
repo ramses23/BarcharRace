@@ -1,0 +1,9 @@
+:host {
+  display: block;
+  height: 0;
+  overflow: hidden;
+}
+
+[data-floating-preview-controller] {
+  display: none;
+}

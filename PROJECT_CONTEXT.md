@@ -173,9 +173,9 @@ The project is a usable MVP:
 - Project Studio uses a dark creative-workspace theme defined only through
   `.streamlit/config.toml`: graphite surfaces, violet accent, native borders,
   Inter/JetBrains Mono typography, 512 MB upload/message limits, and a minimal
-  toolbar. Do not replace the theme with injected CSS. The only page-level CSS
-  is a layout behavior scoped to the stable `.st-key-latest_preview` class:
-  sticky on desktop and static below 900 px.
+  toolbar. Do not replace the theme with injected CSS. Viewport anchoring for
+  Latest preview is handled by an invisible CCv2 controller rather than global
+  theme or layout CSS.
 - The workspace is a responsive editor/stage split. A segmented navigator for
   `Data`, `Canvas`, `Bars`, and `Export` lives on the left and conditionally
   mounts exactly one section; never replace it with static `st.tabs`, because
@@ -805,9 +805,12 @@ in verified, published checkpoints:
 
 15. **Sticky latest preview - completed.** The keyed Latest preview card stays
     in view while users scroll through desktop editor controls, making
-    automatic visual changes immediately visible. A responsive media query
-    restores normal flow below 900 px so the card does not obstruct stacked
-    mobile controls.
+    automatic visual changes immediately visible. An invisible CCv2 controller
+    switches it to viewport-fixed positioning after it reaches an 80 px header
+    offset, preserves its original flow space with a placeholder, and tracks
+    width/position changes across scroll, resize, and Streamlit reruns. Below
+    900 px it restores normal flow so the card does not obstruct stacked mobile
+    controls.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

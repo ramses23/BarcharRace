@@ -364,9 +364,11 @@ values remain preserved in the project JSON.
 
 Project Studio uses a dark creative-workspace theme configured natively in
 `.streamlit/config.toml`; colors, typography, borders, and widget styling do
-not depend on injected CSS. One narrowly scoped layout rule targets the stable
-`latest_preview` container key: the preview remains sticky while the desktop
-editor scrolls and returns to normal document flow below 900 px wide.
+not depend on injected CSS. An invisible CCv2 layout controller watches the
+stable `latest_preview` container. Once that card reaches the workspace header,
+the controller anchors it to the viewport, keeps a placeholder in the original
+flow, and synchronizes its width and horizontal position with the stage column.
+Below 900 px it restores the normal stacked document flow.
 
 The main workspace is split into two responsive columns. The left editor uses
 a segmented navigator for `Data`, `Canvas`, `Bars`, and `Export`, and mounts
