@@ -775,6 +775,12 @@ in verified, published checkpoints:
     unsaved drafts in memory after Canvas, Bars, category, or preview-frame
     changes without turning Streamlit reruns into project saves.
 
+12. **Adaptive title width - completed.** Titles use the full safe horizontal
+    space remaining from their configured start position by default, instead
+    of inheriting a fixed typography-preset cap that could add an ellipsis while
+    visible canvas space remained. Projects may still set `title_max_width` to
+    a numeric value when a deliberately narrower title column is required.
+
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active
 GitHub branch.

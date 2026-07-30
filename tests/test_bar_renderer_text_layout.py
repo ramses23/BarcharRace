@@ -822,6 +822,49 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             80,
         )
 
+    def test_title_uses_all_remaining_canvas_width_by_default(self):
+        auto_renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                width=360,
+                left_margin=40,
+                value_label_edge_padding=20,
+                title_font_size=10,
+            )
+        )
+        limited_renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                width=360,
+                left_margin=40,
+                value_label_edge_padding=20,
+                title_font_size=10,
+                title_max_width=80,
+            )
+        )
+        title = "Worldwide vehicle sales by automaker group since 2018"
+
+        auto_title = auto_renderer._fit_title(title)
+        limited_title = limited_renderer._fit_title(title)
+
+        self.assertEqual(
+            auto_renderer._available_text_width(40, None),
+            300,
+        )
+        self.assertGreater(len(auto_title), len(limited_title))
+        self.assertTrue(limited_title.endswith("..."))
+        self.assertLessEqual(
+            measure_text_width(
+                auto_title,
+                auto_renderer._measurement_font(
+                    auto_renderer.config.title_font_size,
+                    auto_renderer.config.title_font_family,
+                    auto_renderer.config.title_font_weight,
+                ),
+            ),
+            300,
+        )
+
     def test_available_text_width_never_goes_negative(self):
         renderer = BarRenderer(
             config=ChartConfig(

@@ -2797,6 +2797,9 @@ class BarRenderer(TextCompositorMixin):
         right_edge = self.config.width - self.config.value_label_edge_padding
         available_width = right_edge - x
 
+        if configured_max_width is None:
+            return max(0, available_width)
+
         return max(0, min(configured_max_width, available_width))
 
     def _fit_text(

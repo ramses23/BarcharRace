@@ -14,7 +14,7 @@ class TypographyPreset:
     subtitle_font_weight: str = "normal"
     time_label_font_weight: str = "bold"
     source_font_weight: str = "normal"
-    title_max_width: int = 1280
+    title_max_width: int | None = None
     subtitle_max_width: int = 1280
     source_max_width: int = 980
 
@@ -46,7 +46,6 @@ TYPOGRAPHY_PRESETS = {
         source_font_size=16,
         label_font_size=20,
         value_font_size=20,
-        title_max_width=1240,
         subtitle_max_width=1040,
         source_max_width=860,
     ),
@@ -58,7 +57,6 @@ TYPOGRAPHY_PRESETS = {
         source_font_size=14,
         label_font_size=18,
         value_font_size=18,
-        title_max_width=1120,
         subtitle_max_width=900,
         source_max_width=760,
     ),

@@ -154,7 +154,7 @@ class ChartConfig:
     subtitle_font_weight: str = "normal"
     time_label_font_weight: str = "bold"
     source_font_weight: str = "normal"
-    title_max_width: int = 1280
+    title_max_width: int | None = None
     subtitle_max_width: int = 1280
     source_max_width: int = 980
 

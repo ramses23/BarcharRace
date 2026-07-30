@@ -8,6 +8,25 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_accepts_automatic_title_width(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "automatic_title_width.json"
+            project_path.write_text(
+                json.dumps(
+                    {
+                        "chart": {
+                            "typography_preset": "editorial",
+                            "title_max_width": None,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            preset = load_project_file(project_path)
+
+        self.assertIsNone(preset.chart_config.title_max_width)
+
     def test_migrates_legacy_nested_animation_and_logo_position(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "legacy_project.json"

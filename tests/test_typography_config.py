@@ -20,6 +20,7 @@ class TypographyConfigTest(unittest.TestCase):
 
         self.assertEqual(preset.name, "editorial")
         self.assertGreater(preset.title_font_size, 34)
+        self.assertIsNone(preset.title_max_width)
 
     def test_applies_typography_preset_to_chart_config(self):
         chart_config = apply_typography_preset(ChartConfig(), "compact")
@@ -27,6 +28,7 @@ class TypographyConfigTest(unittest.TestCase):
         self.assertEqual(chart_config.typography_preset, "compact")
         self.assertEqual(chart_config.title_font_size, 30)
         self.assertEqual(chart_config.subtitle_font_size, 18)
+        self.assertIsNone(chart_config.title_max_width)
         self.assertEqual(chart_config.source_max_width, 760)
 
     def test_rejects_unknown_typography_preset(self):

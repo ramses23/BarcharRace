@@ -742,8 +742,11 @@ subtitle_max_width
 source_max_width
 ```
 
-The title, subtitle, and source label are truncated with `...` when they exceed
-their configured widths or the remaining canvas width.
+The title uses all remaining canvas width by default, from `title_x` (or the
+layout's left margin) to the safe right edge. Set `title_max_width` to a number
+only when a narrower title column is intentional. The title, subtitle, and
+source label are truncated with `...` only when they exceed their effective
+width or the remaining canvas width.
 
 Available typography presets:
 
@@ -797,6 +800,10 @@ value_label_min_x
 value_label_inside_padding
 value_label_inside_color
 ```
+
+`title_max_width` defaults to `null`, which means automatic remaining-width
+fitting. A positive numeric value remains supported as an explicit cap for
+project-specific compositions.
 
 When `value_label_min_x` is `null`, the renderer uses the data area's left
 margin when it fits inside the canvas, otherwise it falls back to `label_min_x`.
