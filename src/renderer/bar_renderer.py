@@ -313,22 +313,22 @@ class BarRenderer(TextCompositorMixin):
         self._set_text_artist(
             self._title_artist,
             self._fit_title(scene.title),
-            visible=True,
+            visible=self.config.title_enabled,
         )
         self._set_text_artist(
             self._subtitle_artist,
             self._fit_subtitle(scene.subtitle) if scene.subtitle else "",
-            visible=bool(scene.subtitle),
+            visible=self.config.subtitle_enabled and bool(scene.subtitle),
         )
         self._set_text_artist(
             self._time_label_artist,
             scene.time_label or "",
-            visible=bool(scene.time_label),
+            visible=self.config.time_label_enabled and bool(scene.time_label),
         )
         self._set_text_artist(
             self._source_artist,
             self._fit_source_label(scene.source_label) if scene.source_label else "",
-            visible=bool(scene.source_label),
+            visible=self.config.source_label_enabled and bool(scene.source_label),
         )
         self._update_text_composites(scene)
 
@@ -2116,20 +2116,21 @@ class BarRenderer(TextCompositorMixin):
         ax.axis("off")
 
     def _draw_header(self, ax, scene):
-        ax.text(
-            self._title_x(),
-            self.config.title_y,
-            self._fit_title(scene.title),
-            ha="left",
-            va="center",
-            fontsize=self.config.title_font_size,
-            fontfamily=self._font_family(self.config.title_font_family),
-            fontweight=self.config.title_font_weight,
-            color=self.config.resolved_title_text_color,
-            zorder=5,
-        )
+        if self.config.title_enabled:
+            ax.text(
+                self._title_x(),
+                self.config.title_y,
+                self._fit_title(scene.title),
+                ha="left",
+                va="center",
+                fontsize=self.config.title_font_size,
+                fontfamily=self._font_family(self.config.title_font_family),
+                fontweight=self.config.title_font_weight,
+                color=self.config.resolved_title_text_color,
+                zorder=5,
+            )
 
-        if scene.subtitle:
+        if self.config.subtitle_enabled and scene.subtitle:
             ax.text(
                 self._subtitle_x(),
                 self.config.subtitle_y,
@@ -2196,38 +2197,40 @@ class BarRenderer(TextCompositorMixin):
             self._draw_rank_label(ax, sprite, opacity)
             self._draw_logo(ax, sprite, opacity)
 
-            name_layout = self._bar_label_layout(sprite)
-            ax.text(
-                name_layout["x"],
-                name_layout["y"],
-                name_layout["text"],
-                ha=name_layout["ha"],
-                va=name_layout["va"],
-                fontsize=self.config.label_font_size,
-                fontfamily=self._font_family(self.config.label_font_family),
-                color=name_layout["color"],
-                alpha=opacity,
-                zorder=4,
-            )
+            if self.config.category_labels_enabled:
+                name_layout = self._bar_label_layout(sprite)
+                ax.text(
+                    name_layout["x"],
+                    name_layout["y"],
+                    name_layout["text"],
+                    ha=name_layout["ha"],
+                    va=name_layout["va"],
+                    fontsize=self.config.label_font_size,
+                    fontfamily=self._font_family(self.config.label_font_family),
+                    color=name_layout["color"],
+                    alpha=opacity,
+                    zorder=4,
+                )
 
-            value_text = format_value(
-                sprite.value,
-                value_format=self.config.value_format,
-            )
-            value_layout = self._value_label_layout(sprite, value_text)
+            if self.config.value_labels_enabled:
+                value_text = format_value(
+                    sprite.value,
+                    value_format=self.config.value_format,
+                )
+                value_layout = self._value_label_layout(sprite, value_text)
 
-            ax.text(
-                value_layout["x"],
-                sprite.y,
-                value_layout["text"],
-                ha=value_layout["ha"],
-                va="center",
-                fontsize=self.config.value_font_size,
-                fontfamily=self._font_family(self.config.value_font_family),
-                color=value_layout["color"],
-                alpha=opacity,
-                zorder=4,
-            )
+                ax.text(
+                    value_layout["x"],
+                    value_layout.get("y", sprite.y),
+                    value_layout["text"],
+                    ha=value_layout["ha"],
+                    va=value_layout.get("va", "center"),
+                    fontsize=self.config.value_font_size,
+                    fontfamily=self._font_family(self.config.value_font_family),
+                    color=value_layout["color"],
+                    alpha=opacity,
+                    zorder=4,
+                )
 
     def _draw_bar(self, ax, sprite, rgba):
         if not self.config.bar_gradient_enabled:
@@ -2751,7 +2754,7 @@ class BarRenderer(TextCompositorMixin):
         self._draw_source_label(ax, scene)
 
     def _draw_time_label(self, ax, scene):
-        if scene.time_label:
+        if self.config.time_label_enabled and scene.time_label:
             ax.text(
                 self.config.time_label_x,
                 self.config.time_label_y,
@@ -2767,7 +2770,7 @@ class BarRenderer(TextCompositorMixin):
             )
 
     def _draw_source_label(self, ax, scene):
-        if scene.source_label:
+        if self.config.source_label_enabled and scene.source_label:
             ax.text(
                 self.config.source_x,
                 self.config.source_y,

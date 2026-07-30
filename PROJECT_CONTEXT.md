@@ -220,6 +220,11 @@ The project is a usable MVP:
 - Project Studio exposes independent text colors for title, subtitle, category,
   value, date, source, and ranking. The optional `*_text_color` fields inherit
   the legacy theme colors when absent, preserving older project rendering.
+- Project Studio exposes independent visibility toggles for title, subtitle,
+  date, source, ranking, category, and value text. The persisted
+  `*_enabled`/`*_labels_enabled` fields default to true for older projects,
+  participate in automatic-preview fingerprints, and suppress the same layers
+  in preview and final-video rendering without discarding their styles.
 - `AnimationConfig.motion_mode` supports `transition_easing` (legacy default)
   and `continuous`. Continuous mode uses bounded Catmull-Rom interpolation with
   neighboring annual keyframes, keeps velocity continuous for persistent bars,
@@ -780,6 +785,12 @@ in verified, published checkpoints:
     of inheriting a fixed typography-preset cap that could add an ellipsis while
     visible canvas space remained. Projects may still set `title_max_width` to
     a numeric value when a deliberately narrower title column is required.
+
+13. **Per-layer text visibility - completed.** Canvas provides persistent,
+    default-on toggles for title, subtitle, date, source, ranking, category,
+    and value text. The cached compositor and compatibility renderer paths omit
+    disabled layers consistently, and visual changes refresh the unsaved
+    in-memory preview automatically.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

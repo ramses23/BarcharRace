@@ -1038,6 +1038,13 @@ def _project_form(
         time_label_font_size=canvas_settings["time_label_font_size"],
         source_font_size=canvas_settings["source_font_size"],
         rank_label_font_size=canvas_settings["rank_label_font_size"],
+        title_enabled=canvas_settings["title_enabled"],
+        subtitle_enabled=canvas_settings["subtitle_enabled"],
+        time_label_enabled=canvas_settings["time_label_enabled"],
+        source_label_enabled=canvas_settings["source_label_enabled"],
+        rank_labels_enabled=canvas_settings["rank_labels_enabled"],
+        category_labels_enabled=canvas_settings["category_labels_enabled"],
+        value_labels_enabled=canvas_settings["value_labels_enabled"],
         title_x=canvas_settings["title_x"],
         title_y=canvas_settings["title_y"],
         subtitle_x=canvas_settings["subtitle_x"],
@@ -1232,6 +1239,17 @@ def _canvas_settings_from_values(
         "rank_label_font_size": _positive_int_or_default(
             values.get("rank_label_font_size"),
             18,
+        ),
+        "title_enabled": bool(values.get("title_enabled", True)),
+        "subtitle_enabled": bool(values.get("subtitle_enabled", True)),
+        "time_label_enabled": bool(values.get("time_label_enabled", True)),
+        "source_label_enabled": bool(values.get("source_label_enabled", True)),
+        "rank_labels_enabled": bool(values.get("rank_labels_enabled", True)),
+        "category_labels_enabled": bool(
+            values.get("category_labels_enabled", True)
+        ),
+        "value_labels_enabled": bool(
+            values.get("value_labels_enabled", True)
         ),
         "title_x": int(
             values["title_x"]
@@ -1662,6 +1680,61 @@ def _canvas_text_section(
 
     background = _background_panel(values, theme_settings.background_color)
 
+    with st.expander(
+        "Text visibility",
+        expanded=True,
+        icon=":material/visibility:",
+    ):
+        st.caption(
+            "Choose which text elements are rendered. Hidden elements keep "
+            "their typography and placement settings for later reuse."
+        )
+        header_column, bars_column, footer_column = st.columns(3)
+
+        with header_column:
+            st.markdown("**Header**")
+            title_enabled = st.toggle(
+                "Show title",
+                value=bool(values.get("title_enabled", True)),
+                key=_widget_key("title_enabled"),
+            )
+            subtitle_enabled = st.toggle(
+                "Show subtitle",
+                value=bool(values.get("subtitle_enabled", True)),
+                key=_widget_key("subtitle_enabled"),
+            )
+
+        with bars_column:
+            st.markdown("**Bars**")
+            rank_labels_enabled = st.toggle(
+                "Show rankings",
+                value=bool(values.get("rank_labels_enabled", True)),
+                key=_widget_key("rank_labels_enabled"),
+            )
+            category_labels_enabled = st.toggle(
+                "Show categories",
+                value=bool(values.get("category_labels_enabled", True)),
+                key=_widget_key("category_labels_enabled"),
+            )
+            value_labels_enabled = st.toggle(
+                "Show values",
+                value=bool(values.get("value_labels_enabled", True)),
+                key=_widget_key("value_labels_enabled"),
+            )
+
+        with footer_column:
+            st.markdown("**Context**")
+            time_label_enabled = st.toggle(
+                "Show date",
+                value=bool(values.get("time_label_enabled", True)),
+                key=_widget_key("time_label_enabled"),
+            )
+            source_label_enabled = st.toggle(
+                "Show source",
+                value=bool(values.get("source_label_enabled", True)),
+                key=_widget_key("source_label_enabled"),
+            )
+
     with st.expander("Fonts", icon=":material/font_download:"):
         st.caption("Project default inherits the base font; each element can override it.")
         font_column_a, font_column_b, font_column_c = st.columns(3)
@@ -1866,6 +1939,7 @@ def _canvas_text_section(
                     "font_size": int(title_font_size),
                     "font_weight": typography_settings.title_font_weight,
                     "color": title_text_color,
+                    "opacity": 1.0 if title_enabled else 0.0,
                 },
                 "subtitle": {
                     "label": "Subtitle",
@@ -1874,6 +1948,7 @@ def _canvas_text_section(
                     "font_size": int(subtitle_font_size),
                     "font_weight": typography_settings.subtitle_font_weight,
                     "color": subtitle_text_color,
+                    "opacity": 1.0 if subtitle_enabled else 0.0,
                 },
                 "date": {
                     "label": "Date",
@@ -1882,7 +1957,7 @@ def _canvas_text_section(
                     "font_size": int(time_label_font_size),
                     "font_weight": typography_settings.time_label_font_weight,
                     "color": time_label_text_color,
-                    "opacity": 0.22,
+                    "opacity": 0.22 if time_label_enabled else 0.0,
                 },
                 "source": {
                     "label": "Source",
@@ -1891,6 +1966,7 @@ def _canvas_text_section(
                     "font_size": int(source_font_size),
                     "font_weight": typography_settings.source_font_weight,
                     "color": source_text_color,
+                    "opacity": 1.0 if source_label_enabled else 0.0,
                 },
             },
             theme={
@@ -1937,6 +2013,13 @@ def _canvas_text_section(
         "time_label_font_size": int(time_label_font_size),
         "source_font_size": int(source_font_size),
         "rank_label_font_size": int(rank_label_font_size),
+        "title_enabled": bool(title_enabled),
+        "subtitle_enabled": bool(subtitle_enabled),
+        "time_label_enabled": bool(time_label_enabled),
+        "source_label_enabled": bool(source_label_enabled),
+        "rank_labels_enabled": bool(rank_labels_enabled),
+        "category_labels_enabled": bool(category_labels_enabled),
+        "value_labels_enabled": bool(value_labels_enabled),
         "title_x": int(position_values["title"]["x"]),
         "title_y": int(position_values["title"]["y"]),
         "subtitle_x": int(position_values["subtitle"]["x"]),

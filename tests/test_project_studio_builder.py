@@ -117,6 +117,13 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             time_label_font_size=128,
             source_font_size=15,
             rank_label_font_size=17,
+            title_enabled=False,
+            subtitle_enabled=False,
+            time_label_enabled=False,
+            source_label_enabled=False,
+            rank_labels_enabled=False,
+            category_labels_enabled=False,
+            value_labels_enabled=False,
             title_x=300,
             title_y=90,
             subtitle_x=310,
@@ -180,6 +187,13 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["rank_label_text_color"], "#707172")
         self.assertEqual(loaded["chart"]["title_font_size"], 42)
         self.assertEqual(loaded["chart"]["rank_label_font_size"], 17)
+        self.assertFalse(loaded["chart"]["title_enabled"])
+        self.assertFalse(loaded["chart"]["subtitle_enabled"])
+        self.assertFalse(loaded["chart"]["time_label_enabled"])
+        self.assertFalse(loaded["chart"]["source_label_enabled"])
+        self.assertFalse(loaded["chart"]["rank_labels_enabled"])
+        self.assertFalse(loaded["chart"]["category_labels_enabled"])
+        self.assertFalse(loaded["chart"]["value_labels_enabled"])
         self.assertEqual(loaded["chart"]["title_x"], 300)
         self.assertEqual(loaded["chart"]["subtitle_x"], 310)
         self.assertEqual(loaded["chart"]["time_label_y"], 900)
@@ -421,6 +435,13 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "rank_label_text_color": "#707172",
                     "title_font_size": 42,
                     "rank_label_font_size": 17,
+                    "title_enabled": False,
+                    "subtitle_enabled": False,
+                    "time_label_enabled": False,
+                    "source_label_enabled": False,
+                    "rank_labels_enabled": False,
+                    "category_labels_enabled": False,
+                    "value_labels_enabled": False,
                     "title_x": 300,
                     "title_y": 90,
                     "subtitle_x": 310,
@@ -492,6 +513,13 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["rank_label_text_color"], "#707172")
         self.assertEqual(values["title_font_size"], 42)
         self.assertEqual(values["rank_label_font_size"], 17)
+        self.assertFalse(values["title_enabled"])
+        self.assertFalse(values["subtitle_enabled"])
+        self.assertFalse(values["time_label_enabled"])
+        self.assertFalse(values["source_label_enabled"])
+        self.assertFalse(values["rank_labels_enabled"])
+        self.assertFalse(values["category_labels_enabled"])
+        self.assertFalse(values["value_labels_enabled"])
         self.assertEqual(values["title_x"], 300)
         self.assertEqual(values["title_y"], 90)
         self.assertEqual(values["subtitle_x"], 310)
@@ -526,6 +554,13 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["label_min_x"], 36)
         self.assertEqual(values["left_margin"], 260)
         self.assertEqual(values["rank_label_gap"], 250)
+        self.assertTrue(values["title_enabled"])
+        self.assertTrue(values["subtitle_enabled"])
+        self.assertTrue(values["time_label_enabled"])
+        self.assertTrue(values["source_label_enabled"])
+        self.assertTrue(values["rank_labels_enabled"])
+        self.assertTrue(values["category_labels_enabled"])
+        self.assertTrue(values["value_labels_enabled"])
 
     def test_preserves_unexposed_fields_when_rebuilding_existing_project(self):
         base_project = {
@@ -535,6 +570,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                 "left_margin": 420,
                 "source_x": 420,
                 "bar_shadow_alpha": 0.2,
+                "title_enabled": False,
             },
             "animation": {
                 "easing": "linear",
@@ -586,6 +622,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(project_data["chart"]["left_margin"], 420)
         self.assertEqual(project_data["chart"]["source_x"], 420)
         self.assertEqual(project_data["chart"]["bar_shadow_alpha"], 0.2)
+        self.assertFalse(project_data["chart"]["title_enabled"])
         self.assertEqual(project_data["animation"]["easing"], "linear")
         self.assertFalse(project_data["animation"]["enter_exit"])
         self.assertEqual(project_data["animation"]["motion_mode"], "continuous")

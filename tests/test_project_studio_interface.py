@@ -287,6 +287,56 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
                 self.assertFalse(app.exception)
                 self.assertEqual(render_preview.call_count, 2)
 
+    def test_text_visibility_toggles_persist_and_trigger_preview(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+        labels_to_fields = {
+            "Show title": "title_enabled",
+            "Show subtitle": "subtitle_enabled",
+            "Show date": "time_label_enabled",
+            "Show source": "source_label_enabled",
+            "Show rankings": "rank_labels_enabled",
+            "Show categories": "category_labels_enabled",
+            "Show values": "value_labels_enabled",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            preview_path = Path(temp_dir) / "preview.png"
+            Image.new("RGB", (32, 18), "#123456").save(preview_path)
+
+            with mock.patch(
+                "studio.preview.render_project_preview",
+                return_value=preview_path,
+            ) as render_preview:
+                app = AppTest.from_file(
+                    str(app_path),
+                    default_timeout=30,
+                ).run()
+                self._select_editor_section(app, "Canvas")
+
+                toggles = {
+                    toggle.label: toggle
+                    for toggle in app.toggle
+                    if toggle.label in labels_to_fields
+                }
+                self.assertEqual(set(toggles), set(labels_to_fields))
+                self.assertTrue(all(toggle.value for toggle in toggles.values()))
+
+                for toggle in toggles.values():
+                    toggle.set_value(False)
+                app.run()
+
+                self.assertFalse(app.exception)
+                project_data = json.loads(app.json[0].value)
+                for field in labels_to_fields.values():
+                    self.assertFalse(project_data["chart"][field])
+                self.assertEqual(render_preview.call_count, 1)
+                self.assertFalse(
+                    render_preview.call_args.kwargs["project_data"]["chart"][
+                        "title_enabled"
+                    ]
+                )
+
     def test_logo_folder_and_apply_matches_preserve_unsaved_form_values(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"

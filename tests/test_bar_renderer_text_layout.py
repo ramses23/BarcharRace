@@ -892,6 +892,48 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(axis.text_calls[1]["text"], "Subtitle")
         self.assertEqual(axis.text_calls[1]["fontweight"], "light")
 
+    def test_compatibility_draw_methods_respect_text_visibility(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                title_enabled=False,
+                subtitle_enabled=False,
+                time_label_enabled=False,
+                source_label_enabled=False,
+                rank_labels_enabled=False,
+                category_labels_enabled=False,
+                value_labels_enabled=False,
+                logos_enabled=False,
+                bar_gradient_enabled=False,
+                bar_shadow_enabled=False,
+            )
+        )
+        axis = FakeAxis()
+        scene = Scene(
+            title="Hidden title",
+            subtitle="Hidden subtitle",
+            time_label="2024",
+            source_label="Hidden source",
+            bars=[
+                BarSprite(
+                    name="Hidden category",
+                    value=100,
+                    color="#123456",
+                    x=300,
+                    y=200,
+                    width=400,
+                    height=40,
+                    rank=1,
+                )
+            ],
+        )
+
+        renderer._draw_header(axis, scene)
+        renderer._draw_bars(axis, scene.bars)
+        renderer._draw_footer(axis, scene)
+
+        self.assertEqual(axis.text_calls, [])
+        self.assertEqual(len(axis.barh_calls), 1)
+
     def test_load_logo_resizes_and_caches_image(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "large_logo.png"
@@ -1004,6 +1046,56 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             self.assertEqual(len(renderer._text_sprite_cache), cache_size)
             self.assertFalse(renderer._title_artist.get_visible())
             self.assertFalse(renderer._bar_artists[0].name_label.get_visible())
+        finally:
+            renderer.close()
+
+    def test_text_compositor_hides_every_disabled_text_element(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=640,
+            height=180,
+            dpi=72,
+            left_margin=220,
+            right_margin=20,
+            top_margin=40,
+            bottom_margin=20,
+            title_enabled=False,
+            subtitle_enabled=False,
+            time_label_enabled=False,
+            source_label_enabled=False,
+            rank_labels_enabled=False,
+            category_labels_enabled=False,
+            value_labels_enabled=False,
+            logos_enabled=False,
+        ))
+        scene = Scene(
+            title="Hidden title",
+            subtitle="Hidden subtitle",
+            time_label="2024",
+            source_label="Hidden source",
+            bars=[
+                BarSprite(
+                    name="Hidden category",
+                    value=100,
+                    color="#4E79A7",
+                    x=220,
+                    y=90,
+                    width=320,
+                    height=36,
+                    rank=1,
+                )
+            ],
+        )
+
+        try:
+            renderer.render_rgba(scene)
+
+            self.assertEqual(renderer._text_background_artist.commands, ())
+            self.assertEqual(renderer._text_bar_artist.commands, ())
+            self.assertEqual(renderer._text_foreground_artist.commands, ())
+            self.assertFalse(renderer._title_artist.get_visible())
+            self.assertFalse(renderer._subtitle_artist.get_visible())
+            self.assertFalse(renderer._time_label_artist.get_visible())
+            self.assertFalse(renderer._source_artist.get_visible())
         finally:
             renderer.close()
 

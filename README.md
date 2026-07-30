@@ -342,6 +342,13 @@ otherwise empty area before the bars. Values are bounded by the selected
 canvas, persist in project JSON, and fall back to the layout preset for older
 projects that do not contain the fields.
 
+The expanded `Canvas -> Text visibility` panel can independently show or hide
+the title, subtitle, large date, source, rankings, category names, and values.
+These choices are stored in the project JSON, participate in automatic preview
+updates, and leave typography and placement settings intact so an element can
+be restored without reconfiguring it. Older projects remain fully visible
+because every visibility field defaults to `true`.
+
 The font picker, visual text-position editor, and live bar-appearance editor
 use Streamlit Custom Components v2. They are controlled components: Python
 rehydrates their current session value and the frontend emits named state with
@@ -432,7 +439,13 @@ Example:
     "video_crf": 18,
     "video_bitrate": null,
     "ffmpeg_preset": null,
+    "title_enabled": true,
+    "subtitle_enabled": true,
+    "time_label_enabled": true,
+    "source_label_enabled": true,
     "rank_labels_enabled": true,
+    "category_labels_enabled": true,
+    "value_labels_enabled": true,
     "rank_label_prefix": "#",
     "rank_label_min_x": 96,
     "rank_label_label_gap": 18,
@@ -643,6 +656,22 @@ rank_label_label_gap
 The default label format is `#1`, `#2`, `#3`.
 `rank_label_min_x` keeps the rank column away from the canvas edge, and
 `rank_label_label_gap` reserves space between the rank and the bar name.
+
+All renderer text layers have independent visibility flags:
+
+```text
+title_enabled
+subtitle_enabled
+time_label_enabled
+source_label_enabled
+rank_labels_enabled
+category_labels_enabled
+value_labels_enabled
+```
+
+They default to `true`. Project Studio exposes them in `Canvas -> Text
+visibility`, and disabled layers are omitted from both preview frames and final
+video frames.
 
 ## Visual Polish
 

@@ -404,6 +404,13 @@ def _convert_chart_value(key, value):
         "bar_value_use_theme_color",
         "bar_value_border_enabled",
         "bar_value_shadow_enabled",
+        "title_enabled",
+        "subtitle_enabled",
+        "time_label_enabled",
+        "source_label_enabled",
+        "rank_labels_enabled",
+        "category_labels_enabled",
+        "value_labels_enabled",
     ):
         if not isinstance(value, bool):
             raise ProjectFileError(f"Chart field '{key}' must be boolean.")

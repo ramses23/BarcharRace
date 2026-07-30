@@ -82,7 +82,13 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "fps": 24,
                             "steps_per_transition": 12,
                             "logo_file_extensions": [".png", ".webp"],
+                            "title_enabled": False,
+                            "subtitle_enabled": False,
+                            "time_label_enabled": False,
+                            "source_label_enabled": False,
                             "rank_labels_enabled": False,
+                            "category_labels_enabled": False,
+                            "value_labels_enabled": False,
                             "rank_label_prefix": "No.",
                             "rank_label_min_x": 64,
                             "rank_label_label_gap": 12,
@@ -262,7 +268,13 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.fps, 24)
         self.assertEqual(preset.chart_config.steps_per_transition, 12)
         self.assertEqual(preset.chart_config.logo_file_extensions, (".png", ".webp"))
+        self.assertFalse(preset.chart_config.title_enabled)
+        self.assertFalse(preset.chart_config.subtitle_enabled)
+        self.assertFalse(preset.chart_config.time_label_enabled)
+        self.assertFalse(preset.chart_config.source_label_enabled)
         self.assertFalse(preset.chart_config.rank_labels_enabled)
+        self.assertFalse(preset.chart_config.category_labels_enabled)
+        self.assertFalse(preset.chart_config.value_labels_enabled)
         self.assertEqual(preset.chart_config.rank_label_prefix, "No.")
         self.assertEqual(preset.chart_config.rank_label_min_x, 64)
         self.assertEqual(preset.chart_config.rank_label_label_gap, 12)
@@ -770,6 +782,20 @@ class ProjectFileLoaderTest(unittest.TestCase):
             )
 
             with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_non_boolean_text_visibility(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad_visibility.json"
+            project_path.write_text(
+                json.dumps({"chart": {"title_enabled": "false"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ProjectFileError,
+                "title_enabled.*boolean",
+            ):
                 load_project_file(project_path)
 
     def test_rejects_invalid_json_root(self):

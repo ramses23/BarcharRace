@@ -131,6 +131,13 @@ class ChartConfig:
     background_image_fit: str = "cover"
     typography_preset: str = "studio"
 
+    title_enabled: bool = True
+    subtitle_enabled: bool = True
+    time_label_enabled: bool = True
+    source_label_enabled: bool = True
+    category_labels_enabled: bool = True
+    value_labels_enabled: bool = True
+
     title_font_size: int = 34
     subtitle_font_size: int = 20
     time_label_font_size: int = 120
