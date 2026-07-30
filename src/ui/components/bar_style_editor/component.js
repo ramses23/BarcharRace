@@ -5,7 +5,14 @@ function buildInstance(parentElement) {
   const root = document.createElement("div")
   root.className = "bar-editor"
   parentElement.appendChild(root)
-  return { root, settings: null, incoming: null, data: null, setStateValue: null }
+  return {
+    root,
+    settings: null,
+    incoming: null,
+    data: null,
+    setStateValue: null,
+    openGroups: new Map(),
+  }
 }
 
 function button(label, active, onClick) {
@@ -153,6 +160,12 @@ function fieldControl(state, descriptor) {
   return label
 }
 
+function rememberOpenGroups(state) {
+  for (const details of state.root.querySelectorAll("details.bar-group[data-group]")) {
+    state.openGroups.set(details.dataset.group, details.open)
+  }
+}
+
 function renderFields(state) {
   const groups = document.createElement("div")
   groups.className = "bar-groups"
@@ -164,7 +177,14 @@ function renderFields(state) {
   for (const [groupName, descriptors] of grouped.entries()) {
     const details = document.createElement("details")
     details.className = "bar-group"
-    details.open = ["Simple", "Fill", "Frame"].includes(groupName)
+    details.dataset.group = groupName
+    const defaultOpen = ["Simple", "Fill", "Frame"].includes(groupName)
+    details.open = state.openGroups.has(groupName)
+      ? state.openGroups.get(groupName)
+      : defaultOpen
+    details.addEventListener("toggle", () => {
+      state.openGroups.set(groupName, details.open)
+    })
     const summary = document.createElement("summary")
     summary.textContent = groupName
     const fields = document.createElement("div")
@@ -178,6 +198,7 @@ function renderFields(state) {
 
 function render(state) {
   if (!state.settings || !state.data) return
+  rememberOpenGroups(state)
   state.root.replaceChildren()
   renderHeader(state)
   renderPreview(state)

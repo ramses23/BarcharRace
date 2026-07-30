@@ -189,6 +189,27 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertIn("export default function (component)", javascript)
         self.assertNotIn("postMessage", javascript)
 
+    def test_frontend_preserves_open_groups_across_renders(self):
+        component_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "ui"
+            / "components"
+            / "bar_style_editor"
+            / "component.js"
+        )
+        javascript = component_path.read_text(encoding="utf-8")
+        render_body = javascript[javascript.index("function render(state)"):]
+
+        self.assertIn("openGroups: new Map()", javascript)
+        self.assertIn('details.dataset.group = groupName', javascript)
+        self.assertIn('details.addEventListener("toggle"', javascript)
+        self.assertIn("state.openGroups.has(groupName)", javascript)
+        self.assertLess(
+            render_body.index("rememberOpenGroups(state)"),
+            render_body.index("state.root.replaceChildren()"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

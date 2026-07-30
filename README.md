@@ -1133,7 +1133,10 @@ bar. Curved shapes add detail only around their rounded regions.
 
 The `Bar appearance` panel in Project Studio combines shape cards with a live
 preview and controls for gradient, border, shadow color, opacity, width, and
-offset. The selected values are stored in the project JSON.
+offset. The selected values are stored in the project JSON. Its collapsible
+control groups preserve their open or closed state while a field change
+rebuilds the component, so adjusting a slider, checkbox, color, or selection
+does not collapse the section being edited.
 
 `Bar appearance` has two modes:
 

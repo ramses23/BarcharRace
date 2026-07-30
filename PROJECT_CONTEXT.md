@@ -205,7 +205,10 @@ The project is a usable MVP:
 - Bar-appearance fields are contextual. Simple and Advanced mode, fill type,
   texture, bevel, glow, shine, track, primary/secondary logo, border,
   background, and value styling controls reveal only their active dependents.
-  Hidden values remain in normalized settings for reversible switching.
+  Hidden values remain in normalized settings for reversible switching. The
+  CCv2 frontend stores each control group's expanded state per mounted
+  component and captures it before rebuilding the DOM, so field updates do not
+  collapse the section being edited.
 - Project Studio exposes point-size controls for title, subtitle, category,
   value, date, source, and ranking text. A visual layout editor lets users drag
   title, subtitle, date, and source on a scaled canvas, nudge with arrow keys,
@@ -791,6 +794,12 @@ in verified, published checkpoints:
     and value text. The cached compositor and compatibility renderer paths omit
     disabled layers consistently, and visual changes refresh the unsaved
     in-memory preview automatically.
+
+14. **Stable bar-editor panels - completed.** The Bar appearance CCv2 component
+    preserves each contextual control group's open or closed state across its
+    local redraws and Streamlit reruns. Sliders, checkboxes, colors, and
+    selectors can therefore update the live preview without collapsing the
+    active group.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active
