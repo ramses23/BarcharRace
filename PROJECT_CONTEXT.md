@@ -59,11 +59,14 @@ The project is a usable MVP:
   procedural or custom textures, bevel, inner shadow/glow, top/bottom depth,
   outer glow, shine, row tracks, and independent logo/label/value placement.
   Logos can be outside-left, inside-left, inside-right, or hidden, with adaptive,
-  circular, rounded, or square masks plus independent padding, background, and
-  border. Lollipop inside-left logos add a circular start socket; inside-right
-  logos occupy the endpoint circle. Legacy `outside`/`inside` values are still
-  accepted. Category label alignment is independent from its position and can
-  be automatic, left, centered, or right within the allocated label area.
+  circular, rounded, or square masks plus independent size, padding, background,
+  and border controls for the primary and secondary slots. Project Studio
+  exposes the primary size through the existing `ChartConfig.logo_size`, which
+  preserves compatibility with older project files. Lollipop inside-left logos
+  add a circular start socket; inside-right logos occupy the endpoint circle.
+  Legacy `outside`/`inside` values are still accepted. Category label alignment
+  is independent from its position and can be automatic, left, centered, or
+  right within the allocated label area.
 - Projected shadow remains a separate layer from bevel, inner shadow, and glow.
 - Value format presets.
 - Logo resolution and rendering.
@@ -91,7 +94,8 @@ The project is a usable MVP:
 - Per-year sprite precomputation to avoid repeated selection and layout work
   across transitions.
 - Basic per-stage render profiling for larger-dataset tuning, shown in CLI output and Project Studio after video renders.
-- Renderer caches logos already resized to `ChartConfig.logo_size` to avoid repeatedly resampling large image assets per frame.
+- Renderer caches primary and secondary logos at their configured sizes to
+  avoid repeatedly resampling large image assets per frame.
 - `BarRenderer` reuses a single Matplotlib figure/axis and a bounded set of bar,
   shadow, and text artists. Frames update artist properties instead of clearing
   the axis and rebuilding every artist; logos use a global sprite compositor.

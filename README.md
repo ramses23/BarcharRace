@@ -1416,6 +1416,12 @@ ChartConfig.logo_size
 ChartConfig.logo_file_extensions
 ```
 
+In Project Studio, Advanced `Bar appearance > Content` exposes the primary
+logo size through `ChartConfig.logo_size`, alongside its position, shape,
+padding, background, and border controls. The secondary logo keeps its own
+independent size and styling, so changing either logo does not resize the
+other.
+
 Sample development logos can be generated with:
 
 ```powershell

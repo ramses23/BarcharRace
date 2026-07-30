@@ -65,6 +65,7 @@ DEFAULT_BAR_STYLE = {
     "bar_track_opacity": 0.12,
     "bar_logo_position": "outside_left",
     "bar_logo_shape": "adaptive",
+    "logo_size": 48,
     "bar_logo_padding": 4.0,
     "bar_logo_border_enabled": False,
     "bar_logo_border_color": "#FFFFFF",
@@ -212,6 +213,7 @@ _INTEGER_BOUNDS = {
     "bar_shadow_offset_y": (-40, 40),
     "bar_value_shadow_offset_x": (-20, 20),
     "bar_value_shadow_offset_y": (-20, 20),
+    "logo_size": (4, 160),
 }
 
 _SIMPLE_FIELDS = {
@@ -396,7 +398,10 @@ def _bar_style_field_visible(field, group, settings):
             "bar_secondary_logo_background_opacity",
         }:
             return settings["bar_secondary_logo_background_enabled"]
-    if field.startswith("bar_logo_") and field != "bar_logo_position":
+    if (
+        field == "logo_size"
+        or field.startswith("bar_logo_") and field != "bar_logo_position"
+    ):
         if settings["bar_logo_position"] == "hidden":
             return False
     if field in {"bar_value_border_color", "bar_value_border_width"}:

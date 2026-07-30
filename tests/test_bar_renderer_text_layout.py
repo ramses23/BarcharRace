@@ -1295,6 +1295,8 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
                         primary_layout = layouts[0][2]
                         secondary_layout = layouts[1][2]
+                        self.assertEqual(primary_layout["size"], 32)
+                        self.assertEqual(secondary_layout["size"], 18)
                         if layout_mode == "badge":
                             self.assertLess(secondary_layout["left"], primary_layout["right"])
                             self.assertGreater(secondary_layout["right"], primary_layout["left"])

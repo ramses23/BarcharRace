@@ -68,6 +68,12 @@ function fillBackground(state, color) {
     : `linear-gradient(${direction}, ${start}, ${center} ${Number(s.bar_highlight_position) * 100}%, ${end})`
 }
 
+function previewLogoSize(value) {
+  const size = Number(value)
+  const safeSize = Number.isFinite(size) ? size : 24
+  return `${Math.max(8, Math.min(26, safeSize * 0.42))}px`
+}
+
 function renderPreview(state) {
   const preview = document.createElement("div")
   preview.className = "bar-preview"
@@ -99,12 +105,16 @@ function renderPreview(state) {
       const logo = document.createElement("span")
       logo.className = "bar-preview-logo primary"
       logo.textContent = "1"
+      logo.style.width = previewLogoSize(state.settings.logo_size)
+      logo.style.height = previewLogoSize(state.settings.logo_size)
       track.appendChild(logo)
     }
     if (state.settings.bar_secondary_logo_enabled) {
       const logo = document.createElement("span")
       logo.className = "bar-preview-logo secondary"
       logo.textContent = "2"
+      logo.style.width = previewLogoSize(state.settings.bar_secondary_logo_size)
+      logo.style.height = previewLogoSize(state.settings.bar_secondary_logo_size)
       track.appendChild(logo)
     }
     row.append(rank, name, track)

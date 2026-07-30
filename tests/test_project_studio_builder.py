@@ -256,6 +256,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             "bar_track_enabled": True,
             "bar_logo_position": "inside_right",
             "bar_logo_shape": "circle",
+            "logo_size": 72,
             "bar_logo_padding": 5,
             "bar_logo_border_enabled": True,
             "bar_logo_background_enabled": True,

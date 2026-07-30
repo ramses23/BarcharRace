@@ -80,6 +80,7 @@ class BarStyleEditorTest(unittest.TestCase):
         settings = normalize_bar_style({
             "bar_logo_position": "inside_right",
             "bar_logo_shape": "circle",
+            "logo_size": 999,
             "bar_logo_padding": 99,
             "bar_logo_border_enabled": True,
             "bar_logo_border_color": "#aabbcc",
@@ -92,6 +93,7 @@ class BarStyleEditorTest(unittest.TestCase):
 
         self.assertEqual(settings["bar_logo_position"], "inside_right")
         self.assertEqual(settings["bar_logo_shape"], "circle")
+        self.assertEqual(settings["logo_size"], 160)
         self.assertEqual(settings["bar_logo_padding"], 20.0)
         self.assertTrue(settings["bar_logo_border_enabled"])
         self.assertEqual(settings["bar_logo_border_color"], "#AABBCC")
@@ -169,6 +171,36 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertNotIn("bar_secondary_logo_layout", advanced_fields)
         self.assertNotIn("bar_glow_color", advanced_fields)
 
+        visible_primary_fields = {
+            field["field"]
+            for field in visible_bar_style_fields({
+                "bar_appearance_mode": "advanced",
+                "bar_logo_position": "inside_left",
+            })
+        }
+        hidden_primary_fields = {
+            field["field"]
+            for field in visible_bar_style_fields({
+                "bar_appearance_mode": "advanced",
+                "bar_logo_position": "hidden",
+            })
+        }
+
+        self.assertIn("logo_size", visible_primary_fields)
+        self.assertNotIn("logo_size", hidden_primary_fields)
+        primary_size = next(
+            field
+            for field in visible_bar_style_fields({
+                "bar_appearance_mode": "advanced",
+                "bar_logo_position": "inside_left",
+            })
+            if field["field"] == "logo_size"
+        )
+        self.assertEqual(primary_size["label"], "Logo Size")
+        self.assertEqual(primary_size["minimum"], 4)
+        self.assertEqual(primary_size["maximum"], 160)
+        self.assertEqual(primary_size["step"], 1)
+
     def test_frontend_has_live_preview_and_four_shape_buttons(self):
         component_path = (
             Path(__file__).resolve().parents[1]
@@ -185,6 +217,8 @@ class BarStyleEditorTest(unittest.TestCase):
 
         self.assertIn("renderPreview(state)", javascript)
         self.assertIn("renderFields(state)", javascript)
+        self.assertIn("state.settings.logo_size", javascript)
+        self.assertIn("state.settings.bar_secondary_logo_size", javascript)
         self.assertIn('setStateValue("settings"', javascript)
         self.assertIn("export default function (component)", javascript)
         self.assertNotIn("postMessage", javascript)

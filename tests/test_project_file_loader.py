@@ -137,6 +137,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "bar_track_opacity": 0.2,
                             "bar_logo_position": "inside_right",
                             "bar_logo_shape": "circle",
+                            "logo_size": 72,
                             "bar_logo_padding": 5,
                             "bar_logo_border_enabled": True,
                             "bar_logo_border_color": "#FFFFFF",
@@ -311,6 +312,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertTrue(preset.chart_config.bar_track_enabled)
         self.assertEqual(preset.chart_config.bar_logo_position, "inside_right")
         self.assertEqual(preset.chart_config.bar_logo_shape, "circle")
+        self.assertEqual(preset.chart_config.logo_size, 72)
         self.assertEqual(preset.chart_config.bar_logo_padding, 5)
         self.assertTrue(preset.chart_config.bar_logo_border_enabled)
         self.assertEqual(preset.chart_config.bar_logo_border_width, 2)

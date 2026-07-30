@@ -22,7 +22,7 @@ BAR_STYLE_FIELDS = tuple(
     for field in fields(ChartConfig)
     if field.name.startswith("bar_")
     and field.name not in ("bar_height", "bar_gap")
-)
+) + ("logo_size",)
 
 
 @dataclass(frozen=True)
