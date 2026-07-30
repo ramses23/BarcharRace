@@ -24,8 +24,20 @@ data/database/*.db
 # Local productions and imported package material
 /PRODUCCIONES/
 /PRODUCCIONES_AUTOMATICAS/
+/productions/
 /projects/imported/
 /production/templates/local/
+
+# Local editor assets and backups
+/.backups/
+/backgrounds/
+/logos/
+/logos_secondary/
+
+# Local automotive datasets and editable project variants
+/data/datasets/automotive_global_sales*.csv
+/projects/automotive_global_sales*.json
+/projects/maximos_goleadores_historia*.json
 
 # Local package state and archives
 **/.barchartstudio-launch.json
