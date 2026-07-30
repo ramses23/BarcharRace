@@ -1,6 +1,27 @@
 import streamlit as st
 
 
+STUDIO_LAYOUT_CSS = """
+<style>
+.st-key-latest_preview {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 1;
+}
+
+@media (max-width: 900px) {
+    .st-key-latest_preview {
+        position: static;
+    }
+}
+</style>
+"""
+
+
+def apply_studio_layout_styles():
+    st.html(STUDIO_LAYOUT_CSS)
+
+
 def show_studio_header(
     *,
     project_name,

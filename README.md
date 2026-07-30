@@ -362,11 +362,11 @@ fields remain hidden until their parent feature is enabled (for example bevel
 size, glow details, second-logo layout, or value border settings). Inactive
 values remain preserved in the project JSON.
 
-Project Studio uses a dark creative-workspace layout configured natively in
-`.streamlit/config.toml`; it does not inject fragile CSS into Streamlit. The
-graphite surfaces, violet accent, Inter typography, visible widget borders,
-compact heading scale, and independently styled sidebar remain consistent in
-native widgets and CCv2 controls that consume Streamlit theme variables.
+Project Studio uses a dark creative-workspace theme configured natively in
+`.streamlit/config.toml`; colors, typography, borders, and widget styling do
+not depend on injected CSS. One narrowly scoped layout rule targets the stable
+`latest_preview` container key: the preview remains sticky while the desktop
+editor scrolls and returns to normal document flow below 900 px wide.
 
 The main workspace is split into two responsive columns. The left editor uses
 a segmented navigator for `Data`, `Canvas`, `Bars`, and `Export`, and mounts

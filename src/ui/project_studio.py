@@ -43,6 +43,7 @@ from ui.render_workflow import (
     start_render_with_preflight,
 )
 from ui.studio_shell import (
+    apply_studio_layout_styles,
     section_intro,
     show_dataset_snapshot,
     show_empty_preview,
@@ -130,6 +131,7 @@ st.logo(
 
 
 def main():
+    apply_studio_layout_styles()
     _initialize_studio_state()
     _autoload_requested_project()
     header_slot = st.empty()
