@@ -35,7 +35,10 @@ The project is a usable MVP:
 - Motion interpolation with configurable easing.
 - Enter/exit opacity for bars.
 - Rank labels.
-- Text fitting for long labels and value labels.
+- Real-glyph text fitting for long labels and value labels using the same
+  effective Pillow font, fallback family, size, weight, and DPI as rendering.
+- Ellipsis-aware binary-search truncation keeps complete names whenever they
+  fit and measures `...` before selecting the longest valid prefix.
 - Rank-aware bar label fitting so names do not invade the rank-label column.
 - Value labels are constrained to a safe data-area width for very large values.
 - Title, subtitle, and source labels fit to both configured max widths and
@@ -144,11 +147,19 @@ The project is a usable MVP:
   in the form yet.
 - Project Studio builds an immutable `ProjectDraft` snapshot from the form and
   tracks a canonical fingerprint of both its JSON data and destination path.
-  `Save project` is explicit, saved/unsaved status is visible, and preview/video
-  actions save that exact snapshot before invoking the shared render pipeline.
-- The latest preview path and its draft fingerprint live in session state. The
-  preview therefore survives normal widget reruns and is visibly marked stale
-  after the user changes the draft.
+  It also tracks a render-dependency fingerprint and a narrower automatic
+  visual fingerprint. `Save project` is explicit, saved/unsaved status is
+  visible, and manual preview/video actions save that exact snapshot before
+  invoking the shared render pipeline.
+- `Auto preview` is enabled by default and watches Canvas, Bars, applied
+  category styles, and preview-frame selection. It renders the current
+  `ProjectDraft.project_data` through the shared preview pipeline without
+  writing the project JSON. Data and Export changes remain manual. Disabling
+  the toggle pauses work; enabling it renders one pending visual change.
+- The latest preview path and its canonical, render, and visual fingerprints
+  live in session state. The preview therefore survives normal widget reruns
+  and is marked stale only when a render-relevant change remains outside the
+  automatic visual scope.
 - The selected CSV is read through a bounded `st.cache_data` loader keyed by
   resolved path, file size, and nanosecond modification time. Dataset preview,
   inspection, periods, and categories share the cached DataFrame, while a file
@@ -201,6 +212,11 @@ The project is a usable MVP:
   align horizontally, and reset to preset positions. X/Y coordinates remain
   the persisted format. Unset title/subtitle X coordinates inherit
   `ChartConfig.left_margin` for backward compatibility.
+- Project Studio exposes `Category label start`, `Bar start`, and `Category
+  area span` in Canvas. They persist `label_min_x`, `left_margin`, and
+  `rank_label_gap`; older projects inherit layout-preset defaults. `Use full
+  left space` derives the span needed to preserve `rank_label_min_x` while
+  giving names the unused horizontal area before the bars.
 - Project Studio exposes independent text colors for title, subtitle, category,
   value, date, source, and ranking. The optional `*_text_color` fields inherit
   the legacy theme colors when absent, preserving older project rendering.
@@ -246,8 +262,9 @@ The project is a usable MVP:
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
   directly to the output frame.
-- Text fitting converts Matplotlib point-size fonts to pixel estimates with
-  the configured DPI before truncating labels.
+- Text fitting resolves the same effective font file used by the renderer,
+  converts point size through the configured DPI, measures real glyph bounds
+  with Pillow, and includes the ellipsis width before truncating.
 - The large time label is rendered as a background watermark behind bars and
   source text.
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
@@ -454,7 +471,9 @@ Important boundaries:
 - `ChartConfig.frame_output_mode` selects `png_sequence` or `ffmpeg_stream`.
 - Project Studio's form may create a `ProjectDraft`, but only
   `save_project_data` persists it. The UI must not treat incidental widget
-  reruns as saves.
+  reruns or automatic preview renders as saves. In-memory preview loading may
+  build a `ProjectPreset` from draft data, but it must reuse the shared project
+  loader validation and rendering pipeline.
 - Custom UI wrappers own CCv2 registration/state hydration. Renderer and config
   modules must never depend on Streamlit component result objects.
 - UI dataset caching belongs in `src/ui/dataset_cache.py`. Data importers and
@@ -682,10 +701,10 @@ or remote `main` branch exists in the current repository, so there is no
 unrelated history left to merge or rewrite. Do not create a replacement
 `main` branch unless the repository owner deliberately changes this policy.
 
-Current interface-editor work branch:
+Current category-label and automatic-preview work branch:
 
 ```text
-project-studio-editor
+fix-category-label-truncation
 ```
 
 The project has been using a pattern of:
@@ -747,6 +766,14 @@ in verified, published checkpoints:
     A tracked offline example, thin CLI, deterministic manifests, real-worker
     E2E coverage, and explicit non-overwrite workspaces close the first local
     automation workflow without adding downloads or a new UI.
+
+11. **Measured category labels and automatic visual preview - completed.**
+    Category names use effective-font glyph measurement and ellipsis-aware
+    fitting instead of average character widths. Canvas exposes the persisted
+    label boundary, bar start, and category span with compatible preset
+    defaults. Project Studio fingerprints visual dependencies and renders
+    unsaved drafts in memory after Canvas, Bars, category, or preview-frame
+    changes without turning Streamlit reruns into project saves.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

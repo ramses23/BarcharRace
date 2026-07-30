@@ -24,7 +24,7 @@ from renderer.artists import (
     StaticImageArtist,
 )
 from renderer.text_compositor import TextCompositorMixin
-from utils.text_fit import estimate_text_width, fit_text_to_width
+from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
 
 
@@ -2151,6 +2151,8 @@ class BarRenderer(TextCompositorMixin):
                 self.config.title_max_width,
             ),
             font_size=self.config.title_font_size,
+            font_family=self.config.title_font_family,
+            font_weight=self.config.title_font_weight,
         )
 
     def _fit_subtitle(self, subtitle):
@@ -2161,6 +2163,8 @@ class BarRenderer(TextCompositorMixin):
                 self.config.subtitle_max_width,
             ),
             font_size=self.config.subtitle_font_size,
+            font_family=self.config.subtitle_font_family,
+            font_weight=self.config.subtitle_font_weight,
         )
 
     def _title_x(self):
@@ -2321,8 +2325,10 @@ class BarRenderer(TextCompositorMixin):
         return fit_text_to_width(
             sprite.name,
             max_width=max_width,
-            font_size=self._font_pixel_size(self.config.label_font_size),
-            average_char_width=self.config.text_average_char_width,
+            font=self._measurement_font(
+                self.config.label_font_size,
+                self.config.label_font_family,
+            ),
         )
 
     def _bar_label_layout(self, sprite):
@@ -2358,8 +2364,10 @@ class BarRenderer(TextCompositorMixin):
                 "text": fit_text_to_width(
                     sprite.name,
                     max_width=max_width,
-                    font_size=self._font_pixel_size(self.config.label_font_size),
-                    average_char_width=self.config.text_average_char_width,
+                    font=self._measurement_font(
+                        self.config.label_font_size,
+                        self.config.label_font_family,
+                    ),
                 ),
                 "x": anchor_x,
                 "y": sprite.y,
@@ -2378,8 +2386,10 @@ class BarRenderer(TextCompositorMixin):
                 "text": fit_text_to_width(
                     sprite.name,
                     max_width=max(0.0, sprite.width),
-                    font_size=self._font_pixel_size(self.config.label_font_size),
-                    average_char_width=self.config.text_average_char_width,
+                    font=self._measurement_font(
+                        self.config.label_font_size,
+                        self.config.label_font_family,
+                    ),
                 ),
                 "x": anchor_x,
                 "y": sprite.y - (sprite.height / 2) - 7,
@@ -2401,8 +2411,10 @@ class BarRenderer(TextCompositorMixin):
                 "text": fit_text_to_width(
                     sprite.name,
                     max_width=max(0.0, right - left),
-                    font_size=self._font_pixel_size(self.config.label_font_size),
-                    average_char_width=self.config.text_average_char_width,
+                    font=self._measurement_font(
+                        self.config.label_font_size,
+                        self.config.label_font_family,
+                    ),
                 ),
                 "x": anchor_x,
                 "y": sprite.y - ((sprite.height * 0.2) if stacked else 0),
@@ -2458,8 +2470,10 @@ class BarRenderer(TextCompositorMixin):
         text = fit_text_to_width(
             value_text,
             max_width=self._value_label_max_width(),
-            font_size=self._font_pixel_size(self.config.value_font_size),
-            average_char_width=self.config.text_average_char_width,
+            font=self._measurement_font(
+                self.config.value_font_size,
+                self.config.value_font_family,
+            ),
         )
         text_width = self._value_label_text_width(text)
         max_right = self.config.width - self.config.value_label_edge_padding
@@ -2577,10 +2591,12 @@ class BarRenderer(TextCompositorMixin):
         return max(0, max_right - self._value_label_min_x())
 
     def _value_label_text_width(self, text):
-        return estimate_text_width(
+        return measure_text_width(
             text,
-            self._font_pixel_size(self.config.value_font_size),
-            self.config.text_average_char_width,
+            self._measurement_font(
+                self.config.value_font_size,
+                self.config.value_font_family,
+            ),
         )
 
     def _value_label_min_x(self):
@@ -2773,6 +2789,8 @@ class BarRenderer(TextCompositorMixin):
                 self.config.source_max_width,
             ),
             font_size=self.config.source_font_size,
+            font_family=self.config.source_font_family,
+            font_weight=self.config.source_font_weight,
         )
 
     def _available_text_width(self, x, configured_max_width):
@@ -2781,13 +2799,29 @@ class BarRenderer(TextCompositorMixin):
 
         return max(0, min(configured_max_width, available_width))
 
-    def _fit_text(self, text, max_width, font_size):
+    def _fit_text(
+        self,
+        text,
+        max_width,
+        font_size,
+        font_family=None,
+        font_weight="normal",
+    ):
         return fit_text_to_width(
             text,
             max_width=max_width,
-            font_size=self._font_pixel_size(font_size),
-            average_char_width=self.config.text_average_char_width,
+            font=self._measurement_font(
+                font_size,
+                font_family,
+                font_weight,
+            ),
         )
+
+    def _measurement_font(self, font_size, font_family=None, font_weight="normal"):
+        family = self._font_family(font_family)
+        font_path = self._text_font_path(family, font_weight)
+        pixel_size = max(1, int(round(self._font_pixel_size(font_size))))
+        return self._text_font(font_path, pixel_size)
 
     def _font_pixel_size(self, font_size):
         return font_size * (self.config.dpi / 72)

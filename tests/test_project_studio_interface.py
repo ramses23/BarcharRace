@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest import mock
 from uuid import uuid4
 
+import _test_path
+from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 
@@ -187,6 +189,103 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
                     for caption in app.caption
                 )
             )
+
+    def test_auto_preview_renders_visual_changes_only(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            preview_path = Path(temp_dir) / "preview.png"
+            Image.new("RGB", (32, 18), "#123456").save(preview_path)
+
+            with mock.patch(
+                "studio.preview.render_project_preview",
+                return_value=preview_path,
+            ) as render_preview:
+                app = AppTest.from_file(
+                    str(app_path),
+                    default_timeout=30,
+                ).run()
+
+                self.assertFalse(app.exception)
+                self.assertEqual(render_preview.call_count, 0)
+                self.assertIn(
+                    "Auto preview",
+                    {toggle.label for toggle in app.toggle},
+                )
+
+                self._select_editor_section(app, "Canvas")
+                self.assertEqual(render_preview.call_count, 0)
+                title_size = next(
+                    control
+                    for control in app.number_input
+                    if control.label == "Title size"
+                )
+                title_size.set_value(int(title_size.value) + 1)
+                app.run()
+
+                self.assertFalse(app.exception)
+                self.assertEqual(render_preview.call_count, 1)
+                call_kwargs = render_preview.call_args.kwargs
+                self.assertIsInstance(call_kwargs.get("project_data"), dict)
+                self.assertEqual(
+                    call_kwargs["project_data"]["chart"]["title_font_size"],
+                    int(title_size.value),
+                )
+
+                self._select_editor_section(app, "Data")
+                title = next(
+                    control
+                    for control in app.text_input
+                    if control.label == "Video title"
+                )
+                title.set_value("Content change without auto render")
+                app.run()
+
+                self.assertFalse(app.exception)
+                self.assertEqual(render_preview.call_count, 1)
+
+                self._select_editor_section(app, "Export")
+                fps = next(
+                    control
+                    for control in app.number_input
+                    if control.label == "FPS"
+                )
+                fps.set_value(int(fps.value) + 1)
+                app.run()
+
+                self.assertFalse(app.exception)
+                self.assertEqual(render_preview.call_count, 1)
+
+                self._select_editor_section(app, "Canvas")
+                auto_preview = next(
+                    toggle
+                    for toggle in app.toggle
+                    if toggle.label == "Auto preview"
+                )
+                auto_preview.set_value(False)
+                app.run()
+                category_size = next(
+                    control
+                    for control in app.number_input
+                    if control.label == "Category size"
+                )
+                category_size.set_value(int(category_size.value) + 1)
+                app.run()
+
+                self.assertFalse(app.exception)
+                self.assertEqual(render_preview.call_count, 1)
+
+                auto_preview = next(
+                    toggle
+                    for toggle in app.toggle
+                    if toggle.label == "Auto preview"
+                )
+                auto_preview.set_value(True)
+                app.run()
+
+                self.assertFalse(app.exception)
+                self.assertEqual(render_preview.call_count, 2)
 
     def test_logo_folder_and_apply_matches_preserve_unsaved_form_values(self):
         root_dir = Path(__file__).resolve().parents[1]
@@ -438,6 +537,55 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             {":material/bar_chart: Bars and categories"},
         )
 
+    def test_canvas_layout_change_applies_label_area_preset_defaults(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+
+        layout = next(
+            control
+            for control in app.selectbox
+            if control.label == "Canvas layout"
+        )
+        layout.set_value("vertical_shorts")
+        app.run()
+
+        number_inputs = {
+            control.label: control.value
+            for control in app.number_input
+        }
+        self.assertFalse(app.exception)
+        self.assertEqual(number_inputs["Bar start"], 260)
+        self.assertEqual(number_inputs["Category label start"], 36)
+        self.assertEqual(number_inputs["Category area span"], 250)
+
+    def test_canvas_can_use_full_left_space_for_category_labels(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+
+        bar_start = next(
+            control
+            for control in app.number_input
+            if control.label == "Bar start"
+        )
+        bar_start.set_value(800)
+        app.run()
+
+        use_full_space = next(
+            button
+            for button in app.button
+            if button.label == "Use full left space"
+        )
+        self.assertFalse(use_full_space.disabled)
+        use_full_space.click()
+        app.run()
+
+        project_data = json.loads(app.json[0].value)
+        self.assertFalse(app.exception)
+        self.assertEqual(project_data["chart"]["left_margin"], 800)
+        self.assertEqual(project_data["chart"]["rank_label_gap"], 704)
+
     def test_exposes_font_family_selector_for_each_text_element(self):
         app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
@@ -478,6 +626,12 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             "Ranking size",
         }
         self.assertTrue(expected_size_labels.issubset(number_inputs))
+        self.assertIn("Category label start", number_inputs)
+        self.assertEqual(number_inputs["Category label start"].value, 40)
+        self.assertIn("Bar start", number_inputs)
+        self.assertEqual(number_inputs["Bar start"].value, 320)
+        self.assertIn("Category area span", number_inputs)
+        self.assertEqual(number_inputs["Category area span"].value, 320)
         self.assertIn(
             "Background type",
             {control.label for control in app.get("button_group")},
@@ -508,12 +662,18 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             if color_picker.label == "Title color"
         )
         number_inputs["Title size"].set_value(48)
+        number_inputs["Category label start"].set_value(72)
+        number_inputs["Bar start"].set_value(360)
+        number_inputs["Category area span"].set_value(340)
         title_color.set_value("#123456")
         app.run()
         project_data = json.loads(app.json[0].value)
 
         self.assertEqual(project_data["chart"]["title_font_size"], 48)
         self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
+        self.assertEqual(project_data["chart"]["label_min_x"], 72)
+        self.assertEqual(project_data["chart"]["left_margin"], 360)
+        self.assertEqual(project_data["chart"]["rank_label_gap"], 340)
         self.assertEqual(
             project_data["chart"]["frame_output_mode"],
             "ffmpeg_stream",

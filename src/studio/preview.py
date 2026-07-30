@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from config.project_file_loader import load_project_file
+from config.project_file_loader import load_project_data, load_project_file
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
@@ -20,15 +20,22 @@ def render_project_preview(
     transition_progress=0.0,
     *,
     root_dir=None,
+    project_data=None,
 ):
     root_path = _project_root(root_dir)
-    project_path = resolve_project_path(
-        project_path,
-        project_root=root_path,
-        required=True,
-        field_name="project file",
-    )
-    preset = load_project_file(project_path)
+    if project_data is None:
+        project_path = resolve_project_path(
+            project_path,
+            project_root=root_path,
+            required=True,
+            field_name="project file",
+        )
+        preset = load_project_file(project_path)
+    else:
+        preset = load_project_data(
+            project_data,
+            default_name=project_path,
+        )
     source_label = preset.data_source_config.source_label
     data_source_config = _resolved_data_source_config(
         preset.data_source_config,

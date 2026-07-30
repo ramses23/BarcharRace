@@ -34,7 +34,20 @@ PROJECT_FILE_SECTIONS = {
 def load_project_file(path):
     project_path = Path(path)
     data = _read_project_data(project_path)
+    return _project_preset_from_data(data, project_path)
 
+
+def load_project_data(data, *, default_name="project"):
+    try:
+        migrated_data = migrate_project_data(data).data
+    except ProjectSchemaError as exc:
+        raise ProjectFileError(str(exc)) from exc
+
+    default_name = str(default_name).strip() or "project"
+    return _project_preset_from_data(migrated_data, Path(default_name))
+
+
+def _project_preset_from_data(data, project_path):
     _reject_unknown_keys(
         data,
         PROJECT_FILE_SECTIONS,
@@ -573,7 +586,7 @@ def _convert_chart_value(key, value):
 
         return value
 
-    if key in ("rank_label_min_x", "rank_label_label_gap"):
+    if key in ("rank_label_min_x", "rank_label_label_gap", "label_min_x"):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProjectFileError(f"Chart field '{key}' must be >= 0.")
 

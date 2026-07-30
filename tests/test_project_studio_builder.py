@@ -125,6 +125,9 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             time_label_y=900,
             source_x=300,
             source_y=1000,
+            label_min_x=72,
+            left_margin=360,
+            rank_label_gap=340,
             motion_mode="continuous",
             category_styles={
                 "Coal": {
@@ -181,6 +184,9 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["subtitle_x"], 310)
         self.assertEqual(loaded["chart"]["time_label_y"], 900)
         self.assertEqual(loaded["chart"]["source_y"], 1000)
+        self.assertEqual(loaded["chart"]["label_min_x"], 72)
+        self.assertEqual(loaded["chart"]["left_margin"], 360)
+        self.assertEqual(loaded["chart"]["rank_label_gap"], 340)
         self.assertEqual(loaded["animation"]["motion_mode"], "continuous")
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
@@ -423,6 +429,12 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "time_label_y": 900,
                     "source_x": 300,
                     "source_y": 1000,
+                    "label_min_x": 56,
+                    "left_margin": 420,
+                    "right_margin": 180,
+                    "rank_label_gap": 360,
+                    "rank_label_min_x": 64,
+                    "rank_label_label_gap": 12,
                 },
                 "selection": {
                     "top_n": 5,
@@ -488,6 +500,12 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["time_label_y"], 900)
         self.assertEqual(values["source_x"], 300)
         self.assertEqual(values["source_y"], 1000)
+        self.assertEqual(values["label_min_x"], 56)
+        self.assertEqual(values["left_margin"], 420)
+        self.assertEqual(values["right_margin"], 180)
+        self.assertEqual(values["rank_label_gap"], 360)
+        self.assertEqual(values["rank_label_min_x"], 64)
+        self.assertEqual(values["rank_label_label_gap"], 12)
         self.assertEqual(values["motion_mode"], "continuous")
         self.assertTrue(values["aggregate_other"])
         self.assertEqual(values["output_file"], "output/custom.mp4")
@@ -495,6 +513,19 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(values["categories"]["Coal"]["color"], "#333333")
         self.assertEqual(values["categories"]["Coal"]["logo"], "logos/coal.png")
+
+    def test_old_project_without_label_start_uses_layout_compatible_default(self):
+        values = project_form_values(
+            {
+                "chart": {
+                    "layout_preset": "vertical_shorts",
+                },
+            }
+        )
+
+        self.assertEqual(values["label_min_x"], 36)
+        self.assertEqual(values["left_margin"], 260)
+        self.assertEqual(values["rank_label_gap"], 250)
 
     def test_preserves_unexposed_fields_when_rebuilding_existing_project(self):
         base_project = {

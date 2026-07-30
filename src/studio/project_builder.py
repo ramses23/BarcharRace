@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.chart_config import ChartConfig
+from config.layout_config import get_layout_preset
 from config.project_schema import (
     CURRENT_PROJECT_SCHEMA_VERSION,
     migrate_project_data,
@@ -228,6 +229,9 @@ def build_project_data(
     time_label_y=None,
     source_x=None,
     source_y=None,
+    label_min_x=None,
+    left_margin=None,
+    rank_label_gap=None,
     motion_mode=None,
     aggregate_other=False,
     category_styles=None,
@@ -353,6 +357,9 @@ def build_project_data(
             "time_label_y": time_label_y,
             "source_x": source_x,
             "source_y": source_y,
+            "label_min_x": label_min_x,
+            "left_margin": left_margin,
+            "rank_label_gap": rank_label_gap,
         }.items()
         if value is not None
     })
@@ -421,6 +428,12 @@ def project_form_values(project_data=None):
     title = chart.get("title", "Electricity by Source")
     project_name = project_data.get("name") or project_name_from_title(title)
     paths = default_project_paths(project_name)
+    layout_preset = chart.get("layout_preset", "youtube_1080p")
+
+    try:
+        layout_settings = get_layout_preset(layout_preset)
+    except ValueError:
+        layout_settings = _DEFAULT_CHART_CONFIG
 
     return {
         "name": project_name,
@@ -436,7 +449,7 @@ def project_form_values(project_data=None):
         "year_column": dataset.get("year_column", "year"),
         "name_column": dataset.get("name_column", "country"),
         "value_column": dataset.get("value_column", "value"),
-        "layout_preset": chart.get("layout_preset", "youtube_1080p"),
+        "layout_preset": layout_preset,
         "theme": chart.get("theme", "clean_report"),
         "background_mode": chart.get("background_mode", "color"),
         "background_color_override": chart.get("background_color_override"),
@@ -472,6 +485,21 @@ def project_form_values(project_data=None):
         "time_label_y": chart.get("time_label_y"),
         "source_x": chart.get("source_x"),
         "source_y": chart.get("source_y"),
+        "label_min_x": chart.get("label_min_x", layout_settings.label_min_x),
+        "left_margin": chart.get("left_margin", layout_settings.left_margin),
+        "right_margin": chart.get("right_margin", layout_settings.right_margin),
+        "rank_label_gap": chart.get(
+            "rank_label_gap",
+            layout_settings.rank_label_gap,
+        ),
+        "rank_label_min_x": chart.get(
+            "rank_label_min_x",
+            layout_settings.rank_label_min_x,
+        ),
+        "rank_label_label_gap": chart.get(
+            "rank_label_label_gap",
+            layout_settings.rank_label_label_gap,
+        ),
         "value_format": chart.get("value_format", "decimal"),
         "dpi": chart.get("dpi", 150),
         "fps": chart.get("fps", 24),

@@ -1,27 +1,74 @@
+from PIL import Image, ImageDraw
+
+
 def estimate_text_width(text, font_size, average_char_width=0.56):
     return len(str(text)) * font_size * average_char_width
 
 
-def fit_text_to_width(text, max_width, font_size, average_char_width=0.56):
+def measure_text_width(text, font):
+    text = str(text)
+
+    if hasattr(font, "getbbox"):
+        left, _, right, _ = font.getbbox(text)
+        return float(right - left)
+
+    probe = Image.new("L", (1, 1))
+    left, _, right, _ = ImageDraw.Draw(probe).textbbox(
+        (0, 0),
+        text,
+        font=font,
+    )
+    return float(right - left)
+
+
+def fit_text_to_width(
+    text,
+    max_width,
+    font_size=None,
+    average_char_width=0.56,
+    *,
+    font=None,
+    measure_text=None,
+):
     text = str(text)
 
     if max_width <= 0:
         return ""
 
-    if estimate_text_width(text, font_size, average_char_width) <= max_width:
+    if measure_text is None:
+        if font is not None:
+            measure_text = lambda value: measure_text_width(value, font)
+        elif font_size is not None:
+            measure_text = lambda value: estimate_text_width(
+                value,
+                font_size,
+                average_char_width,
+            )
+        else:
+            raise ValueError(
+                "Provide a Pillow font, a measurement function, or font_size."
+            )
+
+    if measure_text(text) <= max_width:
         return text
 
     ellipsis = "..."
-    ellipsis_width = estimate_text_width(ellipsis, font_size, average_char_width)
 
-    if ellipsis_width > max_width:
+    if measure_text(ellipsis) > max_width:
         return ""
 
-    available_width = max_width - ellipsis_width
-    char_width = font_size * average_char_width
-    max_chars = max(0, int(available_width // char_width))
+    best = ellipsis
+    low = 1
+    high = len(text)
 
-    if max_chars == 0:
-        return ellipsis
+    while low <= high:
+        middle = (low + high) // 2
+        candidate = text[:middle].rstrip() + ellipsis
 
-    return text[:max_chars].rstrip() + ellipsis
+        if measure_text(candidate) <= max_width:
+            best = candidate
+            low = middle + 1
+        else:
+            high = middle - 1
+
+    return best

@@ -123,6 +123,80 @@ class ProjectStudioPreviewTest(unittest.TestCase):
             self.assertTrue(preview_path.exists())
             self.assertGreater(preview_path.stat().st_size, 0)
 
+    def test_renders_unsaved_project_data_without_writing_project_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            data_dir = root / "data"
+            data_dir.mkdir()
+            csv_path = data_dir / "sample.csv"
+            project_path = root / "projects" / "unsaved.json"
+            csv_path.write_text(
+                "year,country,value\n"
+                "2020,Coal,100\n"
+                "2020,Solar,25\n",
+                encoding="utf-8",
+            )
+            project_data = {
+                "name": "unsaved_preview",
+                "chart": {
+                    "title": "Unsaved Preview",
+                    "width": 320,
+                    "height": 180,
+                    "dpi": 80,
+                    "left_margin": 90,
+                    "right_margin": 40,
+                    "top_margin": 55,
+                    "bottom_margin": 30,
+                    "bar_height": 16,
+                    "bar_gap": 8,
+                    "title_font_size": 12,
+                    "subtitle_font_size": 8,
+                    "time_label_font_size": 30,
+                    "source_font_size": 6,
+                    "label_font_size": 7,
+                    "value_font_size": 7,
+                    "title_y": 18,
+                    "subtitle_y": 34,
+                    "time_label_x": 285,
+                    "time_label_y": 145,
+                    "source_x": 90,
+                    "source_y": 166,
+                    "logos_enabled": False,
+                    "max_visible_bars": 2,
+                },
+                "selection": {
+                    "top_n": 2,
+                    "aggregate_other": False,
+                },
+                "data_source": {
+                    "source_type": "csv",
+                    "csv_path": "data/sample.csv",
+                    "source_label_override": "Source: Unsaved",
+                },
+                "dataset": {
+                    "year_column": "year",
+                    "name_column": "country",
+                    "value_column": "value",
+                },
+            }
+
+            preview_path = Path(
+                render_project_preview(
+                    project_path,
+                    output_dir="output/preview",
+                    year=2020,
+                    root_dir=root,
+                    project_data=project_data,
+                )
+            )
+
+            self.assertEqual(
+                preview_path,
+                root / "output" / "preview" / "preview.png",
+            )
+            self.assertTrue(preview_path.is_file())
+            self.assertFalse(project_path.exists())
+
     def test_renders_transition_preview_frame_from_project_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

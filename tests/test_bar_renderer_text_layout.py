@@ -10,16 +10,16 @@ from config.chart_config import ChartConfig
 from models.bar_sprite import BarSprite
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
+from utils.text_fit import measure_text_width
 
 
 class BarRendererTextLayoutTest(unittest.TestCase):
-    def test_fits_long_bar_label(self):
+    def test_truncates_long_bar_label_to_its_measured_available_width(self):
         renderer = BarRenderer(
             config=ChartConfig(
                 dpi=72,
                 label_font_size=20,
                 label_min_x=40,
-                text_average_char_width=0.5,
                 logos_enabled=False,
             )
         )
@@ -33,7 +33,87 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             height=40,
         )
 
-        self.assertEqual(renderer._fit_bar_label(sprite), "United Stat...")
+        fitted = renderer._fit_bar_label(sprite)
+        available_width = renderer._label_x(sprite) - renderer._bar_label_min_x(
+            sprite
+        )
+
+        self.assertNotEqual(fitted, sprite.name)
+        self.assertTrue(fitted.endswith("..."))
+        self.assertLessEqual(
+            measure_text_width(
+                fitted,
+                renderer._measurement_font(
+                    renderer.config.label_font_size,
+                    renderer.config.label_font_family,
+                ),
+            ),
+            available_width,
+        )
+
+    def test_keeps_long_bar_label_when_its_real_width_fits(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                label_font_size=20,
+                label_min_x=40,
+                logos_enabled=False,
+            )
+        )
+        text = "General Motors"
+        text_width = measure_text_width(
+            text,
+            renderer._measurement_font(
+                renderer.config.label_font_size,
+                renderer.config.label_font_family,
+            ),
+        )
+        sprite = BarSprite(
+            name=text,
+            value=100,
+            color="#123456",
+            x=40 + 16 + text_width,
+            y=0,
+            width=100,
+            height=40,
+        )
+
+        self.assertEqual(renderer._fit_bar_label(sprite), text)
+
+    def test_label_measurement_uses_the_render_font_fallback(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=72,
+                label_font_size=20,
+                label_font_family="Unavailable Category Font",
+                label_min_x=40,
+                logos_enabled=False,
+            )
+        )
+        text = "Volkswagen"
+        fallback_font = renderer._measurement_font(
+            renderer.config.label_font_size,
+            renderer.config.label_font_family,
+        )
+        text_width = measure_text_width(text, fallback_font)
+        sprite = BarSprite(
+            name=text,
+            value=100,
+            color="#123456",
+            x=40 + 16 + text_width,
+            y=0,
+            width=100,
+            height=40,
+        )
+
+        self.assertEqual(renderer._fit_bar_label(sprite), text)
+        self.assertIs(
+            fallback_font,
+            renderer._measurement_font(
+                renderer.config.label_font_size,
+                renderer.config.label_font_family,
+            ),
+        )
 
     def test_tracks_draw_and_save_seconds(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -307,7 +387,53 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertEqual(renderer._rank_label_x(), 50)
         self.assertEqual(renderer._bar_label_min_x(sprite), 70)
-        self.assertEqual(renderer._fit_bar_label(sprite), "Ver...")
+        fitted = renderer._fit_bar_label(sprite)
+        self.assertTrue(fitted.endswith("..."))
+        self.assertLessEqual(
+            measure_text_width(
+                fitted,
+                renderer._measurement_font(
+                    renderer.config.label_font_size,
+                    renderer.config.label_font_family,
+                ),
+            ),
+            renderer._label_x(sprite) - renderer._bar_label_min_x(sprite),
+        )
+
+    def test_wide_rank_to_bar_span_uses_available_left_space(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                dpi=150,
+                left_margin=800,
+                rank_label_gap=706,
+                rank_label_min_x=94,
+                rank_label_label_gap=16,
+                label_min_x=42,
+                label_font_size=20,
+                logo_size=48,
+                logo_gap=16,
+                logo_label_gap=14,
+            )
+        )
+        sprite = BarSprite(
+            name="General Motors",
+            value=100,
+            color="#123456",
+            x=800,
+            y=0,
+            width=600,
+            height=40,
+            rank=1,
+            logo_path="logo.png",
+        )
+
+        self.assertEqual(renderer._rank_label_x(), 94)
+        self.assertEqual(renderer._bar_label_min_x(sprite), 110)
+        self.assertGreater(
+            renderer._label_x(sprite) - renderer._bar_label_min_x(sprite),
+            500,
+        )
+        self.assertEqual(renderer._fit_bar_label(sprite), "General Motors")
 
     def test_bar_label_uses_label_min_x_when_rank_labels_are_disabled(self):
         renderer = BarRenderer(
@@ -604,18 +730,46 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(
-            renderer._fit_title("Professional Bar Chart Race"),
-            "Professio...",
+        cases = (
+            (
+                renderer._fit_title("Professional Bar Chart Race"),
+                60,
+                renderer.config.title_font_size,
+                renderer.config.title_font_family,
+                renderer.config.title_font_weight,
+            ),
+            (
+                renderer._fit_subtitle("Subtitle that is too long"),
+                40,
+                renderer.config.subtitle_font_size,
+                renderer.config.subtitle_font_family,
+                renderer.config.subtitle_font_weight,
+            ),
+            (
+                renderer._fit_source_label(
+                    "Source: very/long/path/to/source.csv"
+                ),
+                50,
+                renderer.config.source_font_size,
+                renderer.config.source_font_family,
+                renderer.config.source_font_weight,
+            ),
         )
-        self.assertEqual(
-            renderer._fit_subtitle("Subtitle that is too long"),
-            "Subti...",
-        )
-        self.assertEqual(
-            renderer._fit_source_label("Source: very/long/path/to/source.csv"),
-            "Source:...",
-        )
+
+        for fitted, max_width, font_size, family, weight in cases:
+            with self.subTest(fitted=fitted):
+                self.assertTrue(fitted.endswith("..."))
+                self.assertLessEqual(
+                    measure_text_width(
+                        fitted,
+                        renderer._measurement_font(
+                            font_size,
+                            family,
+                            weight,
+                        ),
+                    ),
+                    max_width,
+                )
 
     def test_fits_main_text_to_available_canvas_width(self):
         renderer = BarRenderer(
@@ -641,13 +795,31 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             renderer._available_text_width(120, 500),
             80,
         )
-        self.assertEqual(
-            renderer._fit_title("A Very Long Narrow Canvas Title"),
-            "A Very Long Narro...",
+        title = renderer._fit_title("A Very Long Narrow Canvas Title")
+        source = renderer._fit_source_label("Source: extremely/long/path.csv")
+        self.assertTrue(title.endswith("..."))
+        self.assertTrue(source.endswith("..."))
+        self.assertLessEqual(
+            measure_text_width(
+                title,
+                renderer._measurement_font(
+                    renderer.config.title_font_size,
+                    renderer.config.title_font_family,
+                    renderer.config.title_font_weight,
+                ),
+            ),
+            100,
         )
-        self.assertEqual(
-            renderer._fit_source_label("Source: extremely/long/path.csv"),
-            "Source: extre...",
+        self.assertLessEqual(
+            measure_text_width(
+                source,
+                renderer._measurement_font(
+                    renderer.config.source_font_size,
+                    renderer.config.source_font_family,
+                    renderer.config.source_font_weight,
+                ),
+            ),
+            80,
         )
 
     def test_available_text_width_never_goes_negative(self):
@@ -1616,6 +1788,46 @@ class BarRendererTextLayoutTest(unittest.TestCase):
 
         self.assertGreater(label_layout["x"], left_layout["right"])
         self.assertLess(value_layout["x"], right_layout["left"])
+
+    def test_measured_category_text_stays_between_start_and_outside_logo(self):
+        renderer = BarRenderer(config=ChartConfig(
+            dpi=72,
+            left_margin=220,
+            label_min_x=40,
+            rank_labels_enabled=False,
+            logo_size=48,
+            logo_gap=16,
+            logo_label_gap=14,
+            label_font_size=20,
+        ))
+        sprite = BarSprite(
+            name="Compañía Automotriz Internacional",
+            value=100,
+            color="#4E79A7",
+            x=220,
+            y=90,
+            width=260,
+            height=40,
+            logo_path="logo.png",
+        )
+
+        layout = renderer._bar_label_layout(sprite)
+        logo_extent = renderer._logo_group_extent(sprite, "outside_left")
+        text_width = measure_text_width(
+            layout["text"],
+            renderer._measurement_font(
+                renderer.config.label_font_size,
+                renderer.config.label_font_family,
+            ),
+        )
+        text_left = layout["x"] - text_width
+
+        self.assertTrue(layout["text"].endswith("..."))
+        self.assertGreaterEqual(text_left, renderer.config.label_min_x)
+        self.assertLessEqual(
+            layout["x"],
+            logo_extent[0] - renderer.config.logo_label_gap,
+        )
 
     def test_category_alignment_uses_the_existing_label_area(self):
         sprite = BarSprite(

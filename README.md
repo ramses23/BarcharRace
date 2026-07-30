@@ -37,8 +37,12 @@ charts, animated scatter plots, and timeline animations.
 - Render external JSON project files.
 - Create, open, edit, and preview project files from a local Streamlit editor.
 - Preview a selected year or transition point before rendering a full video.
+- Automatically refresh previews after visual Canvas, Bars, category, or
+  preview-frame changes without saving the in-memory draft.
 - Render project-specific source labels instead of raw local file paths.
 - Apply project-specific category labels and bar colors.
+- Tune the category-label boundary, bar start, and usable label-area span from
+  Project Studio without editing JSON manually.
 - Assign project-specific category logos from the local Streamlit editor.
 - Export/import complete project bundles with data and visual assets.
 - Play and download the finished MP4 directly from Project Studio.
@@ -297,10 +301,18 @@ in the form yet.
 
 Project Studio keeps the current form as an in-memory draft. `Save project` is
 an explicit action, and the status below the action buttons reports whether the
-draft is saved or has unsaved changes. Rendering a preview or final video saves
-the current draft first so the renderer always consumes the same JSON that the
-editor displays. The latest preview stays visible across normal widget reruns
-and is marked as out of date when the draft changes.
+draft is saved or has unsaved changes. Manual preview and final-video actions
+save the current draft first so the renderer consumes the same JSON that the
+editor displays.
+
+`Auto preview` is enabled by default. After the first visual edit, it renders
+the current draft directly from memory without writing the project JSON.
+Changes in `Canvas`, `Bars`, applied category styles, or the selected preview
+frame trigger it; `Data` and `Export` changes do not. Disabling the toggle
+pauses automatic work, and enabling it again renders one pending visual update.
+The latest preview stays visible across normal widget reruns. A separate
+preview fingerprint marks it stale only when a render-relevant change remains
+outside the automatic visual scope.
 
 The active CSV is loaded through a bounded Streamlit data cache keyed by its
 resolved path, size, and modification time. Column inspection, period metrics,
@@ -316,6 +328,19 @@ before changing its search, filter, or page. Applied pages remain in the
 session draft and are included when the project is saved, previewed, or
 rendered. Bulk logo matching still evaluates every category, not only the
 visible page.
+
+The expanded `Canvas -> Category label area` panel exposes three compatible
+layout fields:
+
+- `Category label start` writes `chart.label_min_x`;
+- `Bar start` writes `chart.left_margin`;
+- `Category area span` writes `chart.rank_label_gap`.
+
+`Use full left space` calculates the span required to keep the ranking column
+at the preset's `rank_label_min_x` while allowing category names to use the
+otherwise empty area before the bars. Values are bounded by the selected
+canvas, persist in project JSON, and fall back to the layout preset for older
+projects that do not contain the fields.
 
 The font picker, visual text-position editor, and live bar-appearance editor
 use Streamlit Custom Components v2. They are controlled components: Python
@@ -730,20 +755,29 @@ Available typography presets:
 
 ## Text Fitting
 
-Bar labels and value labels include basic collision handling.
+Bar labels and value labels use measured collision handling.
 
-Long bar names are truncated with `...` so they stay inside the available
-label column. Value labels are drawn outside the bar when they fit, moved
-inside the bar when the right edge would overflow, or clamped to a safe
-right edge when the bar is too small. Very large value labels are truncated
-inside the safe value-label area instead of stretching into the left label
-column.
+The renderer measures text with Pillow using the same effective font file,
+fallback family, weight, point size, and render DPI used for the final frame.
+A complete category name is preserved whenever its measured pixels fit.
+Otherwise a binary search finds the longest prefix that fits together with
+`...`; the ellipsis is never appended unless truncation is required. This
+works with accented characters, spaces, different font families, and different
+canvas resolutions.
+
+The available category width is calculated from the ranking column, configured
+label boundary, bar start, logo placement, logo gaps, and category alignment.
+This keeps names out of the logo and bar while avoiding premature truncation.
+Value labels are drawn outside the bar when they fit, moved inside the bar when
+the right edge would overflow, or clamped to a safe right edge when the bar is
+too small. Very large value labels are measured and truncated inside the safe
+value-label area instead of stretching into the left label column.
 
 The large time label is rendered as a low-opacity background watermark behind
 bars and source text, which keeps dense layouts readable.
 
-Text width estimates use the configured render `dpi`, so Matplotlib point-size
-fonts are fitted against pixel-based layout coordinates.
+`text_average_char_width` remains accepted for compatibility with callers that
+do not provide a font, but renderer fitting uses real glyph measurement.
 
 Text fitting is configured in `ChartConfig`:
 
@@ -752,6 +786,8 @@ title_max_width
 subtitle_max_width
 source_max_width
 label_min_x
+left_margin
+rank_label_gap
 rank_label_min_x
 rank_label_label_gap
 text_average_char_width
@@ -890,8 +926,8 @@ Current test coverage includes:
 - layout auto-fit bar capacity
 - bar shadow rendering
 - bar gradient rendering
-- text fitting for title, subtitle, source, rank-aware bar labels, and
-  value-label layout
+- real-font text fitting for title, subtitle, source, rank-aware bar labels,
+  ellipsis placement, and value-label layout
 - full-canvas Matplotlib renderer setup
 - background time-label layering
 - `DatasetValidator`
@@ -908,6 +944,9 @@ Current test coverage includes:
 - Streamlit project editor helpers
 - existing-project loading in Project Studio
 - selected-year and transition preview rendering in Project Studio
+- automatic visual preview scope, pause/resume behavior, and unsaved in-memory
+  preview rendering
+- category-label boundary, bar-start, and label-area persistence
 - category labels and colors from project files
 - explicit category logo paths from project files
 - deterministic simple/advanced renderer image signatures

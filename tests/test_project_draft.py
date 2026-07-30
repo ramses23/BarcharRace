@@ -1,7 +1,12 @@
 import unittest
 
 import _test_path
-from studio.project_draft import ProjectDraft, project_fingerprint
+from studio.project_draft import (
+    ProjectDraft,
+    auto_preview_fingerprint,
+    preview_fingerprint,
+    project_fingerprint,
+)
 
 
 class ProjectDraftTest(unittest.TestCase):
@@ -50,6 +55,114 @@ class ProjectDraftTest(unittest.TestCase):
 
         self.assertFalse(original.is_dirty(original.fingerprint))
         self.assertTrue(changed.is_dirty(original.fingerprint))
+
+    def test_auto_preview_fingerprint_tracks_visual_settings(self):
+        project_data = {
+            "chart": {
+                "title": "Demo",
+                "label_font_size": 32,
+                "output_file": "output/demo.mp4",
+            },
+            "selection": {"top_n": 10},
+            "categories": {"Coal": {"color": "#123456"}},
+            "data_source": {"csv_path": "data/demo.csv"},
+        }
+
+        changed_size = {
+            **project_data,
+            "chart": {
+                **project_data["chart"],
+                "label_font_size": 36,
+            },
+        }
+        changed_category = {
+            **project_data,
+            "categories": {"Coal": {"color": "#654321"}},
+        }
+
+        self.assertNotEqual(
+            auto_preview_fingerprint(project_data),
+            auto_preview_fingerprint(changed_size),
+        )
+        self.assertNotEqual(
+            auto_preview_fingerprint(project_data),
+            auto_preview_fingerprint(changed_category),
+        )
+
+    def test_auto_preview_fingerprint_ignores_data_and_export_changes(self):
+        project_data = {
+            "chart": {
+                "title": "Demo",
+                "label_font_size": 32,
+                "fps": 24,
+                "output_file": "output/demo.mp4",
+            },
+            "data_source": {
+                "csv_path": "data/demo.csv",
+                "source_label_override": "Source A",
+            },
+            "dataset": {"value_column": "value"},
+        }
+        changed = {
+            **project_data,
+            "chart": {
+                **project_data["chart"],
+                "title": "Changed",
+                "fps": 60,
+                "output_file": "output/changed.mp4",
+            },
+            "data_source": {
+                "csv_path": "data/changed.csv",
+                "source_label_override": "Source B",
+            },
+            "dataset": {"value_column": "total"},
+        }
+
+        self.assertEqual(
+            auto_preview_fingerprint(project_data),
+            auto_preview_fingerprint(changed),
+        )
+        self.assertNotEqual(
+            preview_fingerprint(project_data),
+            preview_fingerprint(changed),
+        )
+
+    def test_preview_frame_selection_triggers_auto_preview(self):
+        project_data = {"chart": {"label_font_size": 32}}
+
+        self.assertNotEqual(
+            auto_preview_fingerprint(
+                project_data,
+                {"year": 2020, "preview_mode": "year"},
+            ),
+            auto_preview_fingerprint(
+                project_data,
+                {"year": 2021, "preview_mode": "year"},
+            ),
+        )
+
+    def test_preview_fingerprint_ignores_video_only_settings(self):
+        original = {
+            "chart": {
+                "label_font_size": 32,
+                "fps": 24,
+                "steps_per_transition": 45,
+                "frame_output_mode": "ffmpeg_stream",
+            }
+        }
+        changed = {
+            "chart": {
+                "label_font_size": 32,
+                "fps": 60,
+                "steps_per_transition": 120,
+                "frame_output_mode": "png_sequence",
+            }
+        }
+
+        self.assertEqual(
+            preview_fingerprint(original),
+            preview_fingerprint(changed),
+        )
 
 
 if __name__ == "__main__":

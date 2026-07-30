@@ -97,6 +97,8 @@ BACKGROUND_IMAGE_PATH_STATE = "background_image_path"
 SAVED_DRAFT_FINGERPRINT_STATE = "saved_project_draft_fingerprint"
 SAVED_DRAFT_PENDING_STATE = "saved_project_draft_pending"
 LAST_PREVIEW_STATE = "last_project_preview"
+AUTO_PREVIEW_ENABLED_STATE = "auto_project_preview_enabled"
+AUTO_PREVIEW_OBSERVED_STATE = "auto_project_preview_observed"
 CATEGORY_STYLE_DRAFT_STATE = "category_style_draft"
 CURRENT_DRAFT_FINGERPRINT_STATE = "current_project_draft_fingerprint"
 CURRENT_DRAFT_STATE = "current_project_draft"
@@ -105,6 +107,7 @@ PROJECT_BUNDLE_EXPORT_STATE = "project_bundle_export"
 LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
 BUNDLE_IMPORT_UPLOAD_NONCE_STATE = "project_bundle_import_upload_nonce"
 PREVIEW_SETTINGS_STATE = "project_preview_settings"
+CATEGORY_AREA_SPAN_OVERRIDE_STATE = "category_area_span_override"
 AUTOLOAD_PROJECT_ENV = "BARCHARTSTUDIO_AUTOLOAD_PROJECT"
 AUTOLOAD_TOKEN_ENV = "BARCHARTSTUDIO_AUTOLOAD_TOKEN"
 AUTOLOAD_TOKEN_STATE = "autoload_consumed_token"
@@ -228,6 +231,7 @@ def _initialize_studio_state():
     st.session_state.setdefault(SAVED_DRAFT_FINGERPRINT_STATE, None)
     st.session_state.setdefault(SAVED_DRAFT_PENDING_STATE, False)
     st.session_state.setdefault(LAST_PREVIEW_STATE, None)
+    st.session_state.setdefault(AUTO_PREVIEW_OBSERVED_STATE, None)
     st.session_state.setdefault(CURRENT_DRAFT_FINGERPRINT_STATE, None)
     st.session_state.setdefault(CURRENT_DRAFT_STATE, None)
     st.session_state.setdefault(PENDING_PROJECT_ACTION_STATE, None)
@@ -370,6 +374,19 @@ def _project_actions(draft):
             disabled=render_active,
             help="Render the final MP4 in an isolated process.",
         )
+        auto_preview = st.toggle(
+            "Auto preview",
+            value=True,
+            key=AUTO_PREVIEW_ENABLED_STATE,
+            help=(
+                "Automatically update the preview after changes in Canvas, "
+                "Bars, categories, or the selected preview frame."
+            ),
+        )
+        st.caption(
+            "Auto preview watches visual settings only. Changes in Data or "
+            "Export can still be reviewed with Render preview."
+        )
 
     if save_project:
         _save_draft(draft)
@@ -382,10 +399,26 @@ def _project_actions(draft):
         )
 
         if preview_path is not None:
-            st.session_state[LAST_PREVIEW_STATE] = {
-                "path": str(preview_path),
-                "fingerprint": draft.fingerprint,
-            }
+            _store_preview(draft, preview_path, automatic=False)
+
+    auto_render_preview = _should_auto_render_preview(
+        draft,
+        enabled=(
+            auto_preview
+            and not render_preview
+            and not render_active
+        ),
+    )
+    if auto_render_preview:
+        with st.spinner("Updating preview..."):
+            preview_path = _render_preview(
+                draft.project_file,
+                draft.preview_settings,
+                project_data=draft.project_data,
+            )
+
+        if preview_path is not None:
+            _store_preview(draft, preview_path, automatic=True)
 
     if render_video:
         _save_draft(draft, show_success=False)
@@ -398,6 +431,40 @@ def _project_actions(draft):
         st.caption(f":green-badge[Saved] {draft.project_file}")
 
     _portable_bundle_export_panel(draft, render_active=render_active)
+
+
+def _should_auto_render_preview(draft, *, enabled):
+    previous_fingerprint = st.session_state.get(
+        AUTO_PREVIEW_OBSERVED_STATE
+    )
+    if previous_fingerprint is None:
+        st.session_state[AUTO_PREVIEW_OBSERVED_STATE] = (
+            draft.auto_preview_fingerprint
+        )
+        return False
+
+    if not enabled:
+        return False
+
+    st.session_state[AUTO_PREVIEW_OBSERVED_STATE] = (
+        draft.auto_preview_fingerprint
+    )
+    return bool(
+        previous_fingerprint != draft.auto_preview_fingerprint
+    )
+
+
+def _store_preview(draft, preview_path, *, automatic):
+    st.session_state[AUTO_PREVIEW_OBSERVED_STATE] = (
+        draft.auto_preview_fingerprint
+    )
+    st.session_state[LAST_PREVIEW_STATE] = {
+        "path": str(preview_path),
+        "fingerprint": draft.fingerprint,
+        "preview_fingerprint": draft.preview_fingerprint,
+        "auto_preview_fingerprint": draft.auto_preview_fingerprint,
+        "automatic": bool(automatic),
+    }
 
 
 def _portable_bundle_export_panel(draft, *, render_active):
@@ -475,10 +542,20 @@ def _show_persistent_preview(draft):
     with st.container(border=True, gap="xsmall", key="latest_preview"):
         st.subheader(":material/preview: Latest preview")
 
-        if preview.get("fingerprint") != draft.fingerprint:
+        preview_fingerprint = preview.get("preview_fingerprint")
+        if preview_fingerprint is None:
+            preview_is_outdated = (
+                preview.get("fingerprint") != draft.fingerprint
+            )
+        else:
+            preview_is_outdated = (
+                preview_fingerprint != draft.preview_fingerprint
+            )
+
+        if preview_is_outdated:
             st.warning(
                 "This preview is out of date. Render it again to include "
-                "the current unsaved changes.",
+                "changes outside the automatic visual update scope.",
                 icon=":material/update:",
             )
 
@@ -774,6 +851,7 @@ def _reset_project_editor_state():
     st.session_state[CURRENT_DRAFT_FINGERPRINT_STATE] = None
     st.session_state[CURRENT_DRAFT_STATE] = None
     st.session_state[LAST_PREVIEW_STATE] = None
+    st.session_state[AUTO_PREVIEW_OBSERVED_STATE] = None
     st.session_state[LAST_PREFLIGHT_STATE] = None
     st.session_state[LAST_RENDER_STATUS_STATE] = None
     st.session_state[PROJECT_BUNDLE_EXPORT_STATE] = None
@@ -968,6 +1046,9 @@ def _project_form(
         time_label_y=canvas_settings["time_label_y"],
         source_x=canvas_settings["source_x"],
         source_y=canvas_settings["source_y"],
+        label_min_x=canvas_settings["label_min_x"],
+        left_margin=canvas_settings["left_margin"],
+        rank_label_gap=canvas_settings["rank_label_gap"],
         aggregate_other=bars_settings["aggregate_other"],
         category_styles=bars_settings["category_styles"],
         base_project_data=loaded_project_data,
@@ -1060,6 +1141,19 @@ def _canvas_settings_from_values(
     background_fit = values.get("background_image_fit", "cover")
     if background_fit not in ("cover", "contain", "stretch"):
         background_fit = "cover"
+    right_margin = _int_in_range_or_default(
+        values.get("right_margin"),
+        layout.right_margin,
+        0,
+        max(0, layout.width - 1),
+    )
+    max_left_margin = max(0, layout.width - right_margin - 1)
+    left_margin = _int_in_range_or_default(
+        values.get("left_margin"),
+        layout.left_margin,
+        0,
+        max_left_margin,
+    )
 
     return {
         "layout_preset": layout_preset,
@@ -1178,6 +1272,19 @@ def _canvas_settings_from_values(
             values["source_y"]
             if values.get("source_y") is not None
             else layout.source_y
+        ),
+        "label_min_x": _int_in_range_or_default(
+            values.get("label_min_x"),
+            layout.label_min_x,
+            0,
+            left_margin,
+        ),
+        "left_margin": left_margin,
+        "rank_label_gap": _int_in_range_or_default(
+            values.get("rank_label_gap"),
+            layout.rank_label_gap,
+            0,
+            layout.width,
         ),
     }
 
@@ -1406,6 +1513,13 @@ def _canvas_text_section(
             key=_widget_key("layout_preset"),
         )
 
+    layout_changed = layout_preset != values.get("layout_preset")
+    if layout_changed:
+        st.session_state.pop(_widget_key("label_min_x"), None)
+        st.session_state.pop(_widget_key("left_margin"), None)
+        st.session_state.pop(_widget_key("rank_label_gap"), None)
+        st.session_state.pop(CATEGORY_AREA_SPAN_OVERRIDE_STATE, None)
+
     with visible_column:
         max_visible = st.number_input(
             "Visible bar slots",
@@ -1418,6 +1532,134 @@ def _canvas_text_section(
         )
 
     layout_settings = get_layout_preset(layout_preset)
+    right_margin = _int_in_range_or_default(
+        (
+            layout_settings.right_margin
+            if layout_changed
+            else values.get("right_margin")
+        ),
+        layout_settings.right_margin,
+        0,
+        max(0, layout_settings.width - 1),
+    )
+    max_left_margin = max(0, layout_settings.width - right_margin - 1)
+
+    with st.expander(
+        "Category label area",
+        expanded=True,
+        icon=":material/format_align_left:",
+    ):
+        st.caption(
+            "Set the label boundary, bar position, and the span that keeps "
+            "rankings from moving right with the bars."
+        )
+        label_column, bar_start_column, span_column = st.columns(3)
+
+        with bar_start_column:
+            left_margin = st.number_input(
+                "Bar start",
+                min_value=0,
+                max_value=max_left_margin,
+                value=_int_in_range_or_default(
+                    (
+                        layout_settings.left_margin
+                        if layout_changed
+                        else values.get("left_margin")
+                    ),
+                    layout_settings.left_margin,
+                    0,
+                    max_left_margin,
+                ),
+                step=1,
+                help=(
+                    "Horizontal start of the bars in canvas pixels. Increase "
+                    "Category area span too, so the ranking stays on the left."
+                ),
+                key=_widget_key("left_margin"),
+            )
+
+        with label_column:
+            label_min_x = st.number_input(
+                "Category label start",
+                min_value=0,
+                max_value=int(left_margin),
+                value=_int_in_range_or_default(
+                    (
+                        layout_settings.label_min_x
+                        if layout_changed
+                        else values.get("label_min_x")
+                    ),
+                    layout_settings.label_min_x,
+                    0,
+                    int(left_margin),
+                ),
+                step=1,
+                help=(
+                    "Left boundary of the category-name area in canvas pixels. "
+                    "The ranking can move this boundary right when needed."
+                ),
+                key=_widget_key("label_min_x"),
+            )
+
+        with span_column:
+            span_widget_key = _widget_key("rank_label_gap")
+            span_override = st.session_state.pop(
+                CATEGORY_AREA_SPAN_OVERRIDE_STATE,
+                None,
+            )
+            if span_override is not None:
+                st.session_state.pop(span_widget_key, None)
+            rank_label_gap = st.number_input(
+                "Category area span",
+                min_value=0,
+                max_value=layout_settings.width,
+                value=_int_in_range_or_default(
+                    (
+                        layout_settings.rank_label_gap
+                        if layout_changed
+                        else (
+                            span_override
+                            if span_override is not None
+                            else values.get("rank_label_gap")
+                        )
+                    ),
+                    layout_settings.rank_label_gap,
+                    0,
+                    layout_settings.width,
+                ),
+                step=1,
+                help=(
+                    "Distance from the bar start back toward the ranking. "
+                    "Increase it to use empty space on the left for names."
+                ),
+                key=span_widget_key,
+            )
+
+        rank_min_x = _int_in_range_or_default(
+            (
+                layout_settings.rank_label_min_x
+                if layout_changed
+                else values.get("rank_label_min_x")
+            ),
+            layout_settings.rank_label_min_x,
+            0,
+            layout_settings.width,
+        )
+        recommended_span = max(0, int(left_margin) - rank_min_x)
+        st.caption(
+            f"To keep the ranking at x={rank_min_x} with Bar start "
+            f"{int(left_margin)}, use Category area span "
+            f"{recommended_span} px or more."
+        )
+        st.button(
+            "Use full left space",
+            icon=":material/keyboard_double_arrow_left:",
+            disabled=int(rank_label_gap) >= recommended_span,
+            on_click=_set_session_value,
+            args=(CATEGORY_AREA_SPAN_OVERRIDE_STATE, recommended_span),
+            key=_widget_key("use_full_category_area"),
+        )
+
     background = _background_panel(values, theme_settings.background_color)
 
     with st.expander("Fonts", icon=":material/font_download:"):
@@ -1657,8 +1899,8 @@ def _canvas_text_section(
                 "bar_color": theme_settings.bar_palette[0],
             },
             layout={
-                "left_margin": layout_settings.left_margin,
-                "right_margin": layout_settings.right_margin,
+                "left_margin": int(left_margin),
+                "right_margin": right_margin,
                 "top_margin": layout_settings.top_margin,
                 "bottom_margin": layout_settings.bottom_margin,
                 "bar_height": layout_settings.bar_height,
@@ -1670,6 +1912,9 @@ def _canvas_text_section(
     return {
         "layout_preset": layout_preset,
         "max_visible": int(max_visible),
+        "label_min_x": int(label_min_x),
+        "left_margin": int(left_margin),
+        "rank_label_gap": int(rank_label_gap),
         "background": background,
         "title_font_family": title_font_family,
         "subtitle_font_family": subtitle_font_family,
@@ -1804,7 +2049,7 @@ def _animation_output_section(
         steps = st.number_input(
             "Steps per transition",
             min_value=1,
-            max_value=240,
+            max_value=1200,
             value=_positive_int_or_default(values["steps_per_transition"], 24),
             step=1,
             key=_widget_key("steps"),
@@ -2748,13 +2993,15 @@ def _preview_controls(csv_path, year_column, years=None):
     }
 
 
-def _render_preview(project_file, preview_settings):
+def _render_preview(project_file, preview_settings, *, project_data=None):
     try:
         preview_path = render_project_preview(
             ROOT_DIR / project_file,
             year=preview_settings["year"],
             preview_mode=preview_settings["preview_mode"],
             transition_progress=preview_settings["transition_progress"],
+            root_dir=ROOT_DIR,
+            project_data=project_data,
         )
     except (ProjectFileError, ValueError, OSError) as exc:
         st.error(str(exc))
@@ -2894,6 +3141,10 @@ def _project_relative_path(path):
 
 def _widget_key(name):
     return f"{name}_{st.session_state.get('form_version', 0)}"
+
+
+def _set_session_value(key, value):
+    st.session_state[key] = value
 
 
 def _safe_filename_key(value):

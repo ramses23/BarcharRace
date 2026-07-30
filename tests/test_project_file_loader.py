@@ -376,6 +376,24 @@ class ProjectFileLoaderTest(unittest.TestCase):
 
         self.assertEqual(preset.name, "stem_name")
 
+    def test_old_project_without_label_min_x_uses_layout_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "old_project.json"
+            project_path.write_text(
+                json.dumps(
+                    {
+                        "chart": {
+                            "layout_preset": "vertical_shorts",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            preset = load_project_file(project_path)
+
+        self.assertEqual(preset.chart_config.label_min_x, 36)
+
     def test_extends_base_preset(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "youtube_custom.json"
@@ -708,6 +726,20 @@ class ProjectFileLoaderTest(unittest.TestCase):
             )
 
             with self.assertRaises(ProjectFileError):
+                load_project_file(project_path)
+
+    def test_rejects_negative_label_min_x(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "invalid_label_min_x.json"
+            project_path.write_text(
+                json.dumps({"chart": {"label_min_x": -1}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ProjectFileError,
+                "label_min_x.*>= 0",
+            ):
                 load_project_file(project_path)
 
     def test_rejects_non_boolean_auto_fit_bar_count(self):
