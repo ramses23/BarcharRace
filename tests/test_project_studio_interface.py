@@ -53,6 +53,99 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertNotIn("apply_studio_layout_styles()", studio_source)
 
+    def test_appearance_presets_save_apply_and_delete_current_visuals(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+
+        with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
+            os.environ,
+            {"BARCHARTSTUDIO_APPEARANCE_PRESETS_DIR": temp_dir},
+        ), mock.patch(
+            "studio.preview.render_project_preview",
+            return_value=Path(temp_dir) / "preview.png",
+        ):
+            Image.new("RGB", (32, 18), "#123456").save(
+                Path(temp_dir) / "preview.png"
+            )
+            app = AppTest.from_file(str(app_path), default_timeout=30).run()
+            self._select_editor_section(app, "Canvas")
+            title_size = next(
+                control
+                for control in app.number_input
+                if control.label == "Title size"
+            )
+            title_size.set_value(73)
+            app.run()
+
+            preset_name = next(
+                control
+                for control in app.text_input
+                if control.label == "New preset name"
+            )
+            preset_name.set_value("Reusable documentary")
+            app.run()
+            save_preset = next(
+                button
+                for button in app.button
+                if button.label == "Save new preset"
+            )
+            save_preset.click()
+            app.run()
+
+            preset_path = Path(temp_dir) / "reusable_documentary.json"
+            self.assertFalse(app.exception)
+            self.assertTrue(preset_path.is_file())
+            self.assertEqual(
+                json.loads(preset_path.read_text(encoding="utf-8"))[
+                    "canvas"
+                ]["title_font_size"],
+                73,
+            )
+
+            self._select_editor_section(app, "Canvas")
+            title_size = next(
+                control
+                for control in app.number_input
+                if control.label == "Title size"
+            )
+            title_size.set_value(31)
+            app.run()
+            apply_preset = next(
+                button
+                for button in app.button
+                if button.label == "Apply preset"
+            )
+            apply_preset.click()
+            app.run()
+
+            self.assertFalse(app.exception)
+            project_data = json.loads(app.json[0].value)
+            self.assertEqual(project_data["chart"]["title_font_size"], 73)
+            self.assertTrue(
+                any(
+                    "Unsaved changes" in caption.value
+                    for caption in app.caption
+                )
+            )
+
+            delete_preset = next(
+                button
+                for button in app.button
+                if button.label == "Delete preset"
+            )
+            delete_preset.click()
+            app.run()
+            confirm_delete = next(
+                button
+                for button in app.button
+                if button.label == "Confirm deletion"
+            )
+            confirm_delete.click()
+            app.run()
+
+            self.assertFalse(app.exception)
+            self.assertFalse(preset_path.exists())
+
     def test_project_switch_requires_confirmation_for_unsaved_draft(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"

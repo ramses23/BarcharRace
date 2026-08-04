@@ -1,0 +1,200 @@
+import copy
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import _test_path
+from studio.appearance_presets import (
+    APPEARANCE_PRESET_SCHEMA_VERSION,
+    BAR_APPEARANCE_FIELDS,
+    CANVAS_APPEARANCE_FIELDS,
+    AppearancePresetError,
+    apply_appearance_preset,
+    build_appearance_preset,
+    delete_appearance_preset,
+    load_appearance_preset,
+    load_appearance_preset_catalog,
+    save_appearance_preset,
+)
+
+
+class AppearancePresetsTest(unittest.TestCase):
+    def project_data(self):
+        return {
+            "name": "source-project",
+            "chart": {
+                "title": "Project-specific title",
+                "output_file": "output/source.mp4",
+                "fps": 60,
+                "layout_preset": "vertical_shorts",
+                "theme": "midnight_contrast",
+                "typography_preset": "compact",
+                "background_mode": "image",
+                "background_image_path": "backgrounds/documentary.png",
+                "background_image_fit": "cover",
+                "max_visible_bars": 7,
+                "title_font_size": 44,
+                "title_text_color": "#ABCDEF",
+                "left_margin": 240,
+                "bar_appearance_mode": "advanced",
+                "bar_shape": "capsule",
+                "bar_fill_type": "texture",
+                "bar_texture_enabled": True,
+                "bar_texture_preset": "custom_image",
+                "bar_texture_custom_image": "textures/brushed.png",
+                "bar_secondary_logo_size": 19,
+                "logo_size": 42,
+                "value_format": "compact",
+            },
+            "selection": {
+                "top_n": 5,
+                "aggregate_other": True,
+            },
+            "dataset": {
+                "year_column": "year",
+                "name_column": "company",
+                "value_column": "sales",
+            },
+            "categories": {
+                "Toyota": {
+                    "color": "#FF0000",
+                    "logo": "logos/toyota.png",
+                },
+            },
+        }
+
+    def test_builds_complete_visual_only_preset(self):
+        preset = build_appearance_preset("Documentary dark", self.project_data())
+
+        self.assertEqual(preset.name, "Documentary dark")
+        self.assertEqual(set(preset.canvas), set(CANVAS_APPEARANCE_FIELDS))
+        self.assertEqual(set(preset.bars), set(BAR_APPEARANCE_FIELDS))
+        self.assertEqual(preset.canvas["layout_preset"], "vertical_shorts")
+        self.assertEqual(preset.canvas["title_font_size"], 44)
+        self.assertEqual(preset.bars["bar_shape"], "capsule")
+        self.assertEqual(preset.bars["logo_size"], 42)
+        self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
+        self.assertNotIn("title", preset.chart_values)
+        self.assertNotIn("output_file", preset.chart_values)
+        self.assertNotIn("fps", preset.chart_values)
+        self.assertNotIn("top_n", preset.chart_values)
+
+    def test_saves_loads_and_updates_preset_atomically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir) / "appearance"
+            original = build_appearance_preset("Documentary dark", self.project_data())
+            stored = save_appearance_preset(original, directory)
+            loaded = load_appearance_preset(stored.path)
+
+            self.assertEqual(stored.path.name, "documentary_dark.json")
+            self.assertEqual(loaded.to_dict(), original.to_dict())
+            self.assertEqual(
+                json.loads(stored.path.read_text(encoding="utf-8"))[
+                    "schema_version"
+                ],
+                APPEARANCE_PRESET_SCHEMA_VERSION,
+            )
+
+            with self.assertRaisesRegex(AppearancePresetError, "already exists"):
+                save_appearance_preset(original, directory)
+
+            updated_project = self.project_data()
+            updated_project["chart"]["title_font_size"] = 58
+            updated = build_appearance_preset("Documentary dark", updated_project)
+            save_appearance_preset(updated, directory, overwrite=True)
+
+            self.assertEqual(
+                load_appearance_preset(stored.path).canvas["title_font_size"],
+                58,
+            )
+
+    def test_applies_visual_fields_without_mutating_or_copying_project_content(self):
+        source = self.project_data()
+        preset = build_appearance_preset("Documentary dark", source)
+        target = {
+            "name": "target-project",
+            "chart": {
+                "title": "Keep this title",
+                "output_file": "output/target.mp4",
+                "fps": 24,
+                "bar_shape": "rectangle",
+            },
+            "selection": {"top_n": 12, "aggregate_other": False},
+            "dataset": {"name_column": "country"},
+            "categories": {"Mexico": {"color": "#00FF00"}},
+        }
+        original = copy.deepcopy(target)
+
+        applied = apply_appearance_preset(target, preset)
+
+        self.assertEqual(target, original)
+        self.assertEqual(applied["name"], "target-project")
+        self.assertEqual(applied["chart"]["title"], "Keep this title")
+        self.assertEqual(applied["chart"]["output_file"], "output/target.mp4")
+        self.assertEqual(applied["chart"]["fps"], 24)
+        self.assertEqual(applied["chart"]["bar_shape"], "capsule")
+        self.assertEqual(applied["chart"]["title_font_size"], 44)
+        self.assertEqual(applied["selection"], original["selection"])
+        self.assertEqual(applied["dataset"], original["dataset"])
+        self.assertEqual(applied["categories"], original["categories"])
+
+    def test_catalog_keeps_valid_presets_and_reports_invalid_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            preset = build_appearance_preset("Valid preset", self.project_data())
+            save_appearance_preset(preset, directory)
+            (directory / "broken.json").write_text("{broken", encoding="utf-8")
+
+            catalog = load_appearance_preset_catalog(directory)
+
+            self.assertEqual(
+                tuple(item.name for item in catalog.presets),
+                ("Valid preset",),
+            )
+            self.assertEqual(len(catalog.errors), 1)
+            self.assertIn("Invalid JSON", catalog.errors[0])
+
+    def test_rejects_unknown_missing_and_invalid_visual_fields(self):
+        preset = build_appearance_preset("Strict preset", self.project_data())
+        cases = []
+
+        unknown = preset.to_dict()
+        unknown["bars"]["top_n"] = 8
+        cases.append(unknown)
+
+        missing = preset.to_dict()
+        del missing["canvas"]["layout_preset"]
+        cases.append(missing)
+
+        invalid = preset.to_dict()
+        invalid["bars"]["bar_shape"] = "triangle"
+        cases.append(invalid)
+
+        future = preset.to_dict()
+        future["schema_version"] = 999
+        cases.append(future)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for index, data in enumerate(cases):
+                with self.subTest(index=index):
+                    path = Path(temp_dir) / f"invalid_{index}.json"
+                    path.write_text(json.dumps(data), encoding="utf-8")
+                    with self.assertRaises(AppearancePresetError):
+                        load_appearance_preset(path)
+
+    def test_deletes_only_stored_preset_from_its_library(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir) / "appearance"
+            preset = build_appearance_preset("Disposable", self.project_data())
+            stored = save_appearance_preset(preset, directory)
+
+            delete_appearance_preset(stored, directory)
+
+            self.assertFalse(stored.path.exists())
+            with self.assertRaises(AppearancePresetError):
+                delete_appearance_preset(stored, directory)
+
+
+if __name__ == "__main__":
+    unittest.main()

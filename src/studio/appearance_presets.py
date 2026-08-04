@@ -1,0 +1,385 @@
+import copy
+import json
+import re
+import unicodedata
+from dataclasses import dataclass
+from pathlib import Path
+
+from config.project_file_loader import (
+    ProjectFileError,
+    load_project_data as load_project_config,
+)
+from studio.project_builder import BAR_STYLE_FIELDS
+from studio.project_storage import atomic_write_json
+
+
+APPEARANCE_PRESET_SCHEMA_VERSION = 1
+CANVAS_APPEARANCE_FIELDS = (
+    "layout_preset",
+    "theme",
+    "typography_preset",
+    "background_mode",
+    "background_color_override",
+    "background_image_path",
+    "background_image_fit",
+    "max_visible_bars",
+    "title_font_family",
+    "subtitle_font_family",
+    "label_font_family",
+    "value_font_family",
+    "time_label_font_family",
+    "source_font_family",
+    "rank_label_font_family",
+    "title_text_color",
+    "subtitle_text_color",
+    "label_text_color",
+    "value_text_color",
+    "time_label_text_color",
+    "source_text_color",
+    "rank_label_text_color",
+    "title_font_size",
+    "subtitle_font_size",
+    "label_font_size",
+    "value_font_size",
+    "time_label_font_size",
+    "source_font_size",
+    "rank_label_font_size",
+    "title_enabled",
+    "subtitle_enabled",
+    "time_label_enabled",
+    "source_label_enabled",
+    "rank_labels_enabled",
+    "category_labels_enabled",
+    "value_labels_enabled",
+    "title_x",
+    "title_y",
+    "subtitle_x",
+    "subtitle_y",
+    "time_label_x",
+    "time_label_y",
+    "source_x",
+    "source_y",
+    "label_min_x",
+    "left_margin",
+    "rank_label_gap",
+)
+BAR_APPEARANCE_FIELDS = (
+    "value_format",
+    *BAR_STYLE_FIELDS,
+)
+APPEARANCE_CHART_FIELDS = (
+    *CANVAS_APPEARANCE_FIELDS,
+    *BAR_APPEARANCE_FIELDS,
+)
+_ROOT_FIELDS = {"schema_version", "name", "canvas", "bars"}
+_MAX_NAME_LENGTH = 80
+
+
+class AppearancePresetError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class AppearancePreset:
+    name: str
+    canvas: dict
+    bars: dict
+    path: Path | None = None
+
+    @property
+    def chart_values(self):
+        return {
+            **copy.deepcopy(self.canvas),
+            **copy.deepcopy(self.bars),
+        }
+
+    def to_dict(self):
+        return {
+            "schema_version": APPEARANCE_PRESET_SCHEMA_VERSION,
+            "name": self.name,
+            "canvas": copy.deepcopy(self.canvas),
+            "bars": copy.deepcopy(self.bars),
+        }
+
+
+@dataclass(frozen=True)
+class AppearancePresetCatalog:
+    presets: tuple[AppearancePreset, ...]
+    errors: tuple[str, ...]
+
+
+def build_appearance_preset(name, project_data):
+    name = _validated_name(name)
+
+    if not isinstance(project_data, dict):
+        raise AppearancePresetError("Project data must be an object.")
+
+    try:
+        preset = load_project_config(project_data, default_name=name)
+    except ProjectFileError as exc:
+        raise AppearancePresetError(
+            f"The current project cannot become an appearance preset: {exc}"
+        ) from exc
+
+    chart_config = preset.chart_config
+    raw_chart = project_data.get("chart")
+    raw_chart = raw_chart if isinstance(raw_chart, dict) else {}
+
+    def current_value(field):
+        if field == "theme":
+            return chart_config.theme.name
+        if field == "value_format":
+            return raw_chart.get("value_format", "decimal")
+        if field == "max_visible_bars":
+            return (
+                8
+                if chart_config.max_visible_bars is None
+                else chart_config.max_visible_bars
+            )
+        return getattr(chart_config, field)
+
+    candidate = AppearancePreset(
+        name=name,
+        canvas={
+            field: copy.deepcopy(current_value(field))
+            for field in CANVAS_APPEARANCE_FIELDS
+        },
+        bars={
+            field: copy.deepcopy(current_value(field))
+            for field in BAR_APPEARANCE_FIELDS
+        },
+    )
+    return _validated_preset(candidate.to_dict())
+
+
+def apply_appearance_preset(project_data, preset):
+    if not isinstance(project_data, dict):
+        raise AppearancePresetError("Project data must be an object.")
+    if not isinstance(preset, AppearancePreset):
+        raise AppearancePresetError("Appearance preset is invalid.")
+
+    updated = copy.deepcopy(project_data)
+    chart = updated.setdefault("chart", {})
+
+    if not isinstance(chart, dict):
+        raise AppearancePresetError("Project section 'chart' must be an object.")
+
+    chart.update(preset.chart_values)
+    return updated
+
+
+def load_appearance_preset(path):
+    path = Path(path)
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise AppearancePresetError(
+            f"Appearance preset not found: {path}"
+        ) from exc
+    except OSError as exc:
+        raise AppearancePresetError(
+            f"Could not read appearance preset: {path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise AppearancePresetError(
+            f"Invalid JSON in appearance preset '{path.name}': {exc.msg}"
+        ) from exc
+
+    preset = _validated_preset(data)
+    return AppearancePreset(
+        name=preset.name,
+        canvas=preset.canvas,
+        bars=preset.bars,
+        path=path,
+    )
+
+
+def load_appearance_preset_catalog(directory):
+    directory = Path(directory)
+
+    if not directory.exists():
+        return AppearancePresetCatalog((), ())
+    if not directory.is_dir():
+        return AppearancePresetCatalog(
+            (),
+            (f"Appearance preset path is not a directory: {directory}",),
+        )
+
+    presets = []
+    errors = []
+
+    for path in sorted(directory.glob("*.json"), key=lambda item: item.name.casefold()):
+        try:
+            presets.append(load_appearance_preset(path))
+        except AppearancePresetError as exc:
+            errors.append(str(exc))
+
+    presets.sort(key=lambda preset: preset.name.casefold())
+    return AppearancePresetCatalog(tuple(presets), tuple(errors))
+
+
+def save_appearance_preset(preset, directory, *, overwrite=False):
+    if not isinstance(preset, AppearancePreset):
+        raise AppearancePresetError("Appearance preset is invalid.")
+
+    preset = _validated_preset(preset.to_dict())
+    directory = Path(directory)
+    path = directory / f"{appearance_preset_key(preset.name)}.json"
+
+    if path.exists() and not overwrite:
+        raise AppearancePresetError(
+            f"Appearance preset '{preset.name}' already exists."
+        )
+
+    try:
+        atomic_write_json(preset.to_dict(), path)
+    except OSError as exc:
+        raise AppearancePresetError(
+            f"Could not save appearance preset '{preset.name}': {exc}"
+        ) from exc
+
+    return AppearancePreset(
+        name=preset.name,
+        canvas=preset.canvas,
+        bars=preset.bars,
+        path=path,
+    )
+
+
+def delete_appearance_preset(preset, directory):
+    if not isinstance(preset, AppearancePreset) or preset.path is None:
+        raise AppearancePresetError("Appearance preset is not stored on disk.")
+
+    directory = Path(directory).resolve()
+    path = preset.path.resolve()
+
+    if path.parent != directory or path.suffix.lower() != ".json":
+        raise AppearancePresetError("Appearance preset path is outside its library.")
+
+    try:
+        path.unlink()
+    except FileNotFoundError as exc:
+        raise AppearancePresetError(
+            f"Appearance preset not found: {preset.name}"
+        ) from exc
+    except OSError as exc:
+        raise AppearancePresetError(
+            f"Could not delete appearance preset '{preset.name}': {exc}"
+        ) from exc
+
+
+def appearance_preset_key(name):
+    name = _validated_name(name)
+    normalized = unicodedata.normalize("NFKD", name)
+    without_accents = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+    key = re.sub(r"[^a-z0-9]+", "_", without_accents.casefold()).strip("_")
+
+    if not key:
+        raise AppearancePresetError(
+            "Appearance preset name must contain a letter or number."
+        )
+
+    return key
+
+
+def _validated_preset(data):
+    if not isinstance(data, dict):
+        raise AppearancePresetError("Appearance preset root must be an object.")
+
+    unknown = set(data) - _ROOT_FIELDS
+    missing = _ROOT_FIELDS - set(data)
+
+    if unknown:
+        raise AppearancePresetError(
+            "Unknown appearance preset fields: " + ", ".join(sorted(unknown))
+        )
+    if missing:
+        raise AppearancePresetError(
+            "Missing appearance preset fields: " + ", ".join(sorted(missing))
+        )
+    if data["schema_version"] != APPEARANCE_PRESET_SCHEMA_VERSION:
+        raise AppearancePresetError(
+            "Unsupported appearance preset schema version: "
+            f"{data['schema_version']}"
+        )
+
+    name = _validated_name(data["name"])
+    canvas = _validated_section(
+        data["canvas"],
+        expected_fields=CANVAS_APPEARANCE_FIELDS,
+        section_name="canvas",
+    )
+    bars = _validated_section(
+        data["bars"],
+        expected_fields=BAR_APPEARANCE_FIELDS,
+        section_name="bars",
+    )
+
+    try:
+        load_project_config(
+            {
+                "name": name,
+                "chart": {**canvas, **bars},
+            },
+            default_name=name,
+        )
+    except ProjectFileError as exc:
+        raise AppearancePresetError(
+            f"Invalid appearance preset '{name}': {exc}"
+        ) from exc
+
+    return AppearancePreset(
+        name=name,
+        canvas=canvas,
+        bars=bars,
+    )
+
+
+def _validated_section(data, *, expected_fields, section_name):
+    if not isinstance(data, dict):
+        raise AppearancePresetError(
+            f"Appearance preset section '{section_name}' must be an object."
+        )
+
+    expected = set(expected_fields)
+    unknown = set(data) - expected
+    missing = expected - set(data)
+
+    if unknown:
+        raise AppearancePresetError(
+            f"Unknown {section_name} fields: " + ", ".join(sorted(unknown))
+        )
+    if missing:
+        raise AppearancePresetError(
+            f"Missing {section_name} fields: " + ", ".join(sorted(missing))
+        )
+
+    return {
+        field: copy.deepcopy(data[field])
+        for field in expected_fields
+    }
+
+
+def _validated_name(name):
+    if not isinstance(name, str) or not name.strip():
+        raise AppearancePresetError(
+            "Appearance preset name must be a non-empty string."
+        )
+
+    name = " ".join(name.strip().split())
+
+    if len(name) > _MAX_NAME_LENGTH:
+        raise AppearancePresetError(
+            f"Appearance preset name must be {_MAX_NAME_LENGTH} characters or fewer."
+        )
+    if any(ord(character) < 32 for character in name):
+        raise AppearancePresetError(
+            "Appearance preset name cannot contain control characters."
+        )
+
+    return name

@@ -68,6 +68,14 @@ from studio.project_builder import (
     year_values,
     year_values_from_dataframe,
 )
+from studio.appearance_presets import (
+    AppearancePresetError,
+    apply_appearance_preset,
+    build_appearance_preset,
+    delete_appearance_preset,
+    load_appearance_preset_catalog,
+    save_appearance_preset,
+)
 from utils.file_size import format_file_size
 from utils.video_duration import estimate_video_duration, format_video_duration
 
@@ -109,6 +117,10 @@ LAST_BUNDLE_IMPORT_STATE = "last_project_bundle_import"
 BUNDLE_IMPORT_UPLOAD_NONCE_STATE = "project_bundle_import_upload_nonce"
 PREVIEW_SETTINGS_STATE = "project_preview_settings"
 CATEGORY_AREA_SPAN_OVERRIDE_STATE = "category_area_span_override"
+APPEARANCE_PRESET_DIR_ENV = "BARCHARTSTUDIO_APPEARANCE_PRESETS_DIR"
+APPEARANCE_PRESET_SELECTION_STATE = "appearance_preset_selection"
+APPEARANCE_PRESET_NOTICE_STATE = "appearance_preset_notice"
+APPEARANCE_PRESET_DELETE_STATE = "appearance_preset_delete"
 AUTOLOAD_PROJECT_ENV = "BARCHARTSTUDIO_AUTOLOAD_PROJECT"
 AUTOLOAD_TOKEN_ENV = "BARCHARTSTUDIO_AUTOLOAD_TOKEN"
 AUTOLOAD_TOKEN_STATE = "autoload_consumed_token"
@@ -245,6 +257,9 @@ def _initialize_studio_state():
     st.session_state.setdefault(LAST_BUNDLE_IMPORT_STATE, None)
     st.session_state.setdefault(BUNDLE_IMPORT_UPLOAD_NONCE_STATE, 0)
     st.session_state.setdefault(PREVIEW_SETTINGS_STATE, None)
+    st.session_state.setdefault(APPEARANCE_PRESET_SELECTION_STATE, None)
+    st.session_state.setdefault(APPEARANCE_PRESET_NOTICE_STATE, None)
+    st.session_state.setdefault(APPEARANCE_PRESET_DELETE_STATE, None)
     st.session_state.setdefault(AUTOLOAD_TOKEN_STATE, None)
 
 
@@ -928,6 +943,10 @@ def _project_form(
     loaded_project_path,
     dataset,
 ):
+    _appearance_presets_panel(
+        loaded_project_data=loaded_project_data,
+        loaded_project_path=loaded_project_path,
+    )
     theme, theme_settings = _resolved_theme(values)
     typography_preset, typography_settings = _resolved_typography(values)
     active_section = st.segmented_control(
@@ -1069,6 +1088,294 @@ def _project_form(
         render_settings["project_file"],
         render_settings["preview_settings"],
     )
+
+
+def _appearance_presets_panel(*, loaded_project_data, loaded_project_path):
+    directory = _appearance_preset_directory()
+    catalog = load_appearance_preset_catalog(directory)
+    presets_by_name = {
+        preset.name.casefold(): preset
+        for preset in catalog.presets
+    }
+    options = tuple(preset.name for preset in catalog.presets)
+    selection_key = _widget_key("appearance_preset")
+    selection_override = st.session_state.pop(
+        APPEARANCE_PRESET_SELECTION_STATE,
+        None,
+    )
+
+    if selection_override is not None:
+        st.session_state.pop(selection_key, None)
+
+    selected_index = (
+        options.index(selection_override)
+        if selection_override in options
+        else None
+    )
+
+    with st.expander(
+        "Appearance presets",
+        icon=":material/style:",
+    ):
+        st.caption(
+            "Reuse Canvas and Bars styling without copying project data, "
+            "categories, animation, or export paths. Applying a preset changes "
+            "the current draft; Save project remains explicit."
+        )
+
+        notice = st.session_state.pop(APPEARANCE_PRESET_NOTICE_STATE, None)
+        if isinstance(notice, tuple) and len(notice) == 2:
+            level, message = notice
+            if level == "success":
+                st.success(message, icon=":material/check_circle:")
+            else:
+                st.info(message, icon=":material/info:")
+
+        for error in catalog.errors:
+            st.warning(error, icon=":material/warning:")
+
+        selected_name = st.selectbox(
+            "Saved appearance preset",
+            options=options,
+            index=selected_index,
+            placeholder="Select a saved preset",
+            key=selection_key,
+            help=(
+                "Choose an existing preset to apply, update, or delete."
+            ),
+        )
+        selected_name = str(selected_name or "").strip()
+        selected_preset = presets_by_name.get(selected_name.casefold())
+        current_project_data, current_project_file = _appearance_preset_target(
+            loaded_project_data,
+            loaded_project_path,
+        )
+
+        with st.container(
+            horizontal=True,
+            vertical_alignment="bottom",
+            gap="small",
+        ):
+            apply_clicked = st.button(
+                "Apply preset",
+                icon=":material/check:",
+                type="primary",
+                disabled=(
+                    selected_preset is None
+                    or current_project_data is None
+                ),
+                key=_widget_key("apply_appearance_preset"),
+            )
+            update_clicked = st.button(
+                "Update preset",
+                icon=":material/save:",
+                disabled=(
+                    selected_preset is None
+                    or current_project_data is None
+                ),
+                key=_widget_key("update_appearance_preset"),
+            )
+            delete_clicked = st.button(
+                "Delete preset",
+                icon=":material/delete:",
+                disabled=selected_preset is None,
+                key=_widget_key("delete_appearance_preset"),
+            )
+
+        st.caption("Save the current Canvas and Bars appearance as a new preset.")
+        new_preset_name = st.text_input(
+            "New preset name",
+            placeholder="For example: Dark documentary",
+            key=_widget_key("new_appearance_preset_name"),
+        ).strip()
+        new_name_conflict = presets_by_name.get(new_preset_name.casefold())
+        save_new_clicked = st.button(
+            "Save new preset",
+            icon=":material/add:",
+            disabled=(
+                not new_preset_name
+                or new_name_conflict is not None
+                or current_project_data is None
+            ),
+            key=_widget_key("save_new_appearance_preset"),
+            help=(
+                "Choose a different name if the preset already exists; use "
+                "Update preset to replace a selected preset."
+            ),
+        )
+        if new_preset_name and new_name_conflict is not None:
+            st.caption(
+                ":orange-badge[Name already exists] Select it above and use "
+                "Update preset."
+            )
+
+        if apply_clicked:
+            try:
+                updated_project = apply_appearance_preset(
+                    current_project_data,
+                    selected_preset,
+                )
+            except AppearancePresetError as exc:
+                st.error(str(exc), icon=":material/error:")
+            else:
+                st.session_state[CURRENT_DRAFT_STATE] = {
+                    "project_data": updated_project,
+                    "project_file": current_project_file,
+                }
+                _sync_appearance_asset_overrides(selected_preset)
+                st.session_state[APPEARANCE_PRESET_SELECTION_STATE] = (
+                    selected_preset.name
+                )
+                st.session_state[APPEARANCE_PRESET_NOTICE_STATE] = (
+                    "success",
+                    f"Applied appearance preset '{selected_preset.name}'.",
+                )
+                st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+                _refresh_form()
+                st.rerun()
+
+        if update_clicked:
+            try:
+                preset = build_appearance_preset(
+                    selected_preset.name,
+                    current_project_data,
+                )
+                stored = save_appearance_preset(
+                    preset,
+                    directory,
+                    overwrite=True,
+                )
+            except AppearancePresetError as exc:
+                st.error(str(exc), icon=":material/error:")
+            else:
+                st.session_state[APPEARANCE_PRESET_SELECTION_STATE] = stored.name
+                st.session_state[APPEARANCE_PRESET_NOTICE_STATE] = (
+                    "success",
+                    f"Updated appearance preset '{stored.name}'.",
+                )
+                st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+                _refresh_form()
+                st.rerun()
+
+        if save_new_clicked:
+            try:
+                preset = build_appearance_preset(
+                    new_preset_name,
+                    current_project_data,
+                )
+                stored = save_appearance_preset(
+                    preset,
+                    directory,
+                    overwrite=False,
+                )
+            except AppearancePresetError as exc:
+                st.error(str(exc), icon=":material/error:")
+            else:
+                st.session_state[APPEARANCE_PRESET_SELECTION_STATE] = stored.name
+                st.session_state[APPEARANCE_PRESET_NOTICE_STATE] = (
+                    "success",
+                    f"Saved appearance preset '{stored.name}'.",
+                )
+                st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+                _refresh_form()
+                st.rerun()
+
+        if delete_clicked:
+            st.session_state[APPEARANCE_PRESET_DELETE_STATE] = (
+                selected_preset.name
+            )
+            st.rerun()
+
+        pending_delete = st.session_state.get(APPEARANCE_PRESET_DELETE_STATE)
+        if pending_delete and selected_preset is None:
+            st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+            pending_delete = None
+        if pending_delete and selected_preset is not None:
+            if pending_delete.casefold() != selected_preset.name.casefold():
+                st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+            else:
+                st.warning(
+                    f"Delete appearance preset '{selected_preset.name}'?",
+                    icon=":material/delete_forever:",
+                )
+                with st.container(horizontal=True, gap="small"):
+                    confirm_delete = st.button(
+                        "Confirm deletion",
+                        icon=":material/delete_forever:",
+                        type="primary",
+                        key=_widget_key("confirm_delete_appearance_preset"),
+                    )
+                    cancel_delete = st.button(
+                        "Cancel",
+                        key=_widget_key("cancel_delete_appearance_preset"),
+                    )
+
+                if confirm_delete:
+                    try:
+                        delete_appearance_preset(selected_preset, directory)
+                    except AppearancePresetError as exc:
+                        st.error(str(exc), icon=":material/error:")
+                    else:
+                        st.session_state[APPEARANCE_PRESET_SELECTION_STATE] = ""
+                        st.session_state[APPEARANCE_PRESET_NOTICE_STATE] = (
+                            "info",
+                            f"Deleted appearance preset '{selected_preset.name}'.",
+                        )
+                        st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+                        _refresh_form()
+                        st.rerun()
+
+                if cancel_delete:
+                    st.session_state[APPEARANCE_PRESET_DELETE_STATE] = None
+                    st.rerun()
+
+
+def _appearance_preset_directory():
+    configured = str(os.environ.get(APPEARANCE_PRESET_DIR_ENV, "")).strip()
+    directory = (
+        Path(configured)
+        if configured
+        else ROOT_DIR / "presets" / "appearance"
+    )
+
+    if not directory.is_absolute():
+        directory = ROOT_DIR / directory
+
+    return directory
+
+
+def _appearance_preset_target(loaded_project_data, loaded_project_path):
+    current_draft = st.session_state.get(CURRENT_DRAFT_STATE)
+    if isinstance(current_draft, dict) and isinstance(
+        current_draft.get("project_data"),
+        dict,
+    ):
+        return (
+            copy.deepcopy(current_draft["project_data"]),
+            current_draft.get("project_file") or loaded_project_path,
+        )
+
+    if isinstance(loaded_project_data, dict):
+        return copy.deepcopy(loaded_project_data), loaded_project_path
+
+    return None, loaded_project_path
+
+
+def _sync_appearance_asset_overrides(preset):
+    background_path = preset.canvas.get("background_image_path")
+    texture_path = preset.bars.get("bar_texture_custom_image")
+
+    if background_path:
+        st.session_state[BACKGROUND_IMAGE_PATH_STATE] = background_path
+    else:
+        st.session_state.pop(BACKGROUND_IMAGE_PATH_STATE, None)
+
+    if texture_path:
+        st.session_state[CUSTOM_TEXTURE_PATH_STATE] = texture_path
+    else:
+        st.session_state.pop(CUSTOM_TEXTURE_PATH_STATE, None)
+
+    st.session_state.pop(CATEGORY_AREA_SPAN_OVERRIDE_STATE, None)
 
 
 def _resolved_theme(values):

@@ -33,6 +33,8 @@ data/database/*.db
 /backgrounds/
 /logos/
 /logos_secondary/
+/presets/appearance/*.json
+!/presets/appearance/.gitkeep
 
 # Local automotive datasets and editable project variants
 /data/datasets/automotive_global_sales*.csv

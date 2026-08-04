@@ -160,6 +160,18 @@ The project is a usable MVP:
   `ProjectDraft.project_data` through the shared preview pipeline without
   writing the project JSON. Data and Export changes remain manual. Disabling
   the toggle pauses work; enabling it renders one pending visual change.
+- Project Studio has a collapsed `Appearance presets` library for reusing the
+  combined Canvas and Bars appearance across projects. Presets are independent
+  versioned JSON files under `presets/appearance/`; save-new, apply, update,
+  and confirmed-delete actions operate on that library. Applying changes only
+  `CURRENT_DRAFT_STATE`, refreshes visual widgets, and participates in Auto
+  preview without saving the destination project JSON.
+- The `appearance-preset-v1` contract includes Canvas layout/background,
+  typography, text visibility/placement, value formatting, and all fields in
+  `BAR_STYLE_FIELDS`. It deliberately excludes title/source content, datasets,
+  selection/Top N, categories and their assets, animation, render/export
+  settings, and output paths. Personal preset JSON files are Git-ignored; the
+  tracked `.gitkeep` preserves the library directory.
 - The latest preview path and its canonical, render, and visual fingerprints
   live in session state. The preview therefore survives normal widget reruns
   and is marked stale only when a render-relevant change remains outside the
@@ -565,6 +577,11 @@ Current configuration layers:
 
 - Internal presets live in `src/config/project_preset.py`.
 - External reusable project files live in `projects/*.json`.
+- Reusable Canvas + Bars appearance presets live in
+  `presets/appearance/*.json` and are owned by
+  `src/studio/appearance_presets.py`. Keep their schema independent from the
+  project schema, validate them through the normal project loader, and apply
+  them only to the destination project's visual chart fields.
 - Project schema ownership lives in `src/config/project_schema.py`. Every new
   schema version adds one sequential migration from the immediately preceding
   version; migrations deep-copy their input and never mutate caller data.
@@ -815,6 +832,13 @@ in verified, published checkpoints:
     width/position changes across scroll, resize, and Streamlit reruns. Below
     900 px it restores normal flow so the card does not obstruct stacked mobile
     controls.
+
+16. **Reusable appearance presets - completed.** Project Studio saves the
+    current Canvas and Bars combination as strict local
+    `appearance-preset-v1` JSON, then applies, updates, or deletes it from a
+    shared library. Applying a preset preserves destination data, content,
+    categories, motion, and export settings, remains an unsaved draft change,
+    and refreshes the automatic preview.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active
