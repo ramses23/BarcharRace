@@ -25,7 +25,15 @@ class RenderPreflightTest(unittest.TestCase):
         self.assertTrue(result.ready)
         self.assertEqual(
             {check.key for check in result.checks},
-            {"project", "data_source", "dataset", "periods", "ffmpeg", "output"},
+            {
+                "project",
+                "data_source",
+                "dataset",
+                "periods",
+                "fun_facts",
+                "ffmpeg",
+                "output",
+            },
         )
 
     def test_rejects_missing_columns_and_ffmpeg(self):

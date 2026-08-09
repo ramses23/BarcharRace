@@ -14,11 +14,19 @@ from config.value_format_config import list_value_formats
 from pipeline.render_job import RenderJob
 
 
-def run(config=None, data_source_config=None, dataset_config=None):
+def run(
+    config=None,
+    data_source_config=None,
+    dataset_config=None,
+    fun_fact_config=None,
+    project_root=None,
+):
     return RenderJob(
         config=config,
         data_source_config=data_source_config,
         dataset_config=dataset_config,
+        fun_fact_config=fun_fact_config,
+        project_root=project_root,
     ).run()
 
 
@@ -34,6 +42,7 @@ def run_project_preset(preset):
         config=preset.chart_config,
         data_source_config=preset.data_source_config,
         dataset_config=preset.dataset_config,
+        fun_fact_config=preset.fun_fact_config,
     )
 
 

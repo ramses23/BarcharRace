@@ -9,6 +9,8 @@ from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
 from studio.package_paths import DEFAULT_PROJECT_ROOT, resolve_project_path
+from studio.fun_fact_layout import apply_fun_fact_layout
+from studio.fun_fact_loader import load_fun_fact_scheduler
 from validators.dataset_validator import DatasetValidator
 
 
@@ -21,6 +23,7 @@ def render_project_preview(
     *,
     root_dir=None,
     project_data=None,
+    force_fun_fact_id=None,
 ):
     root_path = _project_root(root_dir)
     if project_data is None:
@@ -52,6 +55,12 @@ def render_project_preview(
     if not years:
         raise ValueError("Preview requires at least one time period.")
 
+    fun_fact_scheduler = load_fun_fact_scheduler(
+        preset.fun_fact_config,
+        timeline,
+        project_root=root_path,
+    )
+    chart_config = apply_fun_fact_layout(chart_config, preset.fun_fact_config)
     selector = BarSelector(config=chart_config.selection)
     layout = LayoutEngine(config=chart_config)
     preview_mode = _preview_mode(preview_mode, years)
@@ -69,13 +78,35 @@ def render_project_preview(
         )
         progress = _clamped_progress(transition_progress)
         display_year = year_a + (year_b - year_a) * progress
-        subtitle = f"{year_a} -> {year_b}"
-        time_label = f"{display_year:.0f}"
+        subtitle = (
+            f"{timeline.get_time_label(year_a)} -> "
+            f"{timeline.get_time_label(year_b)}"
+        )
+        time_label = timeline.get_time_label(display_year)
+        active_fact = (
+            fun_fact_scheduler.active_at(
+                year_a,
+                year_b,
+                progress=progress,
+            )
+            if fun_fact_scheduler is not None
+            else None
+        )
     else:
         selected_year = _selected_year(year, years)
         sprites = _sprites_for_year(timeline, selector, layout, selected_year)
-        subtitle = str(selected_year)
-        time_label = str(selected_year)
+        subtitle = timeline.get_time_label(selected_year)
+        time_label = timeline.get_time_label(selected_year)
+        active_fact = (
+            fun_fact_scheduler.active_for_period(selected_year)
+            if fun_fact_scheduler is not None
+            else None
+        )
+
+    if force_fun_fact_id is not None:
+        if fun_fact_scheduler is None:
+            raise ValueError("Cannot force a preview when fun facts are disabled.")
+        active_fact = fun_fact_scheduler.force(force_fun_fact_id)
 
     scene = Scene(
         title=chart_config.title,
@@ -83,6 +114,7 @@ def render_project_preview(
         time_label=time_label,
         source_label=source_label,
         bars=sprites,
+        fun_fact=active_fact,
     )
 
     output_path = resolve_project_path(
@@ -91,7 +123,11 @@ def render_project_preview(
         required=True,
         field_name="preview output directory",
     )
-    renderer = BarRenderer(output_dir=str(output_path), config=chart_config)
+    renderer = BarRenderer(
+        output_dir=str(output_path),
+        config=chart_config,
+        fun_fact_config=preset.fun_fact_config,
+    )
 
     try:
         return renderer.render(scene, filename="preview.png")

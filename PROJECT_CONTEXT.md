@@ -71,9 +71,15 @@ The project is a usable MVP:
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
-- External project files use `schema_version`; version 1 is current.
-  Unversioned/version-0 data is migrated in memory before validation and saved
-  back as version 1. The v0 migration moves legacy `chart.animation` and
+- Fun Fact Overlay System V1 schedules one editorial `right_panel` card by
+  exact annual or display-only monthly timeline labels. It supports cached
+  headline/body/image/credit composition, EXIF-aware cover/contain images,
+  alpha fades during existing frames, scheduled and forced previews, Project
+  Studio controls, preflight, and portable bundle assets. The reserved panel
+  region is stable for the whole video and does not change frame count or FPS.
+- External project files use `schema_version`; version 2 is current.
+  Unversioned/version-0 and version-1 data are migrated in memory before
+  validation and saved back as version 2. The v0 migration moves legacy `chart.animation` and
   `chart.selection` sections to the top level and normalizes legacy logo
   positions. Future versions fail explicitly rather than silently falling back.
 - Project-specific source labels through `DataSourceConfig.source_label_override`.
@@ -155,7 +161,7 @@ The project is a usable MVP:
   visual fingerprint. `Save project` is explicit, saved/unsaved status is
   visible, and manual preview/video actions save that exact snapshot before
   invoking the shared render pipeline.
-- `Auto preview` is enabled by default and watches Canvas, Bars, applied
+- `Auto preview` is enabled by default and watches Canvas, Bars, Fun facts, applied
   category styles, and preview-frame selection. It renders the current
   `ProjectDraft.project_data` through the shared preview pipeline without
   writing the project JSON. Data and Export changes remain manual. Disabling
@@ -193,7 +199,7 @@ The project is a usable MVP:
   Latest preview is handled by an invisible CCv2 controller rather than global
   theme or layout CSS.
 - The workspace is a responsive editor/stage split. A segmented navigator for
-  `Data`, `Canvas`, `Bars`, and `Export` lives on the left and conditionally
+  `Data`, `Canvas`, `Bars`, `Fun facts`, and `Export` lives on the left and conditionally
   mounts exactly one section; never replace it with static `st.tabs`, because
   static tabs mount every panel and can expose all sections after component
   reruns. Hidden-section values are reconstructed from `CURRENT_DRAFT_STATE`,
@@ -252,8 +258,8 @@ The project is a usable MVP:
   preserves eased fades for entries/exits, and emits year-boundary frames once.
 - Project Studio shows render progress while launching a final video render.
 - Final video rendering is preceded by a structured preflight covering project
-  parsing, data loading/validation, minimum period count, FFmpeg, output path,
-  required background/texture assets, and optional logo warnings. Errors block
+  parsing, data loading/validation, minimum period count, fun fact schedules,
+  FFmpeg, output path, required background/texture/fun-fact assets, and optional logo warnings. Errors block
   launch.
 - Final renders run in an isolated worker process controlled by
   `src/ui/render_controller.py`. Progress is throttled into an atomic status
@@ -272,7 +278,7 @@ The project is a usable MVP:
   but are not copied into Streamlit's in-memory download buffer.
 - `src/studio/project_bundle.py` exports a bundle-schema-v1 `.barchart.zip`
   containing versioned project JSON, CSV/SQLite data, background, custom
-  texture, and both logo slots. Its manifest records SHA-256 and size per file.
+  texture, both logo slots, fun fact JSON, and local fact images. Its manifest records SHA-256 and size per file.
   Import validates paths, membership, checksums, compression, symlinks,
   encryption, size/file-count limits, then stages assets before atomic project
   creation. Collisions receive `_2`, `_3`, etc.; existing projects are never
@@ -451,6 +457,7 @@ Keep the pipeline clean:
 ```text
 JSON project file or ProjectPreset
     -> ChartConfig
+    -> FunFactConfig
     -> AnimationConfig
     -> ThemeConfig
     -> DataSourceConfig
@@ -459,6 +466,7 @@ JSON project file or ProjectPreset
         -> DataSourceLoader
         -> DatasetValidator
         -> Timeline
+        -> FunFactScheduler
         -> BarData
         -> BarSelector
         -> LayoutEngine
@@ -564,6 +572,7 @@ subtitle
 time_label
 source_label
 bars
+optional ActiveFunFact
 ```
 
 Avoid reintroducing overlapping models such as `BarState`. Visual animation
@@ -577,6 +586,14 @@ Current configuration layers:
 
 - Internal presets live in `src/config/project_preset.py`.
 - External reusable project files live in `projects/*.json`.
+- Timeline-bound editorial overlays use the optional top-level `fun_facts`
+  section plus an independent version-1 external JSON file. `Timeline` resolves
+  exact display labels from `DatasetConfig.time_label_column`, or `str(period)`
+  for older annual projects. V1 rejects overlapping ranges and supports one
+  cached `right_panel` overlay without adding frames or changing duration.
+  The generic engine validates, schedules, packages, and renders only supplied
+  local content; editorial selection, image discovery/download, licensing, and
+  topic-specific facts remain responsibilities of separate production packages.
 - Reusable Canvas + Bars appearance presets live in
   `presets/appearance/*.json` and are owned by
   `src/studio/appearance_presets.py`. Keep their schema independent from the
@@ -839,6 +856,13 @@ in verified, published checkpoints:
     shared library. Applying a preset preserves destination data, content,
     categories, motion, and export settings, remains an unsaved draft change,
     and refreshes the automatic preview.
+
+17. **Fun Fact Overlay System V1 - completed.** Projects can reference a
+    strict version-1 fun fact JSON, resolve annual or monthly display labels
+    through `Timeline`, reserve a stable right editorial panel, render cached
+    text/photos with fades while bars keep moving, force a selected Studio
+    preview, validate schedules/assets in preflight, and carry all referenced
+    files through portable bundles without changing video duration.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

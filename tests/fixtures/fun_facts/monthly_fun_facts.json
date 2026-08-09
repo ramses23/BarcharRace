@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "fun_facts": [
+    {
+      "id": "may_demo",
+      "start": "2010-05",
+      "end": "2010-05",
+      "headline": "MAY DEMO FACT",
+      "body": "This fixture proves that visible monthly labels drive scheduling.",
+      "layout": "right_panel",
+      "accent_color": "#3B82F6",
+      "image_fit": "cover"
+    }
+  ]
+}

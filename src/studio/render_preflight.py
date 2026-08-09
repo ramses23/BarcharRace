@@ -4,8 +4,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from config.project_file_loader import ProjectFileError, load_project_file
+from core.timeline import Timeline
 from importers.data_source_loader import DataSourceLoader
 from studio.image_validation import ImageValidationError, validate_image_file
+from studio.fun_fact_layout import FunFactLayoutError, validate_fun_fact_layout
+from studio.fun_fact_loader import FunFactFileError, load_fun_fact_scheduler
+from core.fun_fact_scheduler import FunFactScheduleError
 from studio.package_paths import (
     DEFAULT_PROJECT_ROOT,
     ProjectPathError,
@@ -49,6 +53,7 @@ class RenderPreflight:
 
 def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
     checks = []
+    timeline = None
 
     try:
         root_path = _project_root(root_dir)
@@ -95,6 +100,10 @@ def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
             checks.append(_error("dataset", "Dataset", str(exc)))
         else:
             checks.append(_ok("dataset", "Dataset", "Required columns are valid."))
+            try:
+                timeline = Timeline(validated, config=preset.dataset_config)
+            except ValueError as exc:
+                checks.append(_error("timeline", "Timeline", str(exc)))
             period_count = int(
                 validated[preset.dataset_config.year_column].nunique()
             )
@@ -115,6 +124,7 @@ def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
                     )
                 )
 
+    checks.append(_fun_fact_check(preset, timeline, root_path))
     configured_ffmpeg = (
         shutil.which("ffmpeg") if ffmpeg_path is None else ffmpeg_path
     )
@@ -149,6 +159,38 @@ def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
 
     checks.extend(_asset_checks(preset, root_path))
     return RenderPreflight(str(project_path), tuple(checks))
+
+
+def _fun_fact_check(preset, timeline, root_path):
+    config = preset.fun_fact_config
+    if not config.enabled:
+        return _ok("fun_facts", "Fun facts", "Disabled.")
+    if timeline is None:
+        return _error(
+            "fun_facts",
+            "Fun facts",
+            "The timeline must be valid before fun facts can be scheduled.",
+        )
+    try:
+        validate_fun_fact_layout(preset.chart_config, config)
+        scheduler = load_fun_fact_scheduler(
+            config,
+            timeline,
+            project_root=root_path,
+        )
+    except (
+        FunFactFileError,
+        FunFactScheduleError,
+        FunFactLayoutError,
+        ValueError,
+        OSError,
+    ) as exc:
+        return _error("fun_facts", "Fun facts", str(exc))
+    return _ok(
+        "fun_facts",
+        "Fun facts",
+        f"{len(scheduler.facts):,} scheduled fact(s).",
+    )
 
 
 def _absolute_data_source_config(config, root_path):

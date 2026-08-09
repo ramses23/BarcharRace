@@ -25,7 +25,10 @@ class ProjectSchemaTest(unittest.TestCase):
 
         self.assertTrue(migration.migrated)
         self.assertEqual(migration.original_version, 0)
-        self.assertEqual(migration.applied_migrations, ("0_to_1",))
+        self.assertEqual(
+            migration.applied_migrations,
+            ("0_to_1", "1_to_2"),
+        )
         self.assertEqual(
             migration.data["schema_version"],
             CURRENT_PROJECT_SCHEMA_VERSION,
@@ -46,13 +49,22 @@ class ProjectSchemaTest(unittest.TestCase):
         self.assertIn("animation", original["chart"])
 
     def test_current_project_is_copied_without_migration(self):
-        project = {"schema_version": 1, "name": "current"}
+        project = {"schema_version": CURRENT_PROJECT_SCHEMA_VERSION, "name": "current"}
 
         migration = migrate_project_data(project)
 
         self.assertFalse(migration.migrated)
         self.assertEqual(migration.data, project)
         self.assertIsNot(migration.data, project)
+
+    def test_migrates_v1_project_without_requiring_fun_facts(self):
+        project = {"schema_version": 1, "name": "legacy_v1"}
+
+        migration = migrate_project_data(project)
+
+        self.assertEqual(migration.applied_migrations, ("1_to_2",))
+        self.assertEqual(migration.data["schema_version"], 2)
+        self.assertNotIn("fun_facts", migration.data)
 
     def test_rejects_future_schema(self):
         with self.assertRaisesRegex(ProjectSchemaError, "newer than supported"):

@@ -13,11 +13,16 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from config.dataset_config import DatasetConfig
 from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
 from config.theme_config import get_theme
 from config.typography_config import get_typography_preset
 from config.value_format_config import list_value_formats
+from core.fun_fact_scheduler import FunFactScheduleError, FunFactScheduler
+from core.timeline import Timeline
+from studio.fun_fact_layout import DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO
+from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
 from studio.preview import render_project_preview
 from studio.project_bundle import (
     ProjectBundleError,
@@ -398,7 +403,7 @@ def _project_actions(draft):
             key=AUTO_PREVIEW_ENABLED_STATE,
             help=(
                 "Automatically update the preview after changes in Canvas, "
-                "Bars, categories, or the selected preview frame."
+                "Bars, Fun facts, categories, or the selected preview frame."
             ),
         )
         st.caption(
@@ -951,7 +956,7 @@ def _project_form(
     typography_preset, typography_settings = _resolved_typography(values)
     active_section = st.segmented_control(
         "Editor section",
-        options=("Data", "Canvas", "Bars", "Export"),
+        options=("Data", "Canvas", "Bars", "Fun facts", "Export"),
         default="Data",
         key="studio_editor_section",
         label_visibility="collapsed",
@@ -995,6 +1000,18 @@ def _project_form(
             theme_settings=theme_settings,
             background_color=canvas_settings["background"]["color"],
             dataset=dataset,
+        )
+
+    fun_fact_settings = _fun_fact_settings_from_values(
+        values,
+        layout_preset=canvas_settings["layout_preset"],
+    )
+    if active_section == "Fun facts":
+        fun_fact_settings = _fun_facts_section(
+            values=values,
+            dataset=dataset,
+            data_settings=data_settings,
+            layout_preset=canvas_settings["layout_preset"],
         )
 
     render_settings = _render_settings_from_values(
@@ -1080,6 +1097,8 @@ def _project_form(
         rank_label_gap=canvas_settings["rank_label_gap"],
         aggregate_other=bars_settings["aggregate_other"],
         category_styles=bars_settings["category_styles"],
+        fun_facts=fun_fact_settings,
+        time_label_column=data_settings.get("time_label_column"),
         base_project_data=loaded_project_data,
     )
 
@@ -1429,6 +1448,11 @@ def _data_settings_from_values(inspection, values, dataset):
         "year_column": year_column,
         "name_column": name_column,
         "value_column": value_column,
+        "time_label_column": (
+            values.get("time_label_column")
+            if values.get("time_label_column") in inspection.columns
+            else None
+        ),
         "source_label": values.get("source_label") or "",
         "available_years": available_years,
     }
@@ -1634,6 +1658,209 @@ def _bars_settings_from_values(values):
     }
 
 
+def _fun_fact_settings_from_values(values, *, layout_preset):
+    layout = get_layout_preset(layout_preset)
+    default_width = round(layout.width * DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO)
+    return {
+        "enabled": bool(values.get("fun_facts_enabled", False)),
+        "source": values.get("fun_facts_source"),
+        "layout": "right_panel",
+        "panel_width": _int_in_range_or_default(
+            values.get("fun_facts_panel_width"),
+            default_width,
+            160,
+            max(160, layout.width - 160),
+        ),
+        "panel_margin": _int_in_range_or_default(
+            values.get("fun_facts_panel_margin"),
+            32,
+            0,
+            max(0, layout.width // 4),
+        ),
+        "panel_padding": _int_in_range_or_default(
+            values.get("fun_facts_panel_padding"),
+            28,
+            8,
+            max(8, layout.width // 6),
+        ),
+        "fade_in": float(values.get("fun_facts_fade_in", 0.20)),
+        "fade_out": float(values.get("fun_facts_fade_out", 0.20)),
+    }
+
+
+def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
+    section_intro(
+        "Fun facts",
+        "Schedule reusable editorial cards against visible timeline labels.",
+        icon="lightbulb",
+    )
+    settings = _fun_fact_settings_from_values(values, layout_preset=layout_preset)
+    enabled = st.toggle(
+        "Enable fun facts",
+        value=settings["enabled"],
+        key=_widget_key("fun_facts_enabled"),
+    )
+    source = st.text_input(
+        "Source JSON",
+        value=settings["source"] or "",
+        placeholder="fun_facts/fun_facts.json",
+        help="Path relative to the project root.",
+        key=_widget_key("fun_facts_source"),
+    ).strip()
+    layout_column, width_column = st.columns(2)
+    with layout_column:
+        layout = st.selectbox(
+            "Layout",
+            ("right_panel",),
+            key=_widget_key("fun_facts_layout"),
+        )
+    with width_column:
+        panel_width = st.number_input(
+            "Panel width",
+            min_value=160,
+            value=int(settings["panel_width"]),
+            step=8,
+            key=_widget_key("fun_facts_panel_width"),
+        )
+    margin_column, padding_column = st.columns(2)
+    with margin_column:
+        panel_margin = st.number_input(
+            "Panel margin",
+            min_value=0,
+            value=int(settings["panel_margin"]),
+            step=4,
+            key=_widget_key("fun_facts_panel_margin"),
+        )
+    with padding_column:
+        panel_padding = st.number_input(
+            "Panel padding",
+            min_value=8,
+            value=int(settings["panel_padding"]),
+            step=4,
+            key=_widget_key("fun_facts_panel_padding"),
+        )
+    fade_in_column, fade_out_column = st.columns(2)
+    with fade_in_column:
+        fade_in = st.slider(
+            "Fade in",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(settings["fade_in"]),
+            step=0.05,
+            key=_widget_key("fun_facts_fade_in"),
+        )
+    with fade_out_column:
+        fade_out = st.slider(
+            "Fade out",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(settings["fade_out"]),
+            step=0.05,
+            key=_widget_key("fun_facts_fade_out"),
+        )
+    if fade_in + fade_out > 1:
+        st.error("Fade in plus fade out must be 1.0 or less.")
+
+    result = {
+        "enabled": enabled,
+        "source": source or None,
+        "layout": layout,
+        "panel_width": int(panel_width),
+        "panel_margin": int(panel_margin),
+        "panel_padding": int(panel_padding),
+        "fade_in": float(fade_in),
+        "fade_out": float(fade_out),
+    }
+    if not source:
+        st.info("Choose a version-1 fun fact JSON file to validate and preview it.")
+        return result
+
+    try:
+        collection = load_fun_fact_collection(source, project_root=ROOT_DIR)
+        timeline = Timeline(
+            dataset,
+            config=DatasetConfig(
+                year_column=data_settings["year_column"],
+                name_column=data_settings["name_column"],
+                value_column=data_settings["value_column"],
+                time_label_column=data_settings.get("time_label_column"),
+            ),
+        )
+        scheduler = FunFactScheduler(
+            collection,
+            timeline,
+            fade_in=fade_in,
+            fade_out=fade_out,
+        )
+    except (FunFactFileError, FunFactScheduleError, ValueError, OSError) as exc:
+        st.error(str(exc))
+        return result
+
+    facts = collection.facts
+    first = scheduler.facts[0].fact.start if scheduler.facts else "—"
+    last = (
+        max(scheduler.facts, key=lambda item: item.end_index).fact.end
+        if scheduler.facts
+        else "—"
+    )
+    count_metric, first_metric, last_metric = st.columns(3)
+    count_metric.metric("Facts", len(facts))
+    first_metric.metric("First date", first)
+    last_metric.metric("Last date", last)
+    st.success("The fun fact file and timeline schedule are valid.")
+
+    if not facts:
+        return result
+    period_pairs = timeline.get_period_labels()
+    period_labels = tuple(label for _, label in period_pairs)
+    preview_state = st.session_state.get(PREVIEW_SETTINGS_STATE, {})
+    if not isinstance(preview_state, dict):
+        preview_state = {}
+    current_year = preview_state.get("year")
+    current_label = (
+        timeline.get_time_label(current_year)
+        if current_year is not None
+        else None
+    )
+    selected_label = st.selectbox(
+        "Preview period",
+        period_labels,
+        index=_option_index(period_labels, current_label),
+        key=_widget_key("fun_facts_preview_period"),
+    )
+    periods_by_label = {label: period for period, label in period_pairs}
+    selected_period = periods_by_label[selected_label]
+    fact_ids = tuple(fact.id for fact in facts)
+    selected_fact = st.selectbox(
+        "Active fact",
+        fact_ids,
+        key=_widget_key("fun_facts_active_fact"),
+    )
+    with st.container(horizontal=True, horizontal_alignment="left"):
+        force_preview = st.button(
+            "Preview selected fact",
+            icon=":material/preview:",
+            key=_widget_key("fun_facts_force_preview"),
+        )
+        scheduled_preview = st.button(
+            "Use timeline scheduling",
+            icon=":material/schedule:",
+            key=_widget_key("fun_facts_scheduled_preview"),
+        )
+    updated_preview = {
+        "year": selected_period,
+        "preview_mode": "year",
+        "transition_progress": 0.0,
+        "force_fun_fact_id": preview_state.get("force_fun_fact_id"),
+    }
+    if force_preview:
+        updated_preview["force_fun_fact_id"] = selected_fact
+    if scheduled_preview:
+        updated_preview["force_fun_fact_id"] = None
+    st.session_state[PREVIEW_SETTINGS_STATE] = updated_preview
+    return result
+
+
 def _render_settings_from_values(
     values,
     *,
@@ -1686,6 +1913,7 @@ def _preview_settings_from_state(years):
             "year": None,
             "preview_mode": "year",
             "transition_progress": 0.0,
+            "force_fun_fact_id": None,
         }
 
     settings = st.session_state.get(PREVIEW_SETTINGS_STATE)
@@ -1693,6 +1921,7 @@ def _preview_settings_from_state(years):
         settings = {}
     preview_mode = settings.get("preview_mode", "year")
     year = settings.get("year")
+    force_fun_fact_id = settings.get("force_fun_fact_id")
 
     if preview_mode == "transition" and len(years) > 1:
         valid_years = years[:-1]
@@ -1705,6 +1934,7 @@ def _preview_settings_from_state(years):
                 1.0,
                 max(0.0, float(settings.get("transition_progress", 0.5))),
             ),
+            "force_fun_fact_id": force_fun_fact_id,
         }
 
     if year not in years:
@@ -1713,6 +1943,7 @@ def _preview_settings_from_state(years):
         "year": year,
         "preview_mode": "year",
         "transition_progress": 0.0,
+        "force_fun_fact_id": force_fun_fact_id,
     }
 
 
@@ -1812,6 +2043,11 @@ def _data_content_section(csv_path, inspection, values, dataset):
         "year_column": year_column,
         "name_column": name_column,
         "value_column": value_column,
+        "time_label_column": (
+            values.get("time_label_column")
+            if values.get("time_label_column") in inspection.columns
+            else None
+        ),
         "source_label": source_label,
         "available_years": available_years,
     }
@@ -3340,6 +3576,7 @@ def _preview_controls(csv_path, year_column, years=None):
             "year": None,
             "preview_mode": "year",
             "transition_progress": 0.0,
+            "force_fun_fact_id": None,
         }
 
     with st.expander("Preview frame", icon=":material/preview:"):
@@ -3371,6 +3608,7 @@ def _preview_controls(csv_path, year_column, years=None):
                 "year": year,
                 "preview_mode": "transition",
                 "transition_progress": progress,
+                "force_fun_fact_id": None,
             }
 
         year = st.selectbox(
@@ -3383,6 +3621,7 @@ def _preview_controls(csv_path, year_column, years=None):
         "year": year,
         "preview_mode": "year",
         "transition_progress": 0.0,
+        "force_fun_fact_id": None,
     }
 
 
@@ -3393,6 +3632,7 @@ def _render_preview(project_file, preview_settings, *, project_data=None):
             year=preview_settings["year"],
             preview_mode=preview_settings["preview_mode"],
             transition_progress=preview_settings["transition_progress"],
+            force_fun_fact_id=preview_settings.get("force_fun_fact_id"),
             root_dir=ROOT_DIR,
             project_data=project_data,
         )

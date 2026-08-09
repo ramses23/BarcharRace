@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from config.fun_fact_config import FunFactConfig
 from config.theme_config import get_theme
 from config.value_format_config import get_value_format
 
@@ -20,6 +21,7 @@ class ProjectPreset:
     chart_config: ChartConfig
     data_source_config: DataSourceConfig
     dataset_config: DatasetConfig
+    fun_fact_config: FunFactConfig = field(default_factory=FunFactConfig)
 
 
 PRESETS = {

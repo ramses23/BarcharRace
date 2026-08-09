@@ -15,24 +15,27 @@ import numpy as np
 from matplotlib.collections import PolyCollection
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 from config.chart_config import ChartConfig
+from config.fun_fact_config import FunFactConfig
 from renderer.artists import (
     BarArtists,
     ImageCommandsArtist,
     StaticImageArtist,
 )
 from renderer.text_compositor import TextCompositorMixin
+from studio.fun_fact_layout import panel_geometry
 from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
 
 
 class BarRenderer(TextCompositorMixin):
 
-    def __init__(self, output_dir="output", config=None):
+    def __init__(self, output_dir="output", config=None, fun_fact_config=None):
         self.output_dir = output_dir
         self.config = config or ChartConfig()
+        self.fun_fact_config = fun_fact_config or FunFactConfig()
         self.logo_cache = OrderedDict()
         self._figure = None
         self._axis = None
@@ -49,6 +52,7 @@ class BarRenderer(TextCompositorMixin):
         self._text_background_artist = None
         self._text_bar_artist = None
         self._text_foreground_artist = None
+        self._fun_fact_artist = None
         self._advanced_track_collection = None
         self._advanced_shadow_collection = None
         self._advanced_glow_collection = None
@@ -64,6 +68,9 @@ class BarRenderer(TextCompositorMixin):
         self._text_sprite_cache = OrderedDict()
         self._text_font_cache = OrderedDict()
         self._text_font_path_cache = {}
+        self._fun_fact_image_cache = OrderedDict()
+        self._fun_fact_resized_image_cache = OrderedDict()
+        self._fun_fact_panel_cache = OrderedDict()
         self.draw_seconds = 0.0
         self.save_seconds = 0.0
         os.makedirs(self.output_dir, exist_ok=True)
@@ -119,6 +126,7 @@ class BarRenderer(TextCompositorMixin):
             self._text_background_artist = None
             self._text_bar_artist = None
             self._text_foreground_artist = None
+            self._fun_fact_artist = None
             self._advanced_track_collection = None
             self._advanced_shadow_collection = None
             self._advanced_glow_collection = None
@@ -135,6 +143,9 @@ class BarRenderer(TextCompositorMixin):
             self._text_sprite_cache.clear()
             self._text_font_cache.clear()
             self._text_font_path_cache.clear()
+            self._fun_fact_image_cache.clear()
+            self._fun_fact_resized_image_cache.clear()
+            self._fun_fact_panel_cache.clear()
 
     def _initialize_scene_artists(self, ax):
         self._initialize_background_artist(ax)
@@ -236,6 +247,9 @@ class BarRenderer(TextCompositorMixin):
         self._text_foreground_artist = ImageCommandsArtist(self.config.height)
         self._text_foreground_artist.set_zorder(5)
         ax.add_artist(self._text_foreground_artist)
+        self._fun_fact_artist = ImageCommandsArtist(self.config.height)
+        self._fun_fact_artist.set_zorder(6)
+        ax.add_artist(self._fun_fact_artist)
         self._scene_artists_initialized = True
 
     def _initialize_background_artist(self, ax):
@@ -348,6 +362,354 @@ class BarRenderer(TextCompositorMixin):
 
         for artists in self._bar_artists[len(scene.bars):]:
             self._set_bar_artists_visible(artists, False)
+
+        self._update_fun_fact_overlay(scene.fun_fact)
+
+    def _update_fun_fact_overlay(self, active_fact):
+        if self._fun_fact_artist is None:
+            return
+        if active_fact is None or active_fact.opacity <= 0:
+            self._fun_fact_artist.set_commands(())
+            return
+
+        left, _, panel_width = panel_geometry(self.config, self.fun_fact_config)
+        panel_top = self.fun_fact_config.panel_margin
+        panel_height = self.config.height - (self.fun_fact_config.panel_margin * 2)
+        image = self._fun_fact_panel_image(
+            active_fact.fact,
+            panel_width,
+            panel_height,
+        )
+        opacity = max(0.0, min(1.0, float(active_fact.opacity)))
+        if opacity < 0.999:
+            image = image.copy(order="C")
+            image[:, :, 3] = np.uint8(
+                np.asarray(image[:, :, 3], dtype=np.float32) * opacity
+            )
+        self._fun_fact_artist.set_commands(((image, left, panel_top),))
+
+    def _fun_fact_panel_image(self, fact, width, height):
+        cache_key = (
+            fact,
+            width,
+            height,
+            self.fun_fact_config.panel_padding,
+            self.config.background_color,
+            self.config.resolved_title_text_color,
+            self.config.resolved_subtitle_text_color,
+            self.config.resolved_source_text_color,
+            self.config.title_font_family,
+            self.config.subtitle_font_family,
+            self.config.source_font_family,
+            self.config.dpi,
+        )
+        cached = self._lru_get(self._fun_fact_panel_cache, cache_key)
+        if cached is not None:
+            return cached
+
+        padding = self.fun_fact_config.panel_padding
+        background = self._fun_fact_panel_background()
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        radius = max(12, min(28, padding))
+        draw.rounded_rectangle(
+            (0, 0, width - 1, height - 1),
+            radius=radius,
+            fill=background,
+            outline=self._rgba8(fact.accent_color or self.config.resolved_title_text_color),
+            width=max(1, round(self.config.dpi / 96)),
+        )
+
+        content_width = width - (padding * 2)
+        y = padding
+        accent = self._rgba8(fact.accent_color or self.config.resolved_title_text_color)
+        accent_height = max(4, round(self.config.dpi / 30))
+        draw.rounded_rectangle(
+            (padding, y, padding + max(48, content_width // 4), y + accent_height),
+            radius=max(2, accent_height // 2),
+            fill=accent,
+        )
+        y += accent_height + max(14, padding // 2)
+
+        headline_font = self._fun_fact_font(
+            self.config.title_font_family,
+            self.config.title_font_weight,
+            max(18, round(self.config.title_font_size * 0.78)),
+        )
+        body_font = self._fun_fact_font(
+            self.config.subtitle_font_family,
+            self.config.subtitle_font_weight,
+            max(14, self.config.subtitle_font_size),
+        )
+        credit_font = self._fun_fact_font(
+            self.config.source_font_family,
+            self.config.source_font_weight,
+            max(10, self.config.source_font_size),
+        )
+        headline_color = self._readable_fun_fact_color(
+            background,
+            self.config.resolved_title_text_color,
+        )
+        body_color = self._readable_fun_fact_color(
+            background,
+            self.config.resolved_subtitle_text_color,
+        )
+        credit_color = self._readable_fun_fact_color(
+            background,
+            self.config.resolved_source_text_color,
+            minimum_ratio=3.0,
+        )
+        headline_lines = self._wrapped_text_lines(
+            draw,
+            fact.headline,
+            headline_font,
+            content_width,
+            max_lines=4,
+        )
+        headline_spacing = max(4, round(headline_font.size * 0.15))
+        y = self._draw_wrapped_lines(
+            draw,
+            headline_lines,
+            x=padding,
+            y=y,
+            font=headline_font,
+            fill=headline_color,
+            spacing=headline_spacing,
+        )
+        y += max(12, padding // 2)
+
+        image_height = 0
+        if fact.image_path:
+            image_height = max(120, round(height * 0.34))
+        credit_height = (
+            (self._line_height(draw, credit_font) * 2) + 2
+            if fact.credit
+            else 0
+        )
+        bottom_reserved = padding + credit_height + (12 if fact.credit else 0)
+        body_bottom = height - bottom_reserved - image_height
+        if fact.image_path:
+            body_bottom -= max(14, padding // 2)
+        available_body_height = max(0, body_bottom - y)
+        body_line_height = self._line_height(draw, body_font)
+        body_spacing = max(3, round(body_font.size * 0.18))
+        max_body_lines = max(
+            0,
+            available_body_height // max(1, body_line_height + body_spacing),
+        )
+        body_lines = self._wrapped_text_lines(
+            draw,
+            fact.body,
+            body_font,
+            content_width,
+            max_lines=max_body_lines,
+        )
+        y = self._draw_wrapped_lines(
+            draw,
+            body_lines,
+            x=padding,
+            y=y,
+            font=body_font,
+            fill=body_color,
+            spacing=body_spacing,
+        )
+
+        if fact.image_path:
+            image_top = max(y + max(14, padding // 2), height - bottom_reserved - image_height)
+            image_height = max(1, min(image_height, height - bottom_reserved - image_top))
+            photo = self._prepared_fun_fact_image(
+                fact.image_path,
+                content_width,
+                image_height,
+                fact.image_fit,
+            )
+            mask = Image.new("L", photo.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle(
+                (0, 0, photo.width - 1, photo.height - 1),
+                radius=max(8, padding // 2),
+                fill=255,
+            )
+            photo = photo.copy()
+            photo.putalpha(ImageChops.multiply(photo.getchannel("A"), mask))
+            canvas.alpha_composite(photo, (padding, image_top))
+
+        if fact.credit:
+            credit_lines = self._wrapped_text_lines(
+                draw,
+                fact.credit,
+                credit_font,
+                content_width,
+                max_lines=2,
+            )
+            credit_y = height - padding - (
+                len(credit_lines) * self._line_height(draw, credit_font)
+            )
+            self._draw_wrapped_lines(
+                draw,
+                credit_lines,
+                x=padding,
+                y=max(padding, credit_y),
+                font=credit_font,
+                fill=credit_color,
+                spacing=2,
+            )
+
+        result = np.array(
+            np.asarray(canvas)[::-1],
+            dtype=np.uint8,
+            copy=True,
+            order="C",
+        )
+        self._lru_put(self._fun_fact_panel_cache, cache_key, result, limit=32)
+        return result
+
+    def _prepared_fun_fact_image(self, image_path, width, height, fit):
+        path = FilePath(image_path)
+        try:
+            stamp = path.stat().st_mtime_ns
+        except OSError:
+            stamp = None
+        cache_key = (str(path), stamp, width, height, fit)
+        cached = self._lru_get(self._fun_fact_resized_image_cache, cache_key)
+        if cached is not None:
+            return cached
+
+        image_key = (str(path), stamp)
+        image = self._lru_get(self._fun_fact_image_cache, image_key)
+        if image is None:
+            with Image.open(path) as source:
+                image = ImageOps.exif_transpose(source).convert("RGBA")
+            self._lru_put(self._fun_fact_image_cache, image_key, image, limit=32)
+        if fit == "contain":
+            resized = ImageOps.contain(
+                image,
+                (width, height),
+                method=Image.Resampling.LANCZOS,
+            )
+            background = Image.new("RGBA", (width, height), (0, 0, 0, 45))
+            background.alpha_composite(
+                resized,
+                ((width - resized.width) // 2, (height - resized.height) // 2),
+            )
+            resized = background
+        else:
+            resized = ImageOps.fit(
+                image,
+                (width, height),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5),
+            )
+        self._lru_put(
+            self._fun_fact_resized_image_cache,
+            cache_key,
+            resized,
+            limit=64,
+        )
+        return resized
+
+    def _fun_fact_font(self, family, weight, point_size):
+        path = self._text_font_path(self._font_family(family), weight)
+        pixel_size = max(1, int(round(self._font_pixel_size(point_size))))
+        return self._text_font(path, pixel_size)
+
+    @staticmethod
+    def _wrapped_text_lines(draw, text, font, max_width, *, max_lines):
+        if not text or max_lines <= 0:
+            return []
+        words = str(text).split()
+        lines = []
+        current = ""
+        for word in words:
+            candidate = word if not current else f"{current} {word}"
+            if draw.textlength(candidate, font=font) <= max_width:
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+                current = word
+            else:
+                current = word
+            if len(lines) == max_lines:
+                break
+        if current and len(lines) < max_lines:
+            lines.append(current)
+        consumed = " ".join(lines)
+        original = " ".join(words)
+        over_width = any(
+            draw.textlength(line, font=font) > max_width
+            for line in lines
+        )
+        if (consumed != original or over_width) and lines:
+            suffix = "..."
+            last = lines[-1]
+            while last and draw.textlength(last + suffix, font=font) > max_width:
+                last = last[:-1].rstrip()
+            lines[-1] = (last + suffix) if last else suffix
+        for index, line in enumerate(lines[:-1]):
+            if draw.textlength(line, font=font) <= max_width:
+                continue
+            suffix = "..."
+            while line and draw.textlength(line + suffix, font=font) > max_width:
+                line = line[:-1].rstrip()
+            lines[index] = (line + suffix) if line else suffix
+        return lines
+
+    @staticmethod
+    def _line_height(draw, font):
+        box = draw.textbbox((0, 0), "Ag", font=font)
+        return max(1, box[3] - box[1])
+
+    @classmethod
+    def _draw_wrapped_lines(cls, draw, lines, *, x, y, font, fill, spacing):
+        line_height = cls._line_height(draw, font)
+        for line in lines:
+            draw.text((x, y), line, font=font, fill=fill)
+            y += line_height + spacing
+        return y
+
+    def _fun_fact_panel_background(self):
+        base = np.asarray(mcolors.to_rgb(self.config.background_color), dtype=float)
+        luminance = float(np.dot(base, (0.2126, 0.7152, 0.0722)))
+        target = np.ones(3) if luminance < 0.5 else np.zeros(3)
+        amount = 0.09 if luminance < 0.5 else 0.06
+        mixed = base + ((target - base) * amount)
+        return tuple(int(round(value * 255)) for value in mixed) + (245,)
+
+    def _readable_fun_fact_color(self, background, preferred, *, minimum_ratio=4.5):
+        background_rgb = tuple(channel / 255 for channel in background[:3])
+        candidates = (
+            preferred,
+            self.config.resolved_title_text_color,
+            "#FFFFFF",
+            "#000000",
+        )
+        scored = []
+        for candidate in candidates:
+            candidate_rgb = mcolors.to_rgb(candidate)
+            ratio = self._contrast_ratio(background_rgb, candidate_rgb)
+            rgba = self._rgba8(candidate)
+            if ratio >= minimum_ratio:
+                return rgba
+            scored.append((ratio, rgba))
+        return max(scored, key=lambda item: item[0])[1]
+
+    @classmethod
+    def _contrast_ratio(cls, first, second):
+        first_luminance = cls._relative_luminance(first)
+        second_luminance = cls._relative_luminance(second)
+        lighter = max(first_luminance, second_luminance)
+        darker = min(first_luminance, second_luminance)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    @staticmethod
+    def _relative_luminance(color):
+        def linearize(channel):
+            if channel <= 0.04045:
+                return channel / 12.92
+            return ((channel + 0.055) / 1.055) ** 2.4
+
+        red, green, blue = (linearize(float(channel)) for channel in color)
+        return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
 
     def _set_text_artist(self, artist, text, visible):
         if artist.get_text() != text:

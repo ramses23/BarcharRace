@@ -50,6 +50,8 @@ def run_worker(project_file, root_dir, status_file, job_id):
             config=chart_config,
             data_source_config=preset.data_source_config,
             dataset_config=preset.dataset_config,
+            fun_fact_config=getattr(preset, "fun_fact_config", None),
+            project_root=root_path,
             progress_callback=callback,
         ).run()
         os.replace(temporary_output, final_output)

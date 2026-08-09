@@ -6,6 +6,7 @@ from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from config.fun_fact_config import FunFactConfig
 from config.layout_config import apply_layout_preset, get_layout_preset
 from config.project_preset import ProjectPreset, get_preset
 from config.project_schema import ProjectSchemaError, migrate_project_data
@@ -28,6 +29,7 @@ PROJECT_FILE_SECTIONS = {
     "chart",
     "data_source",
     "dataset",
+    "fun_facts",
 }
 
 
@@ -89,6 +91,12 @@ def _project_preset_from_data(data, project_path):
         dataset_config,
         data.get("categories", {}),
     )
+    fun_fact_config = _build_config(
+        base_preset.fun_fact_config,
+        data.get("fun_facts", {}),
+        "fun_facts",
+        _convert_fun_fact_value,
+    )
 
     return ProjectPreset(
         name=project_name,
@@ -100,6 +108,7 @@ def _project_preset_from_data(data, project_path):
             _convert_data_source_value,
         ),
         dataset_config=dataset_config,
+        fun_fact_config=fun_fact_config,
     )
 
 
@@ -721,6 +730,22 @@ def _convert_data_source_value(key, value):
 
 
 def _convert_dataset_value(key, value):
+    if key in ("year_column", "name_column", "value_column"):
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                f"Dataset field '{key}' must be a non-empty string."
+            )
+        return value.strip()
+
+    if key == "time_label_column":
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                "Dataset field 'time_label_column' must be null or a non-empty string."
+            )
+        return value.strip()
+
     if key in (
         "category_labels",
         "category_colors",
@@ -729,6 +754,52 @@ def _convert_dataset_value(key, value):
     ):
         return _convert_string_map(value, f"Dataset field '{key}'")
 
+    return value
+
+
+def _convert_fun_fact_value(key, value):
+    if key == "enabled":
+        if not isinstance(value, bool):
+            raise ProjectFileError("Fun facts field 'enabled' must be boolean.")
+        return value
+    if key == "source":
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                "Fun facts field 'source' must be null or a non-empty path."
+            )
+        return value.strip()
+    if key == "layout":
+        if value != "right_panel":
+            raise ProjectFileError(
+                "Fun facts field 'layout' must be 'right_panel' in version 1."
+            )
+        return value
+    if key == "panel_width":
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 160:
+            raise ProjectFileError(
+                "Fun facts field 'panel_width' must be null or at least 160."
+            )
+        return value
+    if key == "panel_margin":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError("Fun facts field 'panel_margin' must be >= 0.")
+        return value
+    if key == "panel_padding":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 8:
+            raise ProjectFileError("Fun facts field 'panel_padding' must be >= 8.")
+        return value
+    if key in ("fade_in", "fade_out"):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= value <= 1
+        ):
+            raise ProjectFileError(f"Fun facts field '{key}' must be from 0 to 1.")
+        return float(value)
     return value
 
 

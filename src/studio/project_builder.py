@@ -242,6 +242,8 @@ def build_project_data(
     motion_mode=None,
     aggregate_other=False,
     category_styles=None,
+    fun_facts=None,
+    time_label_column=None,
     base_project_data=None,
 ):
     project_data = (
@@ -414,6 +416,8 @@ def build_project_data(
             "value_column": value_column,
         }
     )
+    if time_label_column is not None:
+        dataset["time_label_column"] = time_label_column
 
     if category_styles is not None:
         category_styles = clean_category_styles(category_styles)
@@ -422,6 +426,23 @@ def build_project_data(
             project_data["categories"] = category_styles
         else:
             project_data.pop("categories", None)
+
+    if fun_facts is not None:
+        cleaned_fun_facts = {
+            key: value
+            for key, value in fun_facts.items()
+            if value is not None
+        }
+        has_existing = isinstance(project_data.get("fun_facts"), dict)
+        has_configuration = bool(
+            cleaned_fun_facts.get("enabled")
+            or cleaned_fun_facts.get("source")
+            or has_existing
+        )
+        if has_configuration:
+            project_data["fun_facts"] = cleaned_fun_facts
+        else:
+            project_data.pop("fun_facts", None)
 
     return project_data
 
@@ -444,6 +465,7 @@ def project_form_values(project_data=None):
     dataset = _section(project_data, "dataset")
     selection = _section(project_data, "selection")
     animation = _section(project_data, "animation")
+    fun_facts = _section(project_data, "fun_facts")
 
     title = chart.get("title", "Electricity by Source")
     project_name = project_data.get("name") or project_name_from_title(title)
@@ -469,6 +491,7 @@ def project_form_values(project_data=None):
         "year_column": dataset.get("year_column", "year"),
         "name_column": dataset.get("name_column", "country"),
         "value_column": dataset.get("value_column", "value"),
+        "time_label_column": dataset.get("time_label_column"),
         "layout_preset": layout_preset,
         "theme": chart.get("theme", "clean_report"),
         "background_mode": chart.get("background_mode", "color"),
@@ -545,6 +568,14 @@ def project_form_values(project_data=None):
         "frames_dir": chart.get("frames_dir", paths["frames_dir"]),
         "project_file": paths["project_file"],
         "categories": clean_category_styles(project_data.get("categories", {})),
+        "fun_facts_enabled": fun_facts.get("enabled", False),
+        "fun_facts_source": fun_facts.get("source"),
+        "fun_facts_layout": fun_facts.get("layout", "right_panel"),
+        "fun_facts_panel_width": fun_facts.get("panel_width"),
+        "fun_facts_panel_margin": fun_facts.get("panel_margin", 32),
+        "fun_facts_panel_padding": fun_facts.get("panel_padding", 28),
+        "fun_facts_fade_in": fun_facts.get("fade_in", 0.20),
+        "fun_facts_fade_out": fun_facts.get("fade_out", 0.20),
     }
 
 

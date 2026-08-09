@@ -6,6 +6,9 @@ class DatasetConfig:
     year_column: str = "year"
     name_column: str = "country"
     value_column: str = "value"
+    # Optional display-only label for a numeric period, such as YYYY-MM.
+    # The numeric year_column remains the ordering/interpolation axis.
+    time_label_column: str | None = None
     category_labels: dict[str, str] = field(default_factory=dict)
     category_colors: dict[str, str] = field(default_factory=dict)
     category_logos: dict[str, str] = field(default_factory=dict)

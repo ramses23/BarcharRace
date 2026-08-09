@@ -283,9 +283,9 @@ example and brief format.
 External project files are JSON documents. They let you create new videos
 without editing Python source files.
 
-The current project schema is version `1` and new files include
-`"schema_version": 1`. Existing unversioned files are schema `0`: they are
-migrated in memory when opened and written back as version 1 on the next save.
+The current project schema is version `2` and new files include
+`"schema_version": 2`. Existing unversioned files are schema `0`: they are
+migrated in memory when opened and written back as version 2 on the next save.
 The v0 migration moves historical `chart.animation` and `chart.selection`
 objects to their current top-level sections and normalizes legacy
 `inside`/`outside` logo positions. Files declaring a newer unsupported schema
@@ -307,7 +307,7 @@ editor displays.
 
 `Auto preview` is enabled by default. After the first visual edit, it renders
 the current draft directly from memory without writing the project JSON.
-Changes in `Canvas`, `Bars`, applied category styles, or the selected preview
+Changes in `Canvas`, `Bars`, `Fun facts`, applied category styles, or the selected preview
 frame trigger it; `Data` and `Export` changes do not. Disabling the toggle
 pauses automatic work, and enabling it again renders one pending visual update.
 The latest preview stays visible across normal widget reruns. A separate
@@ -388,7 +388,7 @@ flow, and synchronizes its width and horizontal position with the stage column.
 Below 900 px it restores the normal stacked document flow.
 
 The main workspace is split into two responsive columns. The left editor uses
-a segmented navigator for `Data`, `Canvas`, `Bars`, and `Export`, and mounts
+a segmented navigator for `Data`, `Canvas`, `Bars`, `Fun facts`, and `Export`, and mounts
 only the selected section. This prevents unrelated panels from appearing after
 a widget rerun and reduces the amount of UI rebuilt per edit. Values from
 hidden sections are reconstructed from the current in-memory draft, so moving
@@ -415,8 +415,8 @@ displayed runtime matches the generated timeline. It describes final playback
 length, not how long rendering will take.
 
 Before a final render, Project Studio runs a preflight over the saved project,
-data source, dataset columns and periods, FFmpeg, output path, background,
-custom texture, and category-logo references. Errors block the render; missing
+data source, dataset columns and periods, fun fact schedule/assets, FFmpeg,
+output path, background, custom texture, and category-logo references. Errors block the render; missing
 optional logos are warnings. A passing render starts in an isolated Python
 process, reports progress from `output/.render_jobs/`, and can be canceled from
 the UI. Cancellation terminates the worker and its FFmpeg child process.
@@ -439,7 +439,7 @@ Example:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
@@ -511,6 +511,10 @@ Example:
     "csv_path": "data/datasets/sample_dynamic.csv",
     "source_label_override": "Source: BarChartStudio sample dataset"
   },
+  "fun_facts": {
+    "enabled": false,
+    "layout": "right_panel"
+  },
   "dataset": {
     "year_column": "year",
     "name_column": "country",
@@ -531,6 +535,7 @@ Supported top-level keys:
 | `categories` | optional labels and colors keyed by raw dataset category |
 | `data_source` | `DataSourceConfig` values |
 | `dataset` | `DatasetConfig` values |
+| `fun_facts` | optional timeline-bound editorial overlay configuration |
 
 Named `theme`, `layout_preset`, `typography_preset`, and `value_format` values
 are resolved through their registries.
@@ -557,6 +562,96 @@ entry can define a display `label`, a bar `color`, a primary `logo`, an optional
 If a category has no custom color, the renderer keeps using the active theme
 palette.
 
+## Fun Fact Overlay System
+
+Fun Fact Overlay System V1 draws an editorial card inside the same PIL and
+Matplotlib render pipeline as the bar chart. Bars continue moving while the
+card fades in and out; enabling the feature does not add frames, change FPS,
+or change the estimated or rendered playback duration. V1 permits one active
+fact at a time and supports the `right_panel` layout.
+
+The engine only validates, schedules, packages, and renders facts supplied by
+the project. It does not select editorial facts, search for images, download
+assets, or depend on a particular topic. Topic-specific datasets, copy, and
+licensed local images belong to separate production packages, not to `src/`.
+
+The project references one external, versioned JSON file:
+
+```json
+"fun_facts": {
+  "enabled": true,
+  "source": "fun_facts/fun_facts.json",
+  "layout": "right_panel",
+  "panel_width": 520,
+  "panel_margin": 32,
+  "panel_padding": 28,
+  "fade_in": 0.2,
+  "fade_out": 0.2
+}
+```
+
+When `panel_width` is omitted, the panel uses 28 percent of the canvas width.
+The panel plus its margins are reserved for the entire video, including frames
+without an active fact. Bar width, outside value labels, title, subtitle,
+source, and the large time label therefore remain inside a stable data area
+instead of being covered when a card appears.
+
+The referenced `fun_facts.json` uses this independent version-1 contract:
+
+```json
+{
+  "version": 1,
+  "fun_facts": [
+    {
+      "id": "milestone_2012",
+      "start": "2012-06",
+      "end": "2012-11",
+      "headline": "A NEW MILESTONE",
+      "body": "The selected series reached a notable point in this interval.",
+      "image": "fun_facts/images/milestone.jpg",
+      "layout": "right_panel",
+      "accent_color": "#3B82F6",
+      "image_fit": "cover",
+      "credit": "Photo: Local licensed asset"
+    }
+  ]
+}
+```
+
+`id`, `start`, `end`, and `headline` are required. `body`, `image`,
+`accent_color`, and `credit` are optional. Images may be PNG, JPEG, or WebP;
+EXIF orientation is applied before a cached `cover` or `contain` resize. Paths
+in both JSON files are relative to the project root, which also makes them
+portable through production packages.
+
+Scheduling uses dataset timeline labels, not MP4 seconds. For a traditional
+annual dataset without `dataset.time_label_column`, labels fall back to
+`str(period)`, so `"start": "2012"` resolves to numeric period 2012. A monthly
+dataset can keep a numeric interpolation axis and a separate visible label:
+
+```json
+"dataset": {
+  "year_column": "period",
+  "time_label_column": "date",
+  "name_column": "brand",
+  "value_column": "value"
+}
+```
+
+For rows such as `period=2,date=2010-05`, a fact scheduled at `2010-05`
+resolves to internal period 2. Both transition previews and continuous-motion
+renders use the interpolated ordinal timeline position for fade opacity.
+Duplicate display labels, unresolved boundaries, reversed ranges, and
+overlapping facts are rejected rather than assigned ambiguous priority.
+
+Project Studio exposes `Fun facts` as its own editor section. It can enable or
+disable the system, select the JSON source, configure geometry and fades, show
+the fact count and date range, choose a preview period, force a selected fact
+for design review, or return to normal timeline scheduling. Final-render
+preflight reports the fact id, field, and resolved path for invalid JSON,
+missing images, unsupported layouts/fits, unresolved dates, overlaps, or panel
+geometry that leaves no useful chart area.
+
 ## Portable Project Bundles
 
 Project Studio can prepare a `.barchart.zip` file from the current draft. The
@@ -566,6 +661,7 @@ bundle contains:
 - the CSV or SQLite data source;
 - the selected background image and custom texture;
 - all primary and secondary category logos;
+- the fun fact JSON and every referenced local fact image;
 - a manifest with the size and SHA-256 checksum of every included file.
 
 Asset names are deduplicated and all paths inside the bundled JSON are portable.
@@ -1018,6 +1114,7 @@ Current render pipeline:
 ```text
 JSON project file or ProjectPreset
     -> ChartConfig
+    -> FunFactConfig
     -> AnimationConfig
     -> ThemeConfig
     -> DataSourceConfig
@@ -1026,6 +1123,7 @@ JSON project file or ProjectPreset
         -> DataSourceLoader
         -> DatasetValidator
         -> Timeline
+        -> FunFactScheduler
         -> BarData
         -> BarSelector
         -> LayoutEngine
@@ -1116,6 +1214,7 @@ subtitle
 time_label
 source_label
 bars
+optional ActiveFunFact
 ```
 
 ### RenderJob

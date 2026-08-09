@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 import _test_path
+from config.project_schema import CURRENT_PROJECT_SCHEMA_VERSION
 from studio.project_builder import (
     apply_category_logo_matches,
     build_project_data,
@@ -153,7 +154,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             loaded = json.loads(saved_path.read_text(encoding="utf-8"))
 
         self.assertEqual(loaded["name"], "electricity")
-        self.assertEqual(loaded["schema_version"], 1)
+        self.assertEqual(loaded["schema_version"], CURRENT_PROJECT_SCHEMA_VERSION)
         self.assertEqual(loaded["chart"]["title"], "Electricity")
         self.assertEqual(loaded["data_source"]["source_label_override"], "Source: Test")
         self.assertEqual(loaded["dataset"]["value_column"], "value")

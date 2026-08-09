@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
@@ -55,6 +55,10 @@
     "source_type": "csv",
     "csv_path": "data/datasets/sample_dynamic.csv",
     "source_label_override": "Source: BarChartStudio sample dataset"
+  },
+  "fun_facts": {
+    "enabled": false,
+    "layout": "right_panel"
   },
   "dataset": {
     "year_column": "year",

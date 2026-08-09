@@ -4,6 +4,7 @@ from time import perf_counter
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
@@ -13,6 +14,9 @@ from exporters.video_exporter import VideoExporter
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
+from studio.fun_fact_layout import apply_fun_fact_layout
+from studio.fun_fact_loader import load_fun_fact_scheduler
+from studio.package_paths import DEFAULT_PROJECT_ROOT
 from utils.frame_cleaner import clean_frame_directory
 from validators.dataset_validator import DatasetValidator
 
@@ -62,11 +66,15 @@ class RenderJob:
         config=None,
         data_source_config=None,
         dataset_config=None,
+        fun_fact_config=None,
+        project_root=None,
         progress_callback=None,
     ):
         self.config = config or ChartConfig()
         self.data_source_config = data_source_config or DataSourceConfig()
         self.dataset_config = dataset_config or DatasetConfig()
+        self.fun_fact_config = fun_fact_config or FunFactConfig()
+        self.project_root = project_root or DEFAULT_PROJECT_ROOT
         self.progress_callback = progress_callback
 
     def run(self):
@@ -101,12 +109,22 @@ class RenderJob:
         if len(years) < 2:
             raise ValueError("RenderJob requires at least two time periods.")
 
-        selector = BarSelector(config=self.config.selection)
-        layout = LayoutEngine(config=self.config)
-        motion = MotionEngine(animation_config=self.config.animation)
-        renderer = BarRenderer(output_dir=self.config.frames_dir, config=self.config)
-        exporter = VideoExporter(config=self.config)
-        stream_mode = self.config.frame_output_mode == "ffmpeg_stream"
+        fun_fact_scheduler = load_fun_fact_scheduler(
+            self.fun_fact_config,
+            timeline,
+            project_root=self.project_root,
+        )
+        chart_config = apply_fun_fact_layout(self.config, self.fun_fact_config)
+        selector = BarSelector(config=chart_config.selection)
+        layout = LayoutEngine(config=chart_config)
+        motion = MotionEngine(animation_config=chart_config.animation)
+        renderer = BarRenderer(
+            output_dir=chart_config.frames_dir,
+            config=chart_config,
+            fun_fact_config=self.fun_fact_config,
+        )
+        exporter = VideoExporter(config=chart_config)
+        stream_mode = chart_config.frame_output_mode == "ffmpeg_stream"
 
         if stream_mode:
             timings["cleanup"] = 0.0
@@ -117,8 +135,8 @@ class RenderJob:
                 timings,
                 "cleanup",
                 lambda: clean_frame_directory(
-                    self.config.frames_dir,
-                    pattern=self.config.frame_file_pattern,
+                    chart_config.frames_dir,
+                    pattern=chart_config.frame_file_pattern,
                 ),
             )
             print(f"Frames anteriores eliminados: {removed_frames}")
@@ -139,9 +157,9 @@ class RenderJob:
         transitions_rendered = 0
         total_frame_count = max(1, estimate_video_duration(
             period_count=len(years),
-            steps_per_transition=self.config.steps_per_transition,
-            fps=self.config.fps,
-            continuous_motion=self.config.animation.continuous_motion,
+            steps_per_transition=chart_config.steps_per_transition,
+            fps=chart_config.fps,
+            continuous_motion=chart_config.animation.continuous_motion,
         ).frame_count)
 
         render_started_at = perf_counter()
@@ -164,7 +182,7 @@ class RenderJob:
                 start_sprites = sprites_by_year[year_a]
                 end_sprites = sprites_by_year[year_b]
 
-                if self.config.animation.continuous_motion:
+                if chart_config.animation.continuous_motion:
                     previous_year = years[i - 1] if i > 0 else year_a
                     next_year = years[i + 2] if i + 2 < len(years) else year_b
                     include_start = i == 0
@@ -173,7 +191,7 @@ class RenderJob:
                         start_sprites,
                         end_sprites,
                         sprites_by_year[next_year],
-                        steps=self.config.steps_per_transition,
+                        steps=chart_config.steps_per_transition,
                         include_start=include_start,
                     )
                 else:
@@ -181,16 +199,16 @@ class RenderJob:
                     frames = motion.interpolate_sprites(
                         start_sprites,
                         end_sprites,
-                        steps=self.config.steps_per_transition,
+                        steps=chart_config.steps_per_transition,
                     )
 
                 for step_index, frame_sprites in enumerate(frames):
-                    if self.config.animation.continuous_motion:
+                    if chart_config.animation.continuous_motion:
                         progress = (
                             step_index
                             if include_start
                             else step_index + 1
-                        ) / self.config.steps_per_transition
+                        ) / chart_config.steps_per_transition
                     else:
                         progress = None
 
@@ -201,6 +219,8 @@ class RenderJob:
                         total_steps=len(frames),
                         bars=frame_sprites,
                         progress=progress,
+                        timeline=timeline,
+                        fun_fact_scheduler=fun_fact_scheduler,
                     )
 
                     if stream_mode:
@@ -208,7 +228,7 @@ class RenderJob:
                     else:
                         renderer.render(
                             scene,
-                            filename=self.config.frame_filename(frame_id),
+                            filename=chart_config.frame_filename(frame_id),
                         )
 
                     frame_id += 1
@@ -338,15 +358,36 @@ class RenderJob:
         total_steps,
         bars,
         progress=None,
+        timeline=None,
+        fun_fact_scheduler=None,
     ):
         if progress is None:
             progress = step_index / (total_steps - 1) if total_steps > 1 else 1
         display_year = year_a + (year_b - year_a) * progress
 
+        if timeline is None:
+            subtitle = f"{year_a} -> {year_b}"
+            time_label = f"{display_year:.0f}"
+        else:
+            subtitle = (
+                f"{timeline.get_time_label(year_a)} -> "
+                f"{timeline.get_time_label(year_b)}"
+            )
+            time_label = timeline.get_time_label(display_year)
+
+        active_fact = None
+        if fun_fact_scheduler is not None:
+            active_fact = fun_fact_scheduler.active_at(
+                year_a,
+                year_b,
+                progress=progress,
+            )
+
         return Scene(
             title=self.config.title,
-            subtitle=f"{year_a} -> {year_b}",
-            time_label=f"{display_year:.0f}",
+            subtitle=subtitle,
+            time_label=time_label,
             source_label=self.data_source_config.source_label,
             bars=bars,
+            fun_fact=active_fact,
         )

@@ -14,8 +14,11 @@ from uuid import uuid4
 
 from config.project_file_loader import load_project_file
 from config.project_schema import migrate_project_data
+from core.fun_fact_scheduler import FunFactScheduleError, FunFactScheduler
+from core.timeline import Timeline
 from importers.data_source_loader import DataSourceLoader
 from studio.image_validation import ImageValidationError, validate_image_file
+from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
 from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_storage import atomic_write_json
 from validators.dataset_validator import DatasetValidator
@@ -81,7 +84,16 @@ def build_project_bundle(project_data, *, root_dir):
     source_to_archive = {}
     archive_payloads = {}
 
+    _bundle_fun_fact_assets(
+        bundled_project,
+        root_path=root_path,
+        source_to_archive=source_to_archive,
+        archive_payloads=archive_payloads,
+    )
+
     for reference in _path_references(bundled_project):
+        if reference.field_name == "fun_facts.source":
+            continue
         raw_path = reference.container.get(reference.key)
         if not raw_path:
             continue
@@ -182,12 +194,17 @@ def import_project_bundle(bundle, *, root_dir):
         staging_project_path = staging_directory / PROJECT_PATH
         project_data = _read_staged_project_data(staging_project_path)
         preset = load_project_file(staging_project_path)
-        _validate_staged_project_dataset(
+        validated_dataset = _validate_staged_project_dataset(
             preset,
             staging_directory=staging_directory,
         )
         _validate_staged_project_images(
             project_data,
+            staging_directory=staging_directory,
+        )
+        _validate_staged_project_fun_facts(
+            preset,
+            validated_dataset=validated_dataset,
             staging_directory=staging_directory,
         )
 
@@ -198,6 +215,12 @@ def import_project_bundle(bundle, *, root_dir):
         asset_directory = import_root / slug
         project_path = root_path / "projects" / f"{slug}.json"
         imported_relative_root = Path("projects") / "imported" / slug
+        _rewrite_staged_fun_fact_references(
+            project_data,
+            staging_directory=staging_directory,
+            payload_paths=set(records),
+            imported_relative_root=imported_relative_root,
+        )
         _rewrite_project_references(
             project_data,
             payload_paths=set(records),
@@ -568,6 +591,15 @@ def _path_references(project_data):
                 True,
             )
 
+    fun_facts = project_data.get("fun_facts")
+    if isinstance(fun_facts, dict):
+        yield _PathReference(
+            fun_facts,
+            "source",
+            "assets/fun_facts",
+            "fun_facts.source",
+        )
+
 
 def _read_staged_project_data(project_path):
     try:
@@ -588,11 +620,144 @@ def _validate_staged_project_dataset(
     )
     try:
         dataframe = DataSourceLoader(data_source_config).load()
-        DatasetValidator(config=preset.dataset_config).validate(dataframe)
+        return DatasetValidator(config=preset.dataset_config).validate(dataframe)
     except (OSError, ValueError) as exc:
         raise ProjectBundleError(
             f"Bundled dataset is invalid: {exc}"
         ) from exc
+
+
+def _bundle_fun_fact_assets(
+    project_data,
+    *,
+    root_path,
+    source_to_archive,
+    archive_payloads,
+):
+    config = project_data.get("fun_facts")
+    if not isinstance(config, dict) or not config.get("source"):
+        return
+    raw_source = config["source"]
+    try:
+        collection = load_fun_fact_collection(raw_source, project_root=root_path)
+        source_path = Path(collection.source_path).resolve()
+        source_data = json.loads(source_path.read_text(encoding="utf-8"))
+    except (FunFactFileError, OSError, ValueError) as exc:
+        raise ProjectBundleError(f"Fun fact assets are invalid: {exc}") from exc
+
+    facts_by_id = {fact.id: fact for fact in collection.facts}
+    for item in source_data.get("fun_facts", []):
+        fact = facts_by_id[item["id"]]
+        if not fact.image_path:
+            continue
+        archive_path = _add_archive_file(
+            Path(fact.image_path),
+            bucket="assets/fun_facts/images",
+            source_to_archive=source_to_archive,
+            archive_payloads=archive_payloads,
+        )
+        item["image"] = archive_path
+
+    source_payload = _json_bytes(source_data)
+    source_digest = hashlib.sha256(source_payload).hexdigest()
+    source_archive_path = _archive_asset_path(
+        "assets/fun_facts",
+        source_path.name,
+        source_digest,
+        archive_payloads,
+    )
+    archive_payloads[source_archive_path] = source_payload
+    source_to_archive[str(source_path).casefold()] = source_archive_path
+    config["source"] = source_archive_path
+
+
+def _add_archive_file(
+    source_path,
+    *,
+    bucket,
+    source_to_archive,
+    archive_payloads,
+):
+    if not source_path.is_file():
+        raise ProjectBundleError(f"Referenced file was not found: {source_path}")
+    resolved_source = str(source_path.resolve()).casefold()
+    archive_path = source_to_archive.get(resolved_source)
+    if archive_path is not None:
+        return archive_path
+    payload = source_path.read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    archive_path = _archive_asset_path(
+        bucket,
+        source_path.name,
+        digest,
+        archive_payloads,
+    )
+    archive_payloads[archive_path] = payload
+    source_to_archive[resolved_source] = archive_path
+    return archive_path
+
+
+def _validate_staged_project_fun_facts(
+    preset,
+    *,
+    validated_dataset,
+    staging_directory,
+):
+    if not preset.fun_fact_config.enabled:
+        return
+    try:
+        timeline = Timeline(validated_dataset, config=preset.dataset_config)
+        collection = load_fun_fact_collection(
+            preset.fun_fact_config.source,
+            project_root=staging_directory,
+        )
+        FunFactScheduler(
+            collection,
+            timeline,
+            fade_in=preset.fun_fact_config.fade_in,
+            fade_out=preset.fun_fact_config.fade_out,
+        )
+    except (FunFactFileError, FunFactScheduleError, OSError, ValueError) as exc:
+        raise ProjectBundleError(
+            f"Bundled fun facts are invalid: {exc}"
+        ) from exc
+
+
+def _rewrite_staged_fun_fact_references(
+    project_data,
+    *,
+    staging_directory,
+    payload_paths,
+    imported_relative_root,
+):
+    config = project_data.get("fun_facts")
+    if not isinstance(config, dict) or not config.get("source"):
+        return
+    source_archive = config["source"]
+    _validate_member_name(source_archive)
+    if source_archive not in payload_paths:
+        raise ProjectBundleError(
+            f"Project references a file missing from the bundle: {source_archive}"
+        )
+    source_path = staging_directory.joinpath(*PurePosixPath(source_archive).parts)
+    try:
+        source_data = json.loads(source_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ProjectBundleError(f"Bundled fun fact JSON is invalid: {exc}") from exc
+    for item in source_data.get("fun_facts", []):
+        image_path = item.get("image")
+        if not image_path:
+            continue
+        _validate_member_name(image_path)
+        if image_path not in payload_paths:
+            raise ProjectBundleError(
+                f"Fun fact '{item.get('id', '?')}' image is missing from the bundle: "
+                f"{image_path}"
+            )
+        item["image"] = (
+            imported_relative_root / Path(PurePosixPath(image_path))
+        ).as_posix()
+    atomic_write_json(source_data, source_path)
 
 
 def _validate_staged_project_images(project_data, *, staging_directory):

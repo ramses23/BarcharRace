@@ -71,6 +71,7 @@ def preview_fingerprint(project_data, preview_settings=None):
         "data_source": project_data.get("data_source"),
         "dataset": project_data.get("dataset"),
         "animation": project_data.get("animation"),
+        "fun_facts": project_data.get("fun_facts"),
         "preview_settings": preview_settings or {},
     }
     return _payload_fingerprint(payload)
@@ -85,6 +86,7 @@ def auto_preview_fingerprint(project_data, preview_settings=None):
         "chart": chart,
         "selection": project_data.get("selection"),
         "categories": project_data.get("categories"),
+        "fun_facts": project_data.get("fun_facts"),
         "preview_settings": preview_settings or {},
     }
     return _payload_fingerprint(payload)

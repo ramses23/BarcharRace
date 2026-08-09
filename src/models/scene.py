@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from models.bar_sprite import BarSprite
+from models.fun_fact import ActiveFunFact
 
 
 @dataclass
@@ -14,3 +15,4 @@ class Scene:
     time_label: str = ""
     source_label: str = ""
     bars: list[BarSprite] = field(default_factory=list)
+    fun_fact: ActiveFunFact | None = None

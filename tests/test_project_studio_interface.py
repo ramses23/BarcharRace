@@ -53,6 +53,18 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertNotIn("apply_studio_layout_styles()", studio_source)
 
+    def test_fun_facts_section_uses_native_controls(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app_path = root_dir / "src" / "ui" / "project_studio.py"
+
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self.assertFalse(app.exception)
+        self._select_editor_section(app, "Fun facts")
+
+        self.assertIn("Enable fun facts", {control.label for control in app.toggle})
+        self.assertIn("Source JSON", {control.label for control in app.text_input})
+        self.assertIn("Panel width", {control.label for control in app.number_input})
+
     def test_appearance_presets_save_apply_and_delete_current_visuals(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"
@@ -586,7 +598,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(
             section_control.options,
-            ["Data", "Canvas", "Bars", "Export"],
+            ["Data", "Canvas", "Bars", "Fun facts", "Export"],
         )
         self.assertEqual(section_control.value, "Data")
         selectbox_labels = {selectbox.label for selectbox in app.selectbox}
