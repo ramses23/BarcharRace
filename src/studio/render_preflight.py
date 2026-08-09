@@ -15,6 +15,8 @@ from studio.package_paths import (
     ProjectPathError,
     resolve_project_path,
 )
+from studio.project_runtime import resolve_project_output_path
+from studio.workspace_paths import WorkspacePathError, assert_user_write_path
 from validators.dataset_validator import DatasetValidator
 
 
@@ -51,12 +53,24 @@ class RenderPreflight:
         }
 
 
-def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
+def run_render_preflight(
+    project_file,
+    *,
+    root_dir=None,
+    project_root=None,
+    output_root=None,
+    app_root=None,
+    ffmpeg_path=None,
+):
     checks = []
     timeline = None
 
     try:
-        root_path = _project_root(root_dir)
+        if root_dir is not None and project_root is not None:
+            raise ProjectPathError("Use project_root or root_dir, not both.")
+        root_path = _project_root(
+            project_root if project_root is not None else root_dir
+        )
         project_path = resolve_project_path(
             project_file,
             project_root=root_path,
@@ -142,13 +156,22 @@ def run_render_preflight(project_file, *, root_dir=None, ffmpeg_path=None):
         )
 
     try:
-        output_path = resolve_project_path(
+        output_path = resolve_project_output_path(
             preset.chart_config.output_file,
-            project_root=root_path,
-            required=True,
+            output_root=(
+                Path(output_root).resolve()
+                if output_root is not None
+                else root_path
+            ),
             field_name="chart.output_file",
         )
-    except ProjectPathError as exc:
+        if app_root is not None:
+            output_path = assert_user_write_path(
+                output_path,
+                app_root=app_root,
+                operation="Video render",
+            )
+    except (ProjectPathError, WorkspacePathError, OSError) as exc:
         checks.append(_error("output", "Video output", str(exc)))
     else:
         output_error = _output_error(output_path, project_path, data_source_config)

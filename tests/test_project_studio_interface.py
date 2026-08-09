@@ -13,9 +13,21 @@ from streamlit.testing.v1 import AppTest
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
     def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory(
+            prefix="barchart-studio-ui-workspace-"
+        )
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.temp_path = Path(self.temporary_directory.name).resolve()
+        self.workspace_root = self.temp_path / "workspace"
         isolated_environment = dict(os.environ)
         isolated_environment.pop("BARCHARTSTUDIO_AUTOLOAD_PROJECT", None)
         isolated_environment.pop("BARCHARTSTUDIO_AUTOLOAD_TOKEN", None)
+        isolated_environment["BARCHARTSTUDIO_WORKSPACE"] = str(
+            self.workspace_root
+        )
+        isolated_environment["BARCHARTSTUDIO_SETTINGS_FILE"] = str(
+            self.temp_path / "settings" / "settings.json"
+        )
         self.environment_patcher = mock.patch.dict(
             os.environ,
             isolated_environment,
@@ -264,8 +276,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
     def test_explicit_save_tracks_unsaved_changes(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_path = Path(temp_dir) / f"ui_save_test_{uuid4().hex}.json"
+        with tempfile.TemporaryDirectory():
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
             self._select_editor_section(app, "Export")
             project_file = next(
@@ -273,7 +284,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
                 for control in app.text_input
                 if control.label == "Project JSON"
             )
-            project_file.set_value(str(project_path))
+            project_file.set_value("project.json")
             app.run()
 
             save_project = next(
@@ -285,9 +296,15 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             app.run()
 
             self.assertFalse(app.exception)
+            project_path = (
+                Path(app.session_state["active_project_root"])
+                / "project.json"
+            )
             self.assertTrue(project_path.is_file())
-            self.assertTrue(
-                any("Saved" in caption.value for caption in app.caption)
+            self.assertTrue(project_path.is_relative_to(self.workspace_root))
+            self.assertEqual(
+                app.session_state["saved_project_draft_fingerprint"],
+                app.session_state["current_project_draft_fingerprint"],
             )
 
             self._select_editor_section(app, "Data")
@@ -458,133 +475,117 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"
         folder_name = f"ui_state_test_{uuid4().hex}"
-        uploaded_logo_path = root_dir / "logos" / folder_name / "coal.png"
-        uploaded_secondary_logo_path = (
-            root_dir / "logos_secondary" / folder_name / "coal.png"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+        title_size = next(
+            control
+            for control in app.number_input
+            if control.label == "Title size"
+        )
+        title_color = next(
+            control
+            for control in app.color_picker
+            if control.label == "Title color"
+        )
+        title_size.set_value(73)
+        title_color.set_value("#123456")
+        app.run()
+        self._select_editor_section(app, "Bars")
+
+        logo_folder_upload = next(
+            uploader
+            for uploader in app.file_uploader
+            if uploader.label == "Logo folder"
+        )
+        logo_folder_upload.set_value([
+            (
+                f"{folder_name}/Coal.png",
+                b"test-logo",
+                "image/png",
+            )
+        ])
+        app.run()
+
+        self.assertFalse(app.exception)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["title_font_size"], 73)
+        self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
+        primary_folder = next(
+            control.value
+            for control in app.text_input
+            if control.label == "Logo folder path"
+        )
+        primary_folder_path = Path(primary_folder)
+        self.assertTrue(primary_folder_path.is_absolute())
+        self.assertTrue(primary_folder_path.is_relative_to(self.workspace_root))
+        self.assertEqual(
+            primary_folder_path.parts[-3:],
+            ("assets", "logos", folder_name),
         )
 
-        try:
-            app = AppTest.from_file(str(app_path), default_timeout=30).run()
-            self._select_editor_section(app, "Canvas")
-            title_size = next(
-                control
-                for control in app.number_input
-                if control.label == "Title size"
+        apply_matches = next(
+            button
+            for button in app.button
+            if button.label == "Apply matched logos"
+        )
+        self.assertFalse(apply_matches.disabled)
+        apply_matches.click()
+        app.run()
+
+        self.assertFalse(app.exception)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["title_font_size"], 73)
+        self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
+        primary_logo = Path(project_data["categories"]["Coal"]["logo"])
+        self.assertEqual(primary_logo, primary_folder_path / "coal.png")
+
+        second_folder_upload = next(
+            uploader
+            for uploader in app.file_uploader
+            if uploader.label == "Second logo folder"
+        )
+        second_folder_upload.set_value([
+            (
+                f"{folder_name}/Coal.png",
+                b"test-second-logo",
+                "image/png",
             )
-            title_color = next(
-                control
-                for control in app.color_picker
-                if control.label == "Title color"
-            )
-            title_size.set_value(73)
-            title_color.set_value("#123456")
-            app.run()
-            self._select_editor_section(app, "Bars")
+        ])
+        app.run()
 
-            logo_folder_upload = next(
-                uploader
-                for uploader in app.file_uploader
-                if uploader.label == "Logo folder"
-            )
-            logo_folder_upload.set_value([
-                (
-                    f"{folder_name}/Coal.png",
-                    b"test-logo",
-                    "image/png",
-                )
-            ])
-            app.run()
+        self.assertFalse(app.exception)
+        secondary_folder = next(
+            control.value
+            for control in app.text_input
+            if control.label == "Second logo folder path"
+        )
+        secondary_folder_path = Path(secondary_folder)
+        self.assertTrue(secondary_folder_path.is_absolute())
+        self.assertTrue(secondary_folder_path.is_relative_to(self.workspace_root))
+        self.assertEqual(
+            secondary_folder_path.parts[-3:],
+            ("assets", "logos_secondary", folder_name),
+        )
+        apply_second_matches = next(
+            button
+            for button in app.button
+            if button.label == "Apply matched second logos"
+        )
+        self.assertFalse(apply_second_matches.disabled)
+        apply_second_matches.click()
+        app.run()
 
-            self.assertFalse(app.exception)
-            project_data = json.loads(app.json[0].value)
-            self.assertEqual(project_data["chart"]["title_font_size"], 73)
-            self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
-            self.assertEqual(
-                next(
-                    control.value
-                    for control in app.text_input
-                    if control.label == "Logo folder path"
-                ),
-                f"logos/{folder_name}",
-            )
-
-            apply_matches = next(
-                button
-                for button in app.button
-                if button.label == "Apply matched logos"
-            )
-            self.assertFalse(apply_matches.disabled)
-            apply_matches.click()
-            app.run()
-
-            self.assertFalse(app.exception)
-            project_data = json.loads(app.json[0].value)
-            self.assertEqual(project_data["chart"]["title_font_size"], 73)
-            self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
-            self.assertEqual(
-                project_data["categories"]["Coal"]["logo"],
-                f"logos/{folder_name}/coal.png",
-            )
-
-            second_folder_upload = next(
-                uploader
-                for uploader in app.file_uploader
-                if uploader.label == "Second logo folder"
-            )
-            second_folder_upload.set_value([
-                (
-                    f"{folder_name}/Coal.png",
-                    b"test-second-logo",
-                    "image/png",
-                )
-            ])
-            app.run()
-
-            self.assertFalse(app.exception)
-            self.assertEqual(
-                next(
-                    control.value
-                    for control in app.text_input
-                    if control.label == "Second logo folder path"
-                ),
-                f"logos_secondary/{folder_name}",
-            )
-            apply_second_matches = next(
-                button
-                for button in app.button
-                if button.label == "Apply matched second logos"
-            )
-            self.assertFalse(apply_second_matches.disabled)
-            apply_second_matches.click()
-            app.run()
-
-            self.assertFalse(app.exception)
-            project_data = json.loads(app.json[0].value)
-            self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
-            self.assertEqual(
-                project_data["categories"]["Coal"]["logo"],
-                f"logos/{folder_name}/coal.png",
-            )
-            self.assertEqual(
-                project_data["categories"]["Coal"]["secondary_logo"],
-                f"logos_secondary/{folder_name}/coal.png",
-            )
-        finally:
-            if uploaded_logo_path.exists():
-                uploaded_logo_path.unlink()
-
-            if uploaded_secondary_logo_path.exists():
-                uploaded_secondary_logo_path.unlink()
-
-            uploaded_logo_dir = uploaded_logo_path.parent
-
-            if uploaded_logo_dir.exists():
-                uploaded_logo_dir.rmdir()
-
-            uploaded_secondary_logo_dir = uploaded_secondary_logo_path.parent
-
-            if uploaded_secondary_logo_dir.exists():
-                uploaded_secondary_logo_dir.rmdir()
+        self.assertFalse(app.exception)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["title_text_color"], "#123456")
+        self.assertEqual(
+            Path(project_data["categories"]["Coal"]["logo"]),
+            primary_folder_path / "coal.png",
+        )
+        self.assertEqual(
+            Path(project_data["categories"]["Coal"]["secondary_logo"]),
+            secondary_folder_path / "coal.png",
+        )
 
     def test_video_duration_estimate_reacts_to_steps_and_fps(self):
         app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"

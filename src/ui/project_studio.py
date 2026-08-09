@@ -1,5 +1,6 @@
 import copy
 import os
+import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -23,6 +24,10 @@ from core.fun_fact_scheduler import FunFactScheduleError, FunFactScheduler
 from core.timeline import Timeline
 from studio.fun_fact_layout import DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO
 from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
+from studio.package_paths import (
+    ProjectPathError,
+    resolve_project_path as resolve_portable_project_path,
+)
 from studio.preview import render_project_preview
 from studio.project_bundle import (
     ProjectBundleError,
@@ -81,6 +86,21 @@ from studio.appearance_presets import (
     load_appearance_preset_catalog,
     save_appearance_preset,
 )
+from studio.workspace_paths import (
+    AppRootWriteError,
+    ProjectLocation,
+    WorkspaceLayout,
+    WorkspacePathError,
+    assert_user_write_path,
+    default_workspace_root,
+    discover_project_locations,
+    find_project_location,
+    initialize_workspace,
+    load_workspace_settings,
+    project_location_from_path,
+    safe_slug,
+    save_workspace_settings,
+)
 from utils.file_size import format_file_size
 from utils.video_duration import estimate_video_duration, format_video_duration
 
@@ -98,8 +118,8 @@ DEFAULT_CATEGORY_COLORS = (
     "#BAB0AC",
 )
 LOGO_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
-DEFAULT_LOGO_FOLDER = "logos"
-DEFAULT_SECONDARY_LOGO_FOLDER = "logos_secondary"
+DEFAULT_LOGO_FOLDER = "assets/logos"
+DEFAULT_SECONDARY_LOGO_FOLDER = "assets/logos_secondary"
 APPLIED_LOGO_MATCHES_STATE = "applied_logo_matches"
 LOGO_FOLDER_OVERRIDE_STATE = "category_logo_folder_override"
 APPLIED_SECONDARY_LOGO_MATCHES_STATE = "applied_secondary_logo_matches"
@@ -129,6 +149,12 @@ APPEARANCE_PRESET_DELETE_STATE = "appearance_preset_delete"
 AUTOLOAD_PROJECT_ENV = "BARCHARTSTUDIO_AUTOLOAD_PROJECT"
 AUTOLOAD_TOKEN_ENV = "BARCHARTSTUDIO_AUTOLOAD_TOKEN"
 AUTOLOAD_TOKEN_STATE = "autoload_consumed_token"
+WORKSPACE_PATH_INPUT_STATE = "workspace_path_input"
+WORKSPACE_NOTICE_STATE = "workspace_notice"
+LOADED_PROJECT_IDENTIFIER_STATE = "loaded_project_identifier"
+ACTIVE_PROJECT_ROOT_STATE = "active_project_root"
+ACTIVE_PROJECT_KIND_STATE = "active_project_kind"
+NEW_PROJECT_ROOT_STATE = "new_project_root"
 
 
 st.set_page_config(
@@ -149,17 +175,19 @@ st.logo(
 
 def main():
     _initialize_studio_state()
-    _autoload_requested_project()
+    layout = _current_workspace_layout()
+    _autoload_requested_project(layout)
     header_slot = st.empty()
 
     with st.sidebar:
-        _project_source_panel()
+        _workspace_panel(layout)
+        _project_source_panel(layout)
 
         loaded_project_data = st.session_state.get("loaded_project_data")
         loaded_project_path = st.session_state.get("loaded_project_path")
         values = _current_project_form_values(loaded_project_data)
 
-        csv_path = _csv_source_panel(values, loaded_project_data)
+        csv_path = _csv_source_panel(values, loaded_project_data, layout)
 
     if not csv_path:
         with header_slot.container():
@@ -169,11 +197,18 @@ def main():
 
     _refresh_new_project_form_on_csv_change(csv_path, loaded_project_data)
     values = _project_values_for_csv(values, csv_path, loaded_project_data)
+    project_root = _active_project_root(layout, csv_path=csv_path)
 
     try:
-        dataset = load_csv_dataset(csv_path)
+        resolved_csv_path = resolve_portable_project_path(
+            csv_path,
+            project_root=project_root,
+            required=True,
+            field_name="data_source.csv_path",
+        )
+        dataset = load_csv_dataset(str(resolved_csv_path))
         inspection = inspect_dataframe(dataset, path=csv_path)
-    except (OSError, ValueError, pd.errors.ParserError) as exc:
+    except (OSError, ValueError, ProjectPathError, pd.errors.ParserError) as exc:
         st.error(str(exc))
         return
 
@@ -266,9 +301,14 @@ def _initialize_studio_state():
     st.session_state.setdefault(APPEARANCE_PRESET_NOTICE_STATE, None)
     st.session_state.setdefault(APPEARANCE_PRESET_DELETE_STATE, None)
     st.session_state.setdefault(AUTOLOAD_TOKEN_STATE, None)
+    st.session_state.setdefault(WORKSPACE_NOTICE_STATE, None)
+    st.session_state.setdefault(LOADED_PROJECT_IDENTIFIER_STATE, None)
+    st.session_state.setdefault(ACTIVE_PROJECT_ROOT_STATE, None)
+    st.session_state.setdefault(ACTIVE_PROJECT_KIND_STATE, None)
+    st.session_state.setdefault(NEW_PROJECT_ROOT_STATE, None)
 
 
-def _autoload_requested_project():
+def _autoload_requested_project(layout):
     requested_project = os.environ.get(AUTOLOAD_PROJECT_ENV)
     token = os.environ.get(AUTOLOAD_TOKEN_ENV)
     if requested_project is None and token is None:
@@ -291,50 +331,17 @@ def _autoload_requested_project():
         return
 
     try:
-        selected_project = _validated_autoload_project(requested_project)
+        selected_project = _validated_autoload_project(requested_project, layout)
     except (OSError, ValueError) as exc:
         st.error(f"Auto-load request rejected: {exc}")
         return
 
-    _load_selected_project(selected_project)
+    _load_selected_project(selected_project, layout=layout)
 
 
-def _validated_autoload_project(requested_project):
-    raw_path = requested_project.strip()
-    portable_path = PurePosixPath(raw_path.replace("\\", "/"))
-    windows_path = PureWindowsPath(raw_path)
-    if (
-        portable_path.is_absolute()
-        or windows_path.is_absolute()
-        or windows_path.drive
-        or ".." in portable_path.parts
-    ):
-        raise ValueError(
-            "project path must be a portable relative path inside projects/."
-        )
-    if (
-        len(portable_path.parts) != 2
-        or portable_path.parts[0] != "projects"
-        or portable_path.suffix.lower() != ".json"
-    ):
-        raise ValueError(
-            "project path must identify a JSON file directly inside projects/."
-        )
-
-    selected_project = portable_path.as_posix()
-    if selected_project not in _project_files():
-        raise ValueError(
-            f"project is not available in the Project Studio library: "
-            f"{selected_project}"
-        )
-
-    projects_root = (ROOT_DIR / "projects").resolve()
-    project_path = (ROOT_DIR / Path(*portable_path.parts)).resolve(strict=True)
-    if not project_path.is_relative_to(projects_root) or not project_path.is_file():
-        raise ValueError(
-            "project path resolves outside the Project Studio library."
-        )
-    return selected_project
+def _validated_autoload_project(requested_project, layout):
+    location = find_project_location(requested_project, layout)
+    return _project_option_value(location, layout)
 
 
 def _initialize_saved_draft(draft):
@@ -415,10 +422,10 @@ def _project_actions(draft):
         _save_draft(draft)
 
     if render_preview:
-        _save_draft(draft, show_success=False)
         preview_path = _render_preview(
             draft.project_file,
             draft.preview_settings,
+            project_data=draft.project_data,
         )
 
         if preview_path is not None:
@@ -444,8 +451,17 @@ def _project_actions(draft):
             _store_preview(draft, preview_path, automatic=True)
 
     if render_video:
-        _save_draft(draft, show_success=False)
-        start_render_with_preflight(draft.project_file, root_dir=ROOT_DIR)
+        saved_path = _save_draft(draft, show_success=False)
+        if saved_path is not None:
+            layout = _current_workspace_layout()
+            project_root = _active_project_root(layout)
+            start_render_with_preflight(
+                saved_path,
+                project_root=project_root,
+                output_root=project_root,
+                app_root=layout.app_root,
+                job_root=layout.cache_root / "render_jobs",
+            )
 
     saved_fingerprint = st.session_state.get(SAVED_DRAFT_FINGERPRINT_STATE)
     if draft.is_dirty(saved_fingerprint):
@@ -506,12 +522,20 @@ def _portable_bundle_export_panel(draft, *, render_active):
             disabled=render_active,
             key="prepare_project_bundle",
         ):
-            _save_draft(draft, show_success=False)
+            saved_path = _save_draft(draft, show_success=False)
+            if saved_path is None:
+                return
+            bundle_project_data = st.session_state.get(
+                "loaded_project_data",
+                draft.project_data,
+            )
             try:
                 with st.spinner("Collecting project files..."):
                     exported = build_project_bundle(
-                        draft.project_data,
-                        root_dir=ROOT_DIR,
+                        bundle_project_data,
+                        root_dir=_active_project_root(
+                            _current_workspace_layout()
+                        ),
                     )
             except (OSError, ValueError, ProjectBundleError) as exc:
                 st.session_state[PROJECT_BUNDLE_EXPORT_STATE] = None
@@ -587,18 +611,105 @@ def _show_persistent_preview(draft):
     return True
 
 
-def _project_source_panel():
-    st.caption("Workspace")
+def _current_workspace_layout():
+    try:
+        settings = load_workspace_settings(app_root=ROOT_DIR)
+        workspace_root = settings.workspace_root
+    except (OSError, WorkspacePathError) as exc:
+        st.error(f"Workspace settings could not be loaded: {exc}")
+        workspace_root = default_workspace_root(ROOT_DIR)
+    return WorkspaceLayout(
+        app_root=ROOT_DIR.resolve(),
+        workspace_root=workspace_root.resolve(strict=False),
+    )
+
+
+def _workspace_panel(layout):
+    with st.expander(
+        "Workspace",
+        icon=":material/workspaces:",
+        expanded=True,
+    ):
+        st.caption("Current workspace")
+        st.code(str(layout.workspace_root), language=None)
+        workspace_value = st.text_input(
+            "Workspace path",
+            value=str(layout.workspace_root),
+            key=WORKSPACE_PATH_INPUT_STATE,
+            help="Use an absolute path outside the BarChartStudio repository.",
+        )
+        action_row = st.container(
+            horizontal=True,
+            horizontal_alignment="left",
+            gap="xsmall",
+        )
+        change_workspace = action_row.button(
+            "Change workspace",
+            icon=":material/drive_file_move:",
+            width="content",
+            key="change_workspace",
+        )
+        initialize = action_row.button(
+            "Initialize workspace",
+            icon=":material/create_new_folder:",
+            width="content",
+            key="initialize_workspace",
+        )
+        open_folder = st.button(
+            "Open workspace folder",
+            icon=":material/folder_open:",
+            width="content",
+            disabled=not layout.workspace_root.is_dir(),
+            key="open_workspace_folder",
+        )
+
+        if change_workspace or initialize:
+            try:
+                saved = save_workspace_settings(
+                    workspace_value,
+                    app_root=ROOT_DIR,
+                )
+                if initialize:
+                    initialize_workspace(
+                        saved.workspace_root,
+                        app_root=ROOT_DIR,
+                    )
+            except (OSError, WorkspacePathError) as exc:
+                st.error(str(exc))
+            else:
+                st.session_state[WORKSPACE_NOTICE_STATE] = (
+                    "Workspace initialized."
+                    if initialize
+                    else "Workspace changed."
+                )
+                _reset_workspace_project_state()
+                st.rerun()
+
+        if open_folder:
+            try:
+                _open_workspace_folder(layout.workspace_root)
+            except OSError as exc:
+                st.error(f"Could not open the workspace folder: {exc}")
+
+        notice = st.session_state.pop(WORKSPACE_NOTICE_STATE, None)
+        if notice:
+            st.success(notice)
+        if not layout.workspace_root.exists():
+            st.info("Initialize this workspace before creating user content.")
+
+
+def _project_source_panel(layout):
+    st.caption("My projects and productions")
     st.subheader(":material/folder_open: Project library")
     _pending_project_action_panel()
-    project_files = _project_files()
+    project_files = _project_files(layout)
     project_options = ("", *project_files)
-    current_project = st.session_state.get("loaded_project_path", "")
+    current_project = st.session_state.get(LOADED_PROJECT_IDENTIFIER_STATE, "")
     selected_project = st.selectbox(
         "Open project",
         project_options,
         index=_option_index(project_options, current_project),
-        format_func=lambda path: "New project" if not path else path,
+        format_func=lambda path: _project_option_label(path, layout),
     )
     background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
     render_active = bool(
@@ -635,7 +746,11 @@ def _project_source_panel():
             icon=":material/edit_document:",
             color="green",
         )
-        st.caption(st.session_state["loaded_project_path"])
+        kind = st.session_state.get(ACTIVE_PROJECT_KIND_STATE, "project")
+        st.caption(
+            f"{kind.title()} · "
+            f"{st.session_state.get(LOADED_PROJECT_IDENTIFIER_STATE, '')}"
+        )
 
     _portable_bundle_import_panel(render_active=render_active)
 
@@ -818,13 +933,23 @@ def _execute_project_action(action):
 
 
 def _import_project_bundle_action(bundle, *, filename):
+    layout = _current_workspace_layout()
     try:
-        imported = import_project_bundle(bundle, root_dir=ROOT_DIR)
+        imported = import_project_bundle(
+            bundle,
+            workspace_root=layout.workspace_root,
+            app_root=layout.app_root,
+        )
     except (OSError, ValueError, ProjectBundleError) as exc:
         st.error(f"Could not import {filename}: {exc}")
         return
 
-    project_path = _project_relative_path(Path(imported.project_path))
+    try:
+        location = project_location_from_path(imported.project_path, layout)
+    except (OSError, WorkspacePathError) as exc:
+        st.error(f"Imported project could not be located: {exc}")
+        return
+    project_path = _project_option_value(location, layout)
     st.session_state[LAST_BUNDLE_IMPORT_STATE] = {
         "name": Path(project_path).stem,
         "project": project_path,
@@ -834,18 +959,36 @@ def _import_project_bundle_action(bundle, *, filename):
     st.session_state[BUNDLE_IMPORT_UPLOAD_NONCE_STATE] = (
         st.session_state.get(BUNDLE_IMPORT_UPLOAD_NONCE_STATE, 0) + 1
     )
-    _load_selected_project(project_path, preserve_bundle_import=True)
+    _load_selected_project(
+        project_path,
+        preserve_bundle_import=True,
+        layout=layout,
+    )
 
 
-def _load_selected_project(selected_project, *, preserve_bundle_import=False):
+def _load_selected_project(
+    selected_project,
+    *,
+    preserve_bundle_import=False,
+    layout=None,
+):
+    layout = layout or _current_workspace_layout()
     try:
-        project_data = load_project_data(ROOT_DIR / selected_project)
-    except (OSError, ValueError) as exc:
+        location = find_project_location(selected_project, layout)
+        project_data = load_project_data(location.absolute_path)
+    except (OSError, ValueError, WorkspacePathError) as exc:
         st.error(str(exc))
         return
 
     st.session_state["loaded_project_data"] = project_data
-    st.session_state["loaded_project_path"] = selected_project
+    st.session_state["loaded_project_path"] = location.relative_path
+    st.session_state[LOADED_PROJECT_IDENTIFIER_STATE] = _project_option_value(
+        location,
+        layout,
+    )
+    st.session_state[ACTIVE_PROJECT_ROOT_STATE] = str(location.project_root)
+    st.session_state[ACTIVE_PROJECT_KIND_STATE] = location.kind
+    st.session_state[NEW_PROJECT_ROOT_STATE] = None
     st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
     st.session_state[SAVED_DRAFT_PENDING_STATE] = True
     if not preserve_bundle_import:
@@ -860,6 +1003,10 @@ def _load_selected_project(selected_project, *, preserve_bundle_import=False):
 def _start_new_project():
     st.session_state.pop("loaded_project_data", None)
     st.session_state.pop("loaded_project_path", None)
+    st.session_state[LOADED_PROJECT_IDENTIFIER_STATE] = None
+    st.session_state[ACTIVE_PROJECT_ROOT_STATE] = None
+    st.session_state[ACTIVE_PROJECT_KIND_STATE] = "scratch"
+    st.session_state[NEW_PROJECT_ROOT_STATE] = None
     st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = None
     st.session_state[SAVED_DRAFT_PENDING_STATE] = False
     st.session_state[LAST_BUNDLE_IMPORT_STATE] = None
@@ -892,7 +1039,7 @@ def _has_unsaved_draft():
     )
 
 
-def _csv_source_panel(values, loaded_project_data):
+def _csv_source_panel(values, loaded_project_data, layout):
     st.subheader(":material/database: Dataset source")
     uploaded_file = st.file_uploader(
         "CSV file",
@@ -908,11 +1055,23 @@ def _csv_source_panel(values, loaded_project_data):
         )
 
     if uploaded_file is not None:
-        datasets_dir = ROOT_DIR / "data" / "datasets"
+        project_root = _writable_project_root(
+            layout,
+            hint=Path(uploaded_file.name).stem,
+        )
+        datasets_dir = assert_user_write_path(
+            project_root / "data",
+            app_root=layout.app_root,
+            workspace_root=layout.workspace_root,
+            operation="Dataset upload",
+        )
         datasets_dir.mkdir(parents=True, exist_ok=True)
-        csv_path = datasets_dir / uploaded_file.name
+        filename = (
+            f"{_safe_filename_key(Path(uploaded_file.name).stem) or 'dataset'}.csv"
+        )
+        csv_path = datasets_dir / filename
         csv_path.write_bytes(uploaded_file.getbuffer())
-        csv_path = str(csv_path.relative_to(ROOT_DIR))
+        csv_path = csv_path.relative_to(project_root).as_posix()
 
         if not loaded_project_data:
             st.session_state[NEW_PROJECT_CSV_PATH_OVERRIDE_STATE] = csv_path
@@ -923,9 +1082,9 @@ def _csv_source_panel(values, loaded_project_data):
         "CSV path",
         value=default_csv,
         key=_widget_key("csv_path"),
-        help="Path relative to the repository or an absolute CSV path.",
+        help="Path relative to the active production or scratch project root.",
     )
-    st.caption("CSV uploads are copied into `data/datasets/`.")
+    st.caption("CSV uploads are copied into the active project `data/` folder.")
     return csv_path
 
 
@@ -1776,7 +1935,10 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         return result
 
     try:
-        collection = load_fun_fact_collection(source, project_root=ROOT_DIR)
+        collection = load_fun_fact_collection(
+            source,
+            project_root=_active_project_root(_current_workspace_layout()),
+        )
         timeline = Timeline(
             dataset,
             config=DatasetConfig(
@@ -3288,18 +3450,88 @@ def _category_styles_panel(csv_path, name_column, existing_styles, dataset):
 
 
 def _save_draft(draft, *, show_success=True):
-    path = save_project_data(
-        draft.project_data,
-        ROOT_DIR / draft.project_file,
+    layout = _current_workspace_layout()
+    project_root = _active_project_root(
+        layout,
+        project_name=draft.project_data.get("name"),
     )
-    st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = draft.fingerprint
+    project_kind = st.session_state.get(ACTIVE_PROJECT_KIND_STATE, "scratch")
+    project_data = copy.deepcopy(draft.project_data)
+    project_file = draft.project_file
+
+    if (
+        project_kind in {"legacy", "example"}
+        or project_root == layout.app_root
+        or project_root.is_relative_to(layout.app_root)
+    ):
+        source_root = project_root
+        project_root = _writable_project_root(
+            layout,
+            hint=project_data.get("name") or "legacy_project",
+            force_new=True,
+        )
+        project_data = _rebase_legacy_project_data(
+            project_data,
+            source_root=source_root,
+        )
+        project_file = "project.json"
+
+    initialize_workspace(layout.workspace_root, app_root=layout.app_root)
+    project_root.mkdir(parents=True, exist_ok=True)
+    try:
+        target_path = resolve_portable_project_path(
+            project_file,
+            project_root=project_root,
+            required=True,
+            field_name="project file",
+            allow_absolute=False,
+        )
+        target_path = assert_user_write_path(
+            target_path,
+            app_root=layout.app_root,
+            workspace_root=layout.workspace_root,
+            operation="Project save",
+        )
+    except (ProjectPathError, WorkspacePathError, AppRootWriteError) as exc:
+        st.error(str(exc))
+        return None
+
+    path = save_project_data(
+        project_data,
+        target_path,
+        app_root=layout.app_root,
+        workspace_root=layout.workspace_root,
+    )
+    saved_draft = ProjectDraft.create(project_data, project_file, draft.preview_settings)
+    st.session_state[SAVED_DRAFT_FINGERPRINT_STATE] = saved_draft.fingerprint
+    st.session_state[CURRENT_DRAFT_FINGERPRINT_STATE] = saved_draft.fingerprint
+    st.session_state[CURRENT_DRAFT_STATE] = {
+        "project_data": copy.deepcopy(saved_draft.project_data),
+        "project_file": saved_draft.project_file,
+    }
     st.session_state[SAVED_DRAFT_PENDING_STATE] = False
-    st.session_state["loaded_project_data"] = copy.deepcopy(draft.project_data)
-    st.session_state["loaded_project_path"] = draft.project_file
+    st.session_state["loaded_project_data"] = copy.deepcopy(project_data)
+    st.session_state["loaded_project_path"] = project_file
+    st.session_state[ACTIVE_PROJECT_ROOT_STATE] = str(project_root)
+    st.session_state[ACTIVE_PROJECT_KIND_STATE] = (
+        "production"
+        if project_root.is_relative_to(layout.productions_root)
+        else "scratch"
+    )
+    try:
+        location = project_location_from_path(path, layout)
+    except (OSError, WorkspacePathError):
+        st.session_state[LOADED_PROJECT_IDENTIFIER_STATE] = None
+    else:
+        st.session_state[LOADED_PROJECT_IDENTIFIER_STATE] = _project_option_value(
+            location,
+            layout,
+        )
+    _refresh_form()
 
     if show_success:
         try:
-            display_path = path.resolve().relative_to(ROOT_DIR.resolve())
+            display_path = path.resolve().relative_to(layout.workspace_root)
         except ValueError:
             display_path = path
 
@@ -3446,11 +3678,24 @@ def _background_panel(values, theme_background_color):
                     _safe_filename_key(Path(source_name).stem)
                     or "background"
                 )
-                background_dir = ROOT_DIR / "backgrounds"
+                layout = _current_workspace_layout()
+                project_root = _writable_project_root(
+                    layout,
+                    hint=safe_stem,
+                )
+                background_dir = assert_user_write_path(
+                    project_root / "assets" / "backgrounds",
+                    app_root=layout.app_root,
+                    workspace_root=layout.workspace_root,
+                    operation="Background upload",
+                )
                 background_dir.mkdir(parents=True, exist_ok=True)
                 background_path = background_dir / f"{safe_stem}{suffix}"
                 background_path.write_bytes(uploaded_background.getbuffer())
-                current_image_path = _project_relative_path(background_path)
+                current_image_path = _project_relative_path(
+                    background_path,
+                    project_root=project_root,
+                )
                 st.session_state[BACKGROUND_IMAGE_PATH_STATE] = current_image_path
                 st.session_state[image_path_widget_key] = current_image_path
 
@@ -3469,7 +3714,9 @@ def _background_panel(values, theme_background_color):
                 preview_path = Path(current_image_path)
 
                 if not preview_path.is_absolute():
-                    preview_path = ROOT_DIR / preview_path
+                    preview_path = _active_project_root(
+                        _current_workspace_layout()
+                    ) / preview_path
 
                 if preview_path.is_file():
                     st.image(str(preview_path), width=320)
@@ -3547,11 +3794,21 @@ def _custom_texture_upload(bar_style):
         source_name = Path(uploaded_texture.name).name
         suffix = Path(source_name).suffix.lower()
         safe_stem = _safe_filename_key(Path(source_name).stem) or "bar_texture"
-        texture_dir = ROOT_DIR / "textures"
+        layout = _current_workspace_layout()
+        project_root = _writable_project_root(layout, hint=safe_stem)
+        texture_dir = assert_user_write_path(
+            project_root / "assets" / "textures",
+            app_root=layout.app_root,
+            workspace_root=layout.workspace_root,
+            operation="Texture upload",
+        )
         texture_dir.mkdir(parents=True, exist_ok=True)
         texture_path = texture_dir / f"{safe_stem}{suffix}"
         texture_path.write_bytes(uploaded_texture.getbuffer())
-        relative_path = _project_relative_path(texture_path)
+        relative_path = _project_relative_path(
+            texture_path,
+            project_root=project_root,
+        )
         st.session_state[CUSTOM_TEXTURE_PATH_STATE] = relative_path
         bar_style["bar_texture_custom_image"] = relative_path
         st.caption(f"Custom texture: {relative_path}")
@@ -3626,17 +3883,52 @@ def _preview_controls(csv_path, year_column, years=None):
 
 
 def _render_preview(project_file, preview_settings, *, project_data=None):
+    layout = _current_workspace_layout()
+    project_root = _active_project_root(
+        layout,
+        project_name=(
+            project_data.get("name")
+            if isinstance(project_data, dict)
+            else None
+        ),
+    )
+    project_kind = st.session_state.get(ACTIVE_PROJECT_KIND_STATE, "scratch")
+    if project_kind in {"legacy", "example"}:
+        preview_root = (
+            layout.scratch_root
+            / "legacy_previews"
+            / safe_slug(Path(str(project_file)).stem)
+            / "output"
+            / "previews"
+        )
+    else:
+        preview_root = project_root / "output" / "previews"
     try:
+        preview_root = assert_user_write_path(
+            preview_root,
+            app_root=layout.app_root,
+            workspace_root=layout.workspace_root,
+            operation="Preview render",
+        )
+        preview_root.mkdir(parents=True, exist_ok=True)
         preview_path = render_project_preview(
-            ROOT_DIR / project_file,
+            project_root / project_file,
+            output_dir=preview_root,
             year=preview_settings["year"],
             preview_mode=preview_settings["preview_mode"],
             transition_progress=preview_settings["transition_progress"],
             force_fun_fact_id=preview_settings.get("force_fun_fact_id"),
-            root_dir=ROOT_DIR,
+            root_dir=project_root,
             project_data=project_data,
+            app_root=layout.app_root,
         )
-    except (ProjectFileError, ValueError, OSError) as exc:
+    except (
+        AppRootWriteError,
+        ProjectFileError,
+        ValueError,
+        WorkspacePathError,
+        OSError,
+    ) as exc:
         st.error(str(exc))
         return None
 
@@ -3657,16 +3949,165 @@ def _option_index(options, selected):
         return 0
 
 
-def _project_files():
-    projects_dir = ROOT_DIR / "projects"
-
-    if not projects_dir.exists():
-        return ()
-
+def _project_files(layout=None):
+    layout = layout or _current_workspace_layout()
     return tuple(
-        path.relative_to(ROOT_DIR).as_posix()
-        for path in sorted(projects_dir.glob("*.json"))
+        _project_option_value(location, layout)
+        for location in discover_project_locations(layout)
     )
+
+
+def _project_option_value(location, layout):
+    if location.kind in {"production", "scratch"}:
+        return location.absolute_path.relative_to(layout.workspace_root).as_posix()
+    return location.absolute_path.relative_to(layout.app_root).as_posix()
+
+
+def _project_option_label(value, layout):
+    if not value:
+        return "New project"
+    try:
+        return find_project_location(value, layout).label
+    except WorkspacePathError:
+        return str(value)
+
+
+def _active_project_root(
+    layout,
+    *,
+    csv_path=None,
+    project_name=None,
+):
+    current = st.session_state.get(ACTIVE_PROJECT_ROOT_STATE)
+    if current:
+        return Path(current).resolve(strict=False)
+
+    if csv_path:
+        candidate = Path(str(csv_path))
+        legacy_source = (
+            candidate.resolve(strict=False)
+            if candidate.is_absolute()
+            else (layout.app_root / candidate).resolve(strict=False)
+        )
+        if legacy_source.is_file() and legacy_source.is_relative_to(layout.app_root):
+            st.session_state[ACTIVE_PROJECT_ROOT_STATE] = str(layout.app_root)
+            st.session_state[ACTIVE_PROJECT_KIND_STATE] = "legacy"
+            return layout.app_root
+
+    hint = project_name or (Path(str(csv_path)).stem if csv_path else "project")
+    slug = safe_slug(hint)
+    root = layout.scratch_root / slug
+    st.session_state[ACTIVE_PROJECT_ROOT_STATE] = str(root)
+    st.session_state[ACTIVE_PROJECT_KIND_STATE] = "scratch"
+    st.session_state[NEW_PROJECT_ROOT_STATE] = str(root)
+    return root
+
+
+def _writable_project_root(layout, *, hint, force_new=False):
+    current = st.session_state.get(ACTIVE_PROJECT_ROOT_STATE)
+    kind = st.session_state.get(ACTIVE_PROJECT_KIND_STATE)
+    if current and kind in {"production", "scratch"} and not force_new:
+        root = Path(current).resolve(strict=False)
+        assert_user_write_path(
+            root,
+            app_root=layout.app_root,
+            workspace_root=layout.workspace_root,
+            operation="Project content",
+        )
+        initialize_workspace(layout.workspace_root, app_root=layout.app_root)
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    initialize_workspace(layout.workspace_root, app_root=layout.app_root)
+    preserve_legacy_root = bool(
+        current
+        and kind in {"legacy", "example"}
+        and not force_new
+    )
+    base = safe_slug(hint)
+    candidate = layout.scratch_root / base
+    suffix = 2
+    while (candidate / "project.json").exists() and not preserve_legacy_root:
+        candidate = layout.scratch_root / f"{base}_{suffix}"
+        suffix += 1
+    candidate.mkdir(parents=True, exist_ok=True)
+    if not preserve_legacy_root:
+        st.session_state[ACTIVE_PROJECT_ROOT_STATE] = str(candidate)
+        st.session_state[ACTIVE_PROJECT_KIND_STATE] = "scratch"
+        st.session_state[NEW_PROJECT_ROOT_STATE] = str(candidate)
+    return candidate
+
+
+def _rebase_legacy_project_data(project_data, *, source_root):
+    rebased = copy.deepcopy(project_data)
+    data_source = rebased.get("data_source")
+    if isinstance(data_source, dict):
+        for field in ("csv_path", "sqlite_database_path"):
+            _make_legacy_reference_absolute(data_source, field, source_root)
+
+    chart = rebased.setdefault("chart", {})
+    for field in (
+        "background_image_path",
+        "bar_texture_custom_image",
+        "logos_dir",
+    ):
+        _make_legacy_reference_absolute(chart, field, source_root)
+    defaults = default_project_paths(
+        safe_slug(rebased.get("name") or "legacy_project")
+    )
+    chart["output_file"] = defaults["output_file"]
+    chart["frames_dir"] = defaults["frames_dir"]
+
+    dataset = rebased.get("dataset")
+    if isinstance(dataset, dict):
+        for field in ("category_logos", "category_secondary_logos"):
+            mapping = dataset.get(field)
+            if isinstance(mapping, dict):
+                for key, value in tuple(mapping.items()):
+                    mapping[key] = _absolute_legacy_reference(value, source_root)
+
+    fun_facts = rebased.get("fun_facts")
+    if isinstance(fun_facts, dict):
+        _make_legacy_reference_absolute(fun_facts, "source", source_root)
+    return rebased
+
+
+def _make_legacy_reference_absolute(container, field, source_root):
+    value = container.get(field)
+    if value:
+        container[field] = _absolute_legacy_reference(value, source_root)
+
+
+def _absolute_legacy_reference(value, source_root):
+    path = Path(str(value))
+    if path.is_absolute():
+        return str(path.resolve())
+    return str((Path(source_root) / path).resolve())
+
+
+def _reset_workspace_project_state():
+    for key in (
+        "loaded_project_data",
+        "loaded_project_path",
+        LOADED_PROJECT_IDENTIFIER_STATE,
+        ACTIVE_PROJECT_ROOT_STATE,
+        NEW_PROJECT_ROOT_STATE,
+    ):
+        st.session_state.pop(key, None)
+    st.session_state[ACTIVE_PROJECT_KIND_STATE] = "scratch"
+    _reset_project_editor_state()
+
+
+def _open_workspace_folder(path):
+    path = Path(path).resolve(strict=True)
+    if os.name == "nt":
+        startfile = getattr(os, "startfile", None)
+        if startfile is None:
+            raise OSError("Windows folder opening is unavailable.")
+        startfile(str(path))
+        return
+    command = ["open", str(path)] if sys.platform == "darwin" else ["xdg-open", str(path)]
+    subprocess.Popen(command, start_new_session=True)
 
 
 def _logo_files(logos_dir=DEFAULT_LOGO_FOLDER):
@@ -3692,7 +4133,15 @@ def _logo_options(current_logo, logo_files):
 
 
 def _save_uploaded_logo(raw_name, uploaded_logo, *, slot="primary"):
-    logos_dir = ROOT_DIR / "logos"
+    layout = _current_workspace_layout()
+    project_root = _writable_project_root(layout, hint=raw_name)
+    folder = "logos_secondary" if slot == "secondary" else "logos"
+    logos_dir = assert_user_write_path(
+        project_root / "assets" / folder,
+        app_root=layout.app_root,
+        workspace_root=layout.workspace_root,
+        operation="Logo upload",
+    )
     logos_dir.mkdir(parents=True, exist_ok=True)
 
     suffix = Path(uploaded_logo.name).suffix.lower()
@@ -3706,7 +4155,7 @@ def _save_uploaded_logo(raw_name, uploaded_logo, *, slot="primary"):
     )
     logo_path.write_bytes(uploaded_logo.getbuffer())
 
-    return _project_relative_path(logo_path)
+    return _project_relative_path(logo_path, project_root=project_root)
 
 
 def _save_uploaded_logo_folder(uploaded_logo_files, *, slot="primary"):
@@ -3717,7 +4166,14 @@ def _save_uploaded_logo_folder(uploaded_logo_files, *, slot="primary"):
         if slot == "secondary"
         else DEFAULT_LOGO_FOLDER
     )
-    target_dir = ROOT_DIR / default_folder
+    layout = _current_workspace_layout()
+    project_root = _writable_project_root(layout, hint=folder_key)
+    target_dir = assert_user_write_path(
+        project_root / default_folder,
+        app_root=layout.app_root,
+        workspace_root=layout.workspace_root,
+        operation="Logo folder upload",
+    )
 
     if folder_key != default_folder:
         target_dir = target_dir / folder_key
@@ -3733,7 +4189,7 @@ def _save_uploaded_logo_folder(uploaded_logo_files, *, slot="primary"):
         logo_path = target_dir / _safe_logo_filename(uploaded_logo_file.name)
         logo_path.write_bytes(uploaded_logo_file.getbuffer())
 
-    return _project_relative_path(target_dir)
+    return _project_relative_path(target_dir, project_root=project_root)
 
 
 def _uploaded_folder_name(uploaded_logo_files):
@@ -3760,14 +4216,19 @@ def _resolve_project_path(path):
     path = Path(str(path).strip() or DEFAULT_LOGO_FOLDER)
 
     if not path.is_absolute():
-        path = ROOT_DIR / path
+        path = _active_project_root(_current_workspace_layout()) / path
 
     return path
 
 
-def _project_relative_path(path):
+def _project_relative_path(path, *, project_root=None):
+    active_root = _active_project_root(_current_workspace_layout())
+    root = Path(project_root or active_root).resolve()
+    resolved_path = Path(path).resolve()
+    if project_root is not None and root != active_root:
+        return str(resolved_path).replace("\\", "/")
     try:
-        return str(path.relative_to(ROOT_DIR)).replace("\\", "/")
+        return str(resolved_path.relative_to(root)).replace("\\", "/")
     except ValueError:
         return str(path).replace("\\", "/")
 

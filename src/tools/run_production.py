@@ -15,6 +15,7 @@ from automation.production_preflight import ProductionPreflightRunner
 from automation.project_assembler import ProductionProjectAssembler
 from automation.registry import create_default_dataset_builder_registry
 from automation.render_executor import ProductionRenderExecutor
+from studio.workspace_paths import assert_user_write_path
 
 
 EXIT_SUCCESS = 0
@@ -36,9 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--root",
+        "--production-root",
+        dest="root",
         required=True,
         type=Path,
-        help="BarChartStudio project root containing all referenced inputs.",
+        help="Self-contained production root containing all referenced inputs.",
     )
     return parser
 
@@ -62,11 +65,16 @@ def run_from_options(options: argparse.Namespace):
         brief_path = root / brief_path
     brief_path = brief_path.resolve(strict=True)
     brief = load_production_brief(brief_path, root_dir=root)
+    jobs_root = assert_user_write_path(
+        root / "generated" / "production_jobs",
+        app_root=ROOT_DIR,
+        operation="Production automation",
+    )
     orchestrator = create_production_orchestrator()
     return orchestrator.run_production(
         brief,
         project_root_dir=root,
-        workspace_root_dir=(root / "output" / ".production_jobs").resolve(),
+        workspace_root_dir=jobs_root,
         source_root_dir=root,
         progress_callback=print_progress,
     )

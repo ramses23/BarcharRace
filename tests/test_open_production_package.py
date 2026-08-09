@@ -827,6 +827,12 @@ class ProjectStudioAutoloadTest(unittest.TestCase):
                 open_production_package.AUTOLOAD_TOKEN_ENV,
                 None,
             )
+            os.environ["BARCHARTSTUDIO_WORKSPACE"] = str(
+                self.root / "workspace"
+            )
+            os.environ["BARCHARTSTUDIO_SETTINGS_FILE"] = str(
+                self.root / "settings" / "settings.json"
+            )
             if project is not None:
                 os.environ[
                     open_production_package.AUTOLOAD_PROJECT_ENV
@@ -855,7 +861,10 @@ class ProjectStudioAutoloadTest(unittest.TestCase):
         )
         selector = self._project_selector(app)
         self.assertEqual(selector.value, project_path)
-        self.assertIn(project_path, selector.options)
+        self.assertIn(
+            f"Legacy / {Path(project_path).stem}",
+            selector.options,
+        )
 
     @staticmethod
     def _project_selector(app):

@@ -35,6 +35,8 @@ charts, animated scatter plots, and timeline animations.
 - Run project presets from the command line.
 - Override preset render options from the command line.
 - Render external JSON project files.
+- Keep application code and user-owned productions in separate filesystem
+  roots through Workspace Separation V1.
 - Create, open, edit, and preview project files from a local Streamlit editor.
 - Preview a selected year or transition point before rendering a full video.
 - Automatically refresh previews after visual Canvas, Bars, category, or
@@ -61,6 +63,64 @@ charts, animated scatter plots, and timeline animations.
 - Exact Python packages from the locked `requirements.txt`
 
 The project already expects a local virtual environment at `.venv`.
+
+## Application And Workspace Separation
+
+BarChartStudio uses three explicit roots:
+
+- `APP_ROOT` is the Git checkout. It owns `src/`, `tests/`, official presets,
+  examples, documentation, and small tracked fixtures.
+- `WORKSPACE_ROOT` is external user storage. On a first run without settings,
+  it defaults to a sibling named `<APP_ROOT name>Workspace`.
+- `PRODUCTION_ROOT` (also the `project_root` for its projects) is one
+  self-contained directory under `WORKSPACE_ROOT/productions/<slug>/`.
+
+On Windows, the selected workspace is persisted atomically in:
+
+```text
+%LOCALAPPDATA%/BarChartStudio/settings.json
+```
+
+The location can be changed or initialized from the native `Workspace` panel
+in Project Studio. A V1 workspace contains only these shared directories:
+
+```text
+BarChartStudioWorkspace/
+  productions/
+  scratch/
+  packages/
+  cache/
+```
+
+A production owns its project definitions, inputs, assets, editorial content,
+and outputs. Directories are created only when needed:
+
+```text
+productions/mobile_usage/
+  production.json
+  data/
+  projects/race_01.json
+  assets/logos/
+  assets/flags/
+  assets/photos/
+  assets/backgrounds/
+  fun_facts/
+  output/previews/
+  output/races/
+  output/master/
+  generated/
+```
+
+Paths inside a production project are portable and resolve from that
+production root. For example, `data/race_01.csv`, `assets/logos`,
+`assets/backgrounds/main.png`, and `fun_facts/race_01.json` all remain inside
+the same production. `..`, drive-relative paths, symlink/junction escapes, and
+user-content writes into `APP_ROOT` are rejected.
+
+Standalone work begins under `WORKSPACE_ROOT/scratch/`. Tracked examples and
+legacy files under `APP_ROOT/projects/` remain readable, are labeled explicitly
+as `Example` or `Legacy`, and are cloned into scratch on their first save. No
+existing local data is moved automatically.
 
 ## Setup
 
@@ -127,8 +187,17 @@ Run a specific preset:
 Run an external project file:
 
 ```powershell
+.venv\Scripts\python.exe src\main.py `
+  --workspace D:\path\to\BarChartStudioWorkspace `
+  --production-root D:\path\to\BarChartStudioWorkspace\productions\mobile_usage `
+  --project D:\path\to\BarChartStudioWorkspace\productions\mobile_usage\projects\race_01.json
+```
+
+Tracked legacy examples remain runnable. Their inputs are read from
+`APP_ROOT`, while their generated output is redirected to workspace scratch:
+
+```powershell
 .venv\Scripts\python.exe src\main.py --project projects/sample_project.json
-.venv\Scripts\python.exe src\main.py --project projects/global_electricity_sources.json
 ```
 
 Run the local project editor:
@@ -186,6 +255,8 @@ Common overrides:
 
 | Option | Effect |
 |---|---|
+| `--workspace` | override the configured external workspace root |
+| `--production-root` | root for project-relative data, assets, and outputs |
 | `--output` | MP4 output path |
 | `--frames-dir` | temporary PNG frames directory |
 | `--title` | chart title |
@@ -249,9 +320,9 @@ A brief v2 has four required sections:
 - `render`: `enabled: true` to render an MP4, or `false` to stop after a ready
   preflight.
 
-All referenced paths must remain below the explicit `--root`. Each job reserves
-`output/.production_jobs/<job_id>/` exclusively and never overwrites an older
-workspace. The principal results are:
+All referenced paths must remain below the explicit production `--root`. Each
+job reserves `generated/production_jobs/<job_id>/` exclusively and never
+overwrites an older job. The principal results are:
 
 ```text
 dataset/dataset.csv
@@ -266,12 +337,10 @@ Normal state order is `created`, `dataset_running`, `dataset_ready`,
 `completed`. A render-disabled brief ends at `preflight_ready`; other terminal
 states are `blocked`, `canceled`, and `failed`.
 
-Project Studio currently lists only `projects/*.json`. To inspect or edit a
-generated project there, copy the workspace's `project/project.json` to a new,
-unique file under `projects/`, keep the production workspace in place, launch
-Project Studio, and select the copied file from `Open project`. Its dataset and
-asset references remain root-relative. Before rendering an edited copy, choose
-a new output path so the completed production video is not reused.
+Project Studio discovers projects first under workspace productions and
+scratch. A generated production project can be opened in place; it no longer
+needs an editable copy under the repository. Repository projects are listed as
+read-only legacy entries and are cloned to scratch when saved.
 
 This MVP is intentionally local and single-job. It has no automatic downloads,
 remote logo discovery, scheduler or queue, retry/resume recovery, cloud
@@ -292,12 +361,13 @@ objects to their current top-level sections and normalizes legacy
 are rejected instead of being interpreted with potentially incorrect defaults.
 
 `Project Studio` is a local Streamlit interface for creating and editing these
-JSON files from a CSV. It can open existing files from `projects/*.json`,
-inspect columns, derive new-project names and output paths from the selected
-CSV filename, save a project file, render a selected year or transition preview
-frame, and launch the final video render with visible progress. When it
-edits an existing file, it preserves advanced JSON fields that are not exposed
-in the form yet.
+JSON files from a CSV. It opens workspace production and scratch projects in
+place, displays tracked examples and repository projects as explicit read-only
+sources, inspects columns, derives new-project names and output paths, renders
+previews, and launches final video renders with visible progress. New uploads,
+projects, previews, assets, job state, and renders are written to the active
+production or scratch root, never to the Git checkout. Existing advanced JSON
+fields that are not exposed in the form are preserved.
 
 Project Studio keeps the current form as an in-memory draft. `Save project` is
 an explicit action, and the status below the action buttons reports whether the
@@ -322,7 +392,8 @@ settings, while deletion requires confirmation. Applying a preset updates the
 in-memory draft and automatic preview but never saves the project JSON.
 
 Appearance presets use the independent versioned contract
-`appearance-preset-v1` and are stored as JSON under `presets/appearance/`.
+`appearance-preset-v1` and remain under the app-owned
+`APP_ROOT/presets/appearance/` library in V1.
 They include canvas layout, background, typography, text visibility and
 placement, value formatting, and every bar-appearance control. They exclude
 project content and behavior: title/source text, dataset columns, category
@@ -418,8 +489,9 @@ Before a final render, Project Studio runs a preflight over the saved project,
 data source, dataset columns and periods, fun fact schedule/assets, FFmpeg,
 output path, background, custom texture, and category-logo references. Errors block the render; missing
 optional logos are warnings. A passing render starts in an isolated Python
-process, reports progress from `output/.render_jobs/`, and can be canceled from
-the UI. Cancellation terminates the worker and its FFmpeg child process.
+process, reports progress from `WORKSPACE_ROOT/cache/render_jobs/`, and can be
+canceled from the UI. Cancellation terminates the worker and its FFmpeg child
+process.
 
 Status and project JSON files use atomic temporary-file replacement with
 bounded retries for transient Windows destination locks. Render-progress
@@ -667,14 +739,18 @@ bundle contains:
 Asset names are deduplicated and all paths inside the bundled JSON are portable.
 On import, BarChartStudio validates the ZIP paths, rejects symbolic links,
 encrypted entries, unexpected files, suspicious compression ratios, oversized
-archives, and checksum mismatches before writing anything. Imported assets are
-stored under `projects/imported/<project>/`, while the openable project JSON is
-created under `projects/`. A second import receives a suffix such as `_2`; it
-never silently overwrites an existing project.
+archives, and checksum mismatches before writing anything. A valid package is
+staged under workspace cache and atomically installed as a self-contained
+`WORKSPACE_ROOT/productions/<slug>/`; its editable JSON remains at
+`projects/<slug>.json` inside that production. A second import receives a
+suffix such as `_2` and never silently overwrites an existing production.
 
-The imported project's video and frame outputs are reset to unique paths under
-`output/`. Bundle schema version 1 has a 512 MB compressed/uncompressed safety
-limit and a maximum of 2,000 files.
+The imported project's video and frame outputs are reset to production-relative
+paths under `output/races/` and `output/frames/`. Package bindings use schema 2
+with portable `production_reference` and `project_relative_path` fields; schema
+1 repository bindings remain readable for backward compatibility. Bundle
+schema version 1 has a 512 MB compressed/uncompressed safety limit and a
+maximum of 2,000 files.
 
 ## Presets
 
@@ -1109,6 +1185,21 @@ and the pixel-exact renderer references on `windows-latest` with Python 3.13.
 
 ## Architecture
 
+Filesystem context is resolved before the render pipeline starts:
+
+```text
+APP_ROOT (software/resources, read during normal use)
+  + WORKSPACE_ROOT (user content)
+      + PRODUCTION_ROOT or scratch project root (project_root)
+          -> data/assets/fun facts
+          -> previews/frames/MP4
+```
+
+`src/studio/workspace_paths.py` owns settings, discovery, classification, and
+the explicit app-root write guard. `src/studio/project_runtime.py` resolves
+portable input paths from `project_root` and constrains render paths to the
+explicit `output_root`.
+
 Current render pipeline:
 
 ```text
@@ -1420,22 +1511,26 @@ The validator checks:
 
 ## Outputs
 
-Generated files are written under:
+Generated files are written under the active production or scratch root:
 
 ```text
-output/
+<project_root>/output/previews/
+<project_root>/output/races/
+<project_root>/output/master/
+<project_root>/output/frames/
 ```
 
 Frame files use:
 
 ```text
-output/frames/frame_0000.png
+<project_root>/output/frames/<project>/frame_0000.png
 ```
 
 Before each render, old `frame_*.png` files are removed from the configured
 frames directory so FFmpeg cannot mix old and new frames.
 
-`output/` is ignored by Git.
+Repository `output/` remains ignored as a second defense for legacy/dev flows,
+but the runtime guard and explicit workspace roots are the primary protection.
 
 ## Frame Output
 

@@ -710,8 +710,11 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         paths = default_project_paths(name)
 
         self.assertEqual(name, "electricity_by_source")
-        self.assertEqual(paths["project_file"], "projects/electricity_by_source.json")
-        self.assertEqual(paths["output_file"], "output/electricity_by_source.mp4")
+        self.assertEqual(paths["project_file"], "project.json")
+        self.assertEqual(
+            paths["output_file"],
+            "output/races/electricity_by_source.mp4",
+        )
 
     def test_builds_project_defaults_from_csv_path(self):
         defaults = project_defaults_from_csv_path(
@@ -722,15 +725,15 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(defaults["title"], "National Team Goals 2005 2024")
         self.assertEqual(
             defaults["project_file"],
-            "projects/national_team_goals_2005_2024.json",
+            "project.json",
         )
         self.assertEqual(
             defaults["output_file"],
-            "output/national_team_goals_2005_2024.mp4",
+            "output/races/national_team_goals_2005_2024.mp4",
         )
         self.assertEqual(
             defaults["frames_dir"],
-            "output/national_team_goals_2005_2024_frames",
+            "output/frames/national_team_goals_2005_2024",
         )
 
     def test_prefers_candidates_before_fallbacks(self):

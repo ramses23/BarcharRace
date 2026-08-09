@@ -44,3 +44,8 @@ data/database/*.db
 # Local package state and archives
 **/.barchartstudio-launch.json
 *.barchart.zip
+
+# External workspace directories, if a workspace is accidentally pointed here
+/scratch/
+/packages/
+/cache/

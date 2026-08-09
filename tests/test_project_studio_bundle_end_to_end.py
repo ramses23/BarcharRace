@@ -2,12 +2,14 @@ import copy
 import hashlib
 import io
 import json
+import os
 import shutil
 import tempfile
 import unittest
 import zipfile
 from contextlib import chdir
 from pathlib import Path
+from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
@@ -37,6 +39,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             sandbox_root = Path(temp_dir)
             source_root = sandbox_root / "bundle-source"
             studio_root = sandbox_root / "studio-root"
+            workspace_root = sandbox_root / "workspace"
             app_path = self._isolated_project_studio(studio_root)
             exported = self._build_bundle(
                 source_root,
@@ -48,13 +51,25 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             )
 
             project_relative = "projects/e2e_production.json"
-            imported_project = studio_root / project_relative
-            imported_assets = (
-                studio_root / "projects" / "imported" / "e2e_production"
+            project_option = (
+                "productions/e2e_production/projects/e2e_production.json"
             )
+            production_root = (
+                workspace_root / "productions" / "e2e_production"
+            )
+            imported_project = production_root / project_relative
+            imported_assets = production_root
             resolved_imported_assets = imported_assets.resolve()
 
-            with chdir(studio_root):
+            with chdir(studio_root), patch.dict(
+                os.environ,
+                {
+                    "BARCHARTSTUDIO_WORKSPACE": str(workspace_root),
+                    "BARCHARTSTUDIO_SETTINGS_FILE": str(
+                        sandbox_root / "settings" / "settings.json"
+                    ),
+                },
+            ):
                 app = AppTest.from_file(
                     str(app_path),
                     default_timeout=30,
@@ -68,8 +83,11 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
                 self.assertTrue(imported_project.is_file())
                 self.assertTrue(imported_assets.is_dir())
                 selector = self._project_selector(app)
-                self.assertIn(project_relative, selector.options)
-                self.assertEqual(selector.value, project_relative)
+                self.assertIn(
+                    "Production / e2e_production / e2e_production",
+                    selector.options,
+                )
+                self.assertEqual(selector.value, project_option)
                 self.assertEqual(
                     app.session_state["loaded_project_path"],
                     project_relative,
@@ -113,7 +131,8 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
                     project_relative,
                     output_dir="output/e2e-preview",
                     year=2001,
-                    root_dir=studio_root,
+                    root_dir=production_root,
+                    app_root=studio_root,
                 )
             )
             self.assertTrue(preview_path.is_file())
@@ -125,7 +144,9 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
 
             preflight = run_render_preflight(
                 project_relative,
-                root_dir=studio_root,
+                project_root=production_root,
+                output_root=production_root,
+                app_root=studio_root,
                 ffmpeg_path="ffmpeg",
             )
             blocking_errors = [
@@ -140,7 +161,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             preset = load_project_file(imported_project)
             dataset_path = resolve_project_path(
                 preset.data_source_config.csv_path,
-                project_root=studio_root,
+                project_root=production_root,
                 required=True,
                 field_name="data_source.csv_path",
             )
@@ -151,11 +172,11 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
 
             preview_dataset = _resolved_dataset_config(
                 preset.dataset_config,
-                studio_root,
+                production_root,
             )
             preflight_logo_paths = self._resolved_logo_paths(
                 preset,
-                studio_root,
+                production_root,
             )
             self.assertEqual(
                 preview_dataset.category_logos,
@@ -177,7 +198,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             self.assertNotIn("logos", checks)
             expected_background = resolve_project_path(
                 preset.chart_config.background_image_path,
-                project_root=studio_root,
+                project_root=production_root,
                 required=True,
                 field_name="chart.background_image_path",
             )
@@ -188,7 +209,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             self.assertTrue(
                 expected_background.is_relative_to(resolved_imported_assets)
             )
-            self.assertEqual(list(studio_root.rglob("*.tmp")), [])
+            self.assertEqual(list(workspace_root.rglob("*.tmp")), [])
 
         self.assertIsNotNone(sandbox_root)
         self.assertFalse(sandbox_root.exists())
@@ -201,6 +222,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             sandbox_root = Path(temp_dir)
             source_root = sandbox_root / "bundle-source"
             studio_root = sandbox_root / "studio-root"
+            workspace_root = sandbox_root / "workspace"
             app_path = self._isolated_project_studio(studio_root)
             active_project = self._write_active_project(studio_root)
             active_project_bytes = active_project.read_bytes()
@@ -214,12 +236,22 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
                 project_name="broken_production",
             )
 
-            broken_project = studio_root / "projects" / "broken_production.json"
             broken_assets = (
-                studio_root / "projects" / "imported" / "broken_production"
+                workspace_root / "productions" / "broken_production"
+            )
+            broken_project = (
+                broken_assets / "projects" / "broken_production.json"
             )
 
-            with chdir(studio_root):
+            with chdir(studio_root), patch.dict(
+                os.environ,
+                {
+                    "BARCHARTSTUDIO_WORKSPACE": str(workspace_root),
+                    "BARCHARTSTUDIO_SETTINGS_FILE": str(
+                        sandbox_root / "settings" / "settings.json"
+                    ),
+                },
+            ):
                 app = AppTest.from_file(
                     str(app_path),
                     default_timeout=30,
@@ -267,7 +299,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
             self.assertFalse(broken_project.exists())
             self.assertFalse(broken_assets.exists())
             self.assertEqual(active_project.read_bytes(), active_project_bytes)
-            self.assertEqual(list(studio_root.rglob("*.tmp")), [])
+            self.assertEqual(list(workspace_root.rglob("*.tmp")), [])
 
         self.assertIsNotNone(sandbox_root)
         self.assertFalse(sandbox_root.exists())

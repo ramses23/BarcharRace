@@ -11,12 +11,14 @@ from renderer.bar_renderer import BarRenderer
 from studio.package_paths import DEFAULT_PROJECT_ROOT, resolve_project_path
 from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.fun_fact_loader import load_fun_fact_scheduler
+from studio.project_runtime import resolve_project_preset_paths
+from studio.workspace_paths import assert_user_write_path
 from validators.dataset_validator import DatasetValidator
 
 
 def render_project_preview(
     project_path,
-    output_dir="output/studio_preview",
+    output_dir=None,
     year=None,
     preview_mode="year",
     transition_progress=0.0,
@@ -24,6 +26,7 @@ def render_project_preview(
     root_dir=None,
     project_data=None,
     force_fun_fact_id=None,
+    app_root=None,
 ):
     root_path = _project_root(root_dir)
     if project_data is None:
@@ -40,12 +43,14 @@ def render_project_preview(
             default_name=project_path,
         )
     source_label = preset.data_source_config.source_label
-    data_source_config = _resolved_data_source_config(
-        preset.data_source_config,
-        root_path,
+    preset = resolve_project_preset_paths(
+        preset,
+        project_root=root_path,
+        output_root=root_path,
     )
-    dataset_config = _resolved_dataset_config(preset.dataset_config, root_path)
-    chart_config = _resolved_chart_config(preset.chart_config, root_path)
+    data_source_config = preset.data_source_config
+    dataset_config = preset.dataset_config
+    chart_config = preset.chart_config
 
     dataframe = DataSourceLoader(data_source_config).load()
     dataframe = DatasetValidator(config=dataset_config).validate(dataframe)
@@ -118,11 +123,17 @@ def render_project_preview(
     )
 
     output_path = resolve_project_path(
-        output_dir,
+        output_dir or "output/previews",
         project_root=root_path,
         required=True,
         field_name="preview output directory",
     )
+    if app_root is not None:
+        output_path = assert_user_write_path(
+            output_path,
+            app_root=app_root,
+            operation="Preview render",
+        )
     renderer = BarRenderer(
         output_dir=str(output_path),
         config=chart_config,
@@ -144,76 +155,49 @@ def _project_root(root_dir):
     )
 
 
-def _resolved_data_source_config(config, project_root):
-    if config.source_type == "csv":
-        return replace(
-            config,
-            csv_path=str(
-                resolve_project_path(
-                    config.csv_path,
-                    project_root=project_root,
-                    required=True,
-                    field_name="data_source.csv_path",
-                )
-            ),
-        )
-
-    if config.source_type == "sqlite":
-        return replace(
-            config,
-            sqlite_database_path=str(
-                resolve_project_path(
-                    config.sqlite_database_path,
-                    project_root=project_root,
-                    required=True,
-                    field_name="data_source.sqlite_database_path",
-                )
-            ),
-        )
-
-    return config
-
-
-def _resolved_dataset_config(config, project_root):
+def _resolved_dataset_config(config, root_path):
+    """Backward-compatible helper for callers that resolve preview logo maps."""
     return replace(
         config,
-        category_logos=_resolved_path_map(
-            config.category_logos,
-            project_root=project_root,
-            field_name="dataset.category_logos",
-        ),
-        category_secondary_logos=_resolved_path_map(
-            config.category_secondary_logos,
-            project_root=project_root,
-            field_name="dataset.category_secondary_logos",
-        ),
+        category_logos={
+            category: str(
+                resolve_project_path(
+                    value,
+                    project_root=root_path,
+                    required=True,
+                    field_name=f"dataset.category_logos[{category!r}]",
+                )
+            )
+            for category, value in config.category_logos.items()
+        },
+        category_secondary_logos={
+            category: str(
+                resolve_project_path(
+                    value,
+                    project_root=root_path,
+                    required=True,
+                    field_name=(
+                        "dataset.category_secondary_logos"
+                        f"[{category!r}]"
+                    ),
+                )
+            )
+            for category, value in config.category_secondary_logos.items()
+        },
     )
 
 
-def _resolved_path_map(values, *, project_root, field_name):
-    return {
-        category: str(
-            resolve_project_path(
-                value,
-                project_root=project_root,
-                required=True,
-                field_name=f"{field_name}[{category!r}]",
-            )
-        )
-        for category, value in values.items()
-    }
-
-
-def _resolved_chart_config(config, project_root):
+def _resolved_chart_config(config, root_path):
+    """Backward-compatible helper for preview asset path resolution."""
     background_path = resolve_project_path(
         config.background_image_path,
-        project_root=project_root,
+        project_root=root_path,
         required=config.background_mode == "image",
         field_name="chart.background_image_path",
     )
     texture_path = resolve_project_path(
         config.bar_texture_custom_image,
-        project_root=project_root,
+        project_root=root_path,
         required=(
             config.bar_texture_enabled
             and config.bar_texture_preset == "custom_image"
@@ -222,7 +206,7 @@ def _resolved_chart_config(config, project_root):
     )
     logos_dir = resolve_project_path(
         config.logos_dir,
-        project_root=project_root,
+        project_root=root_path,
         required=True,
         field_name="chart.logos_dir",
     )

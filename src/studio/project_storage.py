@@ -4,14 +4,31 @@ from pathlib import Path
 from time import sleep
 from uuid import uuid4
 
+from studio.workspace_paths import assert_user_write_path
+
 
 ATOMIC_REPLACE_ATTEMPTS = 8
 ATOMIC_REPLACE_INITIAL_DELAY = 0.01
 ATOMIC_REPLACE_MAX_DELAY = 0.2
 
 
-def atomic_write_json(data, path):
+def atomic_write_json(
+    data,
+    path,
+    *,
+    app_root=None,
+    workspace_root=None,
+    operation="Project JSON",
+):
     path = Path(path)
+
+    if app_root is not None:
+        path = assert_user_write_path(
+            path,
+            app_root=app_root,
+            workspace_root=workspace_root,
+            operation=operation,
+        )
 
     if path.suffix.lower() != ".json":
         raise ValueError("Project file must use the .json extension.")

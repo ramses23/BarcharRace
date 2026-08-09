@@ -13,6 +13,8 @@ from config.value_format_config import get_value_format
 class CliOptions:
     preset_name: str = DEFAULT_PRESET_NAME
     project_file: str | None = None
+    workspace_root: str | None = None
+    production_root: str | None = None
     list_presets: bool = False
     list_themes: bool = False
     list_layouts: bool = False
@@ -56,6 +58,18 @@ def build_argument_parser():
         "--project",
         dest="project_file",
         help="Render using an external JSON project file.",
+    )
+    parser.add_argument(
+        "--workspace",
+        dest="workspace_root",
+        help="Override the configured user workspace root.",
+    )
+    parser.add_argument(
+        "--production-root",
+        help=(
+            "Resolve project-relative data, assets, and outputs from this "
+            "production or scratch root."
+        ),
     )
     parser.add_argument(
         "--list-presets",
@@ -197,6 +211,8 @@ def parse_cli_args(argv):
     return CliOptions(
         preset_name=namespace.preset or DEFAULT_PRESET_NAME,
         project_file=namespace.project_file,
+        workspace_root=namespace.workspace_root,
+        production_root=namespace.production_root,
         list_presets=namespace.list_presets,
         list_themes=namespace.list_themes,
         list_layouts=namespace.list_layouts,

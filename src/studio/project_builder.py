@@ -447,9 +447,21 @@ def build_project_data(
     return project_data
 
 
-def save_project_data(project_data, project_path):
+def save_project_data(
+    project_data,
+    project_path,
+    *,
+    app_root=None,
+    workspace_root=None,
+):
     migration = migrate_project_data(project_data)
-    return atomic_write_json(migration.data, project_path)
+    return atomic_write_json(
+        migration.data,
+        project_path,
+        app_root=app_root,
+        workspace_root=workspace_root,
+        operation="Project save",
+    )
 
 
 def load_project_data(project_path):
@@ -608,9 +620,9 @@ def project_name_from_title(title):
 
 def default_project_paths(project_name):
     return {
-        "project_file": f"projects/{project_name}.json",
-        "output_file": f"output/{project_name}.mp4",
-        "frames_dir": f"output/{project_name}_frames",
+        "project_file": "project.json",
+        "output_file": f"output/races/{project_name}.mp4",
+        "frames_dir": f"output/frames/{project_name}",
     }
 
 

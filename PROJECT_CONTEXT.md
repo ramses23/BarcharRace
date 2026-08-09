@@ -152,9 +152,12 @@ The project is a usable MVP:
 - Synthetic larger-dataset profiling tool in `src/tools/profile_large_dataset.py`.
 - CLI presets and CLI overrides.
 - Local Streamlit project editor in `src/ui/project_studio.py`.
-- Project Studio can create new project JSON files and open/edit existing
-  `projects/*.json` files while preserving advanced fields that are not exposed
-  in the form yet.
+- Workspace Separation V1 distinguishes `APP_ROOT`, `WORKSPACE_ROOT`, and each
+  production or scratch `project_root`. Project Studio creates user content in
+  the configured external workspace, opens production/scratch projects in
+  place, and labels repository examples/projects as read-only sources that are
+  cloned to scratch on save. Advanced fields not exposed in the form remain
+  preserved.
 - Project Studio builds an immutable `ProjectDraft` snapshot from the form and
   tracks a canonical fingerprint of both its JSON data and destination path.
   It also tracks a render-dependency fingerprint and a narrower automatic
@@ -263,8 +266,8 @@ The project is a usable MVP:
   launch.
 - Final renders run in an isolated worker process controlled by
   `src/ui/render_controller.py`. Progress is throttled into an atomic status
-  file under `output/.render_jobs/<job_id>/`; stdout/stderr go to that job's
-  log. The Streamlit UI polls only an active fragment and can terminate the
+  file under `WORKSPACE_ROOT/cache/render_jobs/<job_id>/`; stdout/stderr go to
+  that job's log. The Streamlit UI polls only an active fragment and can terminate the
   worker plus its FFmpeg child tree. Atomic JSON replacement retries transient
   destination locks with bounded backoff, which is required on Windows while
   Streamlit, antivirus, or indexing software reads `status.json`. A progress
@@ -322,8 +325,9 @@ The project is a usable MVP:
   The flow reuses the current controller, worker, `RenderJob`, renderer, and
   exporter; it does not create a second rendering pipeline. Dataset building
   and logo resolution perform no network access, downloads, or remote caching.
-- `ProductionWorkspace` reserves one exclusive job directory under
-  `output/.production_jobs/<job_id>/` (or an explicit alternate root), creates
+- `ProductionWorkspace` reserves one exclusive job directory under the
+  explicit automation job root (the CLI uses
+  `PRODUCTION_ROOT/generated/production_jobs/<job_id>/`), creates
   canonical artifact directories, and writes deterministic version-1 workspace
   manifest and production-status JSON files. Workspace, production-status, and
   project JSON schemas are independent. Failed initialization rolls back only
@@ -441,7 +445,7 @@ The project is a usable MVP:
 - The tracked synthetic example lives under `production/` and runs through
   `.venv\Scripts\python.exe src\tools\run_production.py --brief
   production\briefs\examples\national_team_goals_demo.json --root .`.
-  Each job reserves `output/.production_jobs/<job_id>/` without overwrite and
+  Each job reserves `generated/production_jobs/<job_id>/` without overwrite and
   publishes its dataset, project, optional MP4, manifests, and portable status.
 - The MVP remains local and single-job: automatic downloads, remote logo
   discovery, a production queue or scheduler, retry/resume recovery, cloud
@@ -449,6 +453,66 @@ The project is a usable MVP:
 
 The eight-phase consolidation roadmap is complete. Future work should start
 from a concrete chart type or user workflow and preserve the contracts below.
+
+## Workspace Separation V1 Contract
+
+Filesystem ownership is an architectural boundary, not a `.gitignore`
+convention:
+
+- `APP_ROOT` is the Git checkout. Normal use may read source, tracked examples,
+  official presets, documentation, and small fixtures there. User projects,
+  datasets, uploaded assets, previews, frames, renders, package state, and
+  caches must not be written there.
+- `WORKSPACE_ROOT` is external user storage. Without a setting it is derived as
+  the sibling `<APP_ROOT name>Workspace`; the configured absolute path is stored
+  atomically outside Git at `%LOCALAPPDATA%/BarChartStudio/settings.json` on
+  Windows. Workspace and settings paths reject unsafe overlap and existing
+  symlink/junction components.
+- A production `project_root` is
+  `WORKSPACE_ROOT/productions/<production_slug>/`. A standalone draft uses
+  `WORKSPACE_ROOT/scratch/<project_slug>/`. Relative data, asset, background,
+  logo, texture, and fun-fact paths resolve from this root. Output paths resolve
+  from an explicit output root and cannot escape it.
+
+The shared V1 workspace directories are only `productions/`, `scratch/`,
+`packages/`, and `cache/`. Productions are self-contained and may create
+`data/`, `projects/`, `assets/`, `fun_facts/`, `output/`, and `generated/` as
+needed. Preview output belongs under `<project_root>/output/previews/`; MP4s
+belong under `<project_root>/output/races/` or `output/master/`; temporary
+frames belong under `<project_root>/output/frames/`; Studio render status belongs
+under `WORKSPACE_ROOT/cache/render_jobs/`.
+
+`src/studio/workspace_paths.py` owns settings, initialization, explicit project
+location classification, and the app-root write guard.
+`src/studio/package_paths.py` owns portable input containment and link/traversal
+rejection. `src/studio/project_runtime.py` resolves a loaded preset against its
+separate project and output roots. Callers must pass root meaning explicitly;
+do not reintroduce a variable where repository root, workspace root, and
+project root are interchangeable.
+
+Project Studio discovers workspace productions, then scratch projects, then
+tracked examples and repository legacy projects. Legacy/example locations are
+readable but not normal save targets; the first save clones their editable JSON
+to scratch and preserves original input references without modifying or
+migrating the source files.
+
+Portable bundle import validates and stages under workspace cache, then
+atomically installs a complete production under
+`WORKSPACE_ROOT/productions/<slug>/`. Production binding schema 2 stores a
+portable `production_reference` plus `project_relative_path`; legacy schema 1
+bindings remain readable. A package import must never create editable projects,
+datasets, or assets under the repository.
+
+Official application presets remain under `APP_ROOT/presets/`. Tracked examples
+should evolve toward `APP_ROOT/examples/`; existing `APP_ROOT/projects/*.json`
+files are a backward-compatibility source, not a destination.
+
+No automatic migration of existing local repository content belongs in V1. A
+future Workspace Migration tool should inventory legacy files, group them by
+proposed production, copy before any mutation, verify size and SHA-256 for every
+copy, emit a reviewable report, and retain every source until the user approves
+a separate deletion phase. It must support dry-run/resume and never infer
+destructive permission from workspace initialization.
 
 ## Architecture Contract
 
@@ -585,7 +649,9 @@ Prefer configuration over code edits for user-facing video definitions.
 Current configuration layers:
 
 - Internal presets live in `src/config/project_preset.py`.
-- External reusable project files live in `projects/*.json`.
+- New external project files live inside a workspace production's `projects/`
+  directory or in a scratch project root. Repository `projects/*.json` files
+  are legacy/read-only inputs during the transition.
 - Timeline-bound editorial overlays use the optional top-level `fun_facts`
   section plus an independent version-1 external JSON file. `Timeline` resolves
   exact display labels from `DatasetConfig.time_label_column`, or `str(period)`
@@ -612,8 +678,9 @@ Current configuration layers:
 - Project Studio can auto-match logo files by comparing normalized category
   names to normalized logo filenames, including case, spaces, underscores, and
   simple accent differences.
-- Uploaded logo folders are copied under `logos/`, and the copied folder becomes
-  the active logo folder for category matching.
+- Uploaded logo folders are copied under the active project root's
+  `assets/logos/` or `assets/logos_secondary/`, and that project-relative folder
+  becomes the active source for category matching.
 - Category editing displays the first 80 categories for usability, but logo
   auto-matching uses every category in the dataset.
 - Applied logo matches are persisted in Streamlit session state so preview and
@@ -634,7 +701,9 @@ When adding a feature:
 - Add or update tests when behavior changes.
 - Update README when user-facing behavior changes.
 - Update this file when direction, architecture, or major workflow changes.
-- Keep generated files out of Git. `output/` is ignored.
+- Keep generated files out of Git and route them through `WORKSPACE_ROOT`.
+  Repository `output/` remains ignored only as a second defense for legacy/dev
+  flows; `.gitignore` is not the filesystem ownership mechanism.
 - Keep generated SQLite databases out of Git. `data/database/*.db` is ignored.
 - Prefer small commits with clear messages.
 - Push meaningful checkpoints to GitHub after verification.
@@ -863,6 +932,15 @@ in verified, published checkpoints:
     text/photos with fades while bars keep moving, force a selected Studio
     preview, validate schedules/assets in preflight, and carry all referenced
     files through portable bundles without changing video duration.
+
+18. **Workspace Separation V1 - completed locally.** Application-owned files
+    remain under `APP_ROOT`; new productions, scratch projects, uploads,
+    previews, renders, package imports, bindings, and caches route through an
+    external configurable `WORKSPACE_ROOT`. Production-relative paths,
+    self-contained package installs, explicit write guards, legacy/example
+    read compatibility, native Studio workspace controls, and temporary-root
+    security tests establish the boundary without migrating any real local
+    content.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

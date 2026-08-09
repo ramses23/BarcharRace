@@ -11,9 +11,27 @@ LAST_RENDER_STATUS_STATE = "last_render_status"
 LAST_PREFLIGHT_STATE = "last_render_preflight"
 
 
-def start_render_with_preflight(project_file, *, root_dir):
-    project_path = root_dir / project_file
-    preflight = run_render_preflight(project_path, root_dir=root_dir)
+def start_render_with_preflight(
+    project_file,
+    *,
+    root_dir=None,
+    project_root=None,
+    output_root=None,
+    app_root=None,
+    job_root=None,
+):
+    if root_dir is not None and project_root is not None:
+        raise ValueError("Use project_root or root_dir, not both.")
+    active_root = project_root if project_root is not None else root_dir
+    if active_root is None:
+        raise ValueError("project_root is required.")
+    project_path = active_root / project_file
+    preflight = run_render_preflight(
+        project_path,
+        project_root=active_root,
+        output_root=output_root,
+        app_root=app_root,
+    )
     st.session_state[LAST_PREFLIGHT_STATE] = preflight.as_dict()
 
     if not preflight.ready:
@@ -23,7 +41,10 @@ def start_render_with_preflight(project_file, *, root_dir):
     try:
         background_render = start_background_render(
             project_path,
-            root_dir=root_dir,
+            project_root=active_root,
+            output_root=output_root,
+            app_root=app_root,
+            job_root=job_root,
         )
     except OSError as exc:
         st.error(f"Could not start the render process: {exc}")

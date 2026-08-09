@@ -121,7 +121,7 @@ class RunProductionCliTest(unittest.TestCase):
         self.assertEqual(kwargs["source_root_dir"], self.root)
         self.assertEqual(
             kwargs["workspace_root_dir"],
-            (self.root / "output" / ".production_jobs").resolve(),
+            (self.root / "generated" / "production_jobs").resolve(),
         )
         self.assertIs(kwargs["progress_callback"], run_production.print_progress)
 

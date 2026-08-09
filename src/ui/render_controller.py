@@ -8,7 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from pipeline.render_job import RenderProfile, RenderResult
+from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_storage import atomic_write_json
+from studio.workspace_paths import assert_user_write_path
 
 
 @dataclass
@@ -68,16 +70,52 @@ class BackgroundRender:
         return canceled_status
 
 
-def start_background_render(project_file, *, root_dir, worker_path=None):
-    root_path = Path(root_dir).resolve()
-    project_path = Path(project_file).resolve()
+def start_background_render(
+    project_file,
+    *,
+    root_dir=None,
+    project_root=None,
+    output_root=None,
+    app_root=None,
+    job_root=None,
+    worker_path=None,
+):
+    if root_dir is not None and project_root is not None:
+        raise ValueError("Use project_root or root_dir, not both.")
+    root_value = project_root if project_root is not None else root_dir
+    if root_value is None:
+        raise ValueError("project_root is required.")
+    root_path = Path(root_value).resolve()
+    app_path = Path(app_root).resolve() if app_root is not None else root_path
+    output_path = Path(output_root).resolve() if output_root is not None else root_path
+    project_path = resolve_project_path(
+        project_file,
+        project_root=root_path,
+        required=True,
+        field_name="project file",
+    )
+    if not project_path.is_relative_to(root_path):
+        raise ProjectPathError(
+            f"Project file must remain inside project_root: {root_path}"
+        )
     job_id = uuid4().hex
-    job_dir = root_path / "output" / ".render_jobs" / job_id
+    jobs_path = (
+        Path(job_root).resolve()
+        if job_root is not None
+        else root_path / "output" / ".render_jobs"
+    )
+    if app_root is not None:
+        jobs_path = assert_user_write_path(
+            jobs_path,
+            app_root=app_path,
+            operation="Render job state",
+        )
+    job_dir = jobs_path / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     status_path = job_dir / "status.json"
     log_path = job_dir / "render.log"
     worker_path = Path(
-        worker_path or root_path / "src" / "studio" / "render_worker.py"
+        worker_path or app_path / "src" / "studio" / "render_worker.py"
     ).resolve()
     initial_status = {
         "job_id": job_id,
@@ -98,11 +136,19 @@ def start_background_render(project_file, *, root_dir, worker_path=None):
         str(project_path),
         "--root-dir",
         str(root_path),
-        "--status-file",
-        str(status_path),
-        "--job-id",
-        job_id,
+        "--output-root",
+        str(output_path),
     ]
+    if app_root is not None:
+        command.extend(("--app-root", str(app_path)))
+    command.extend(
+        (
+            "--status-file",
+            str(status_path),
+            "--job-id",
+            job_id,
+        )
+    )
     creationflags = 0
     if os.name == "nt":
         creationflags = (
@@ -114,7 +160,7 @@ def start_background_render(project_file, *, root_dir, worker_path=None):
     with log_path.open("wb") as log_file:
         process = subprocess.Popen(
             command,
-            cwd=root_path,
+            cwd=app_path,
             env=environment,
             stdout=log_file,
             stderr=subprocess.STDOUT,

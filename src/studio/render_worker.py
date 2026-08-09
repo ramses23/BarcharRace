@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 import traceback
-from dataclasses import asdict, replace
+from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from time import monotonic
 
@@ -13,15 +13,43 @@ if str(SRC_DIR) not in sys.path:
 
 from config.project_file_loader import load_project_file
 from pipeline.render_job import RenderJob
+from studio.package_paths import ProjectPathError, resolve_project_path
+from studio.project_runtime import resolve_project_preset_paths
 from studio.project_storage import atomic_write_json
 
 
-def run_worker(project_file, root_dir, status_file, job_id):
-    project_path = Path(project_file).resolve()
+def run_worker(
+    project_file,
+    root_dir,
+    status_file,
+    job_id,
+    *,
+    output_root=None,
+    app_root=None,
+):
     root_path = Path(root_dir).resolve()
+    project_path = resolve_project_path(
+        project_file,
+        project_root=root_path,
+        required=True,
+        field_name="project file",
+    )
+    if not project_path.is_relative_to(root_path):
+        raise ProjectPathError(
+            f"Project file must remain inside project_root: {root_path}"
+        )
     status_path = Path(status_file).resolve()
     preset = load_project_file(project_path)
-    final_output = _resolve_path(preset.chart_config.output_file, root_path)
+    if is_dataclass(preset):
+        preset = resolve_project_preset_paths(
+            preset,
+            project_root=root_path,
+            output_root=Path(output_root).resolve() if output_root else root_path,
+            app_root=Path(app_root).resolve() if app_root else None,
+        )
+        final_output = Path(preset.chart_config.output_file)
+    else:
+        final_output = _resolve_path(preset.chart_config.output_file, root_path)
     final_output.parent.mkdir(parents=True, exist_ok=True)
     temporary_output = final_output.with_name(
         f".{final_output.stem}.{job_id}.partial{final_output.suffix}"
@@ -118,20 +146,22 @@ def _progress_writer(status_path, base_status, minimum_interval=0.25):
     return update
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="BarChartStudio render worker")
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--root-dir", required=True)
+    parser.add_argument("--output-root")
+    parser.add_argument("--app-root")
+    parser.add_argument("--status-file", required=True)
+    parser.add_argument("--job-id", required=True)
+    return parser.parse_args(argv)
+
+
 def _resolve_path(path, root_path):
     resolved = Path(path)
     if not resolved.is_absolute():
         resolved = root_path / resolved
     return resolved.resolve()
-
-
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="BarChartStudio render worker")
-    parser.add_argument("--project", required=True)
-    parser.add_argument("--root-dir", required=True)
-    parser.add_argument("--status-file", required=True)
-    parser.add_argument("--job-id", required=True)
-    return parser.parse_args(argv)
 
 
 def main(argv=None):
@@ -141,6 +171,8 @@ def main(argv=None):
         args.root_dir,
         args.status_file,
         args.job_id,
+        output_root=args.output_root,
+        app_root=args.app_root,
     )
 
 

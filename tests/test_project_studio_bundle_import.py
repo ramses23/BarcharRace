@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,8 +19,29 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[1]
         cls.app_path = cls.root / "src" / "ui" / "project_studio.py"
 
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory(
+            prefix="barchart-studio-bundle-ui-"
+        )
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.temp_path = Path(self.temporary_directory.name).resolve()
+        self.workspace_root = self.temp_path / "workspace"
+        self.environment_patcher = patch.dict(
+            os.environ,
+            {
+                "BARCHARTSTUDIO_WORKSPACE": str(self.workspace_root),
+                "BARCHARTSTUDIO_SETTINGS_FILE": str(
+                    self.temp_path / "settings" / "settings.json"
+                ),
+            },
+        )
+        self.environment_patcher.start()
+        self.addCleanup(self.environment_patcher.stop)
+
     def test_valid_zip_imports_once_selects_and_loads_project(self):
-        project_path, project_relative = self._new_imported_project_path()
+        project_path, project_relative, project_option = (
+            self._new_imported_project_path()
+        )
         importer = self._importer_that_creates(project_path)
         try:
             with patch(
@@ -44,14 +66,21 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
 
                 self.assertEqual(import_mock.call_count, 1)
                 self.assertEqual(import_mock.call_args.args, (b"zip bytes",))
-                self.assertEqual(import_mock.call_args.kwargs, {"root_dir": self.root})
+                self.assertEqual(
+                    import_mock.call_args.kwargs,
+                    {
+                        "workspace_root": self.workspace_root,
+                        "app_root": self.root,
+                    },
+                )
                 self._assert_project_selected_and_loaded(
                     app,
                     project_path,
                     project_relative,
+                    project_option,
                 )
                 self.assertTrue(
-                    any(project_relative in caption.value for caption in app.caption)
+                    any(project_option in caption.value for caption in app.caption)
                 )
                 self.assertTrue(
                     any("4 verified files" in caption.value for caption in app.caption)
@@ -69,7 +98,9 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
             project_path.unlink(missing_ok=True)
 
     def test_valid_folder_uses_same_importer_and_selects_project(self):
-        project_path, project_relative = self._new_imported_project_path()
+        project_path, project_relative, project_option = (
+            self._new_imported_project_path()
+        )
         importer = self._importer_that_creates(project_path)
         try:
             with tempfile.TemporaryDirectory() as folder_dir, patch(
@@ -102,11 +133,18 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
                     import_mock.call_args.args,
                     (Path(folder_dir),),
                 )
-                self.assertEqual(import_mock.call_args.kwargs, {"root_dir": self.root})
+                self.assertEqual(
+                    import_mock.call_args.kwargs,
+                    {
+                        "workspace_root": self.workspace_root,
+                        "app_root": self.root,
+                    },
+                )
                 self._assert_project_selected_and_loaded(
                     app,
                     project_path,
                     project_relative,
+                    project_option,
                 )
         finally:
             project_path.unlink(missing_ok=True)
@@ -166,12 +204,30 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
 
     def _new_imported_project_path(self):
         name = f"ui_bundle_import_{uuid4().hex}"
-        relative = f"projects/{name}.json"
-        return self.root / relative, relative
+        project_relative = f"projects/{name}.json"
+        project_option = f"productions/{name}/{project_relative}"
+        return (
+            self.workspace_root / project_option,
+            project_relative,
+            project_option,
+        )
 
     def _importer_that_creates(self, project_path):
-        def importer(bundle, *, root_dir):
-            self.assertEqual(root_dir, self.root)
+        def importer(bundle, *, workspace_root, app_root):
+            self.assertEqual(Path(workspace_root), self.workspace_root)
+            self.assertEqual(Path(app_root), self.root)
+            project_path.parent.mkdir(parents=True, exist_ok=True)
+            dataset_path = (
+                project_path.parents[1]
+                / "data"
+                / "datasets"
+                / "sample_dynamic.csv"
+            )
+            dataset_path.parent.mkdir(parents=True, exist_ok=True)
+            dataset_path.write_text(
+                "year,name,value\n2000,Alpha,1\n2001,Alpha,2\n",
+                encoding="utf-8",
+            )
             project_path.write_text(
                 json.dumps(
                     {
@@ -187,9 +243,7 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
             )
             return ProjectBundleImport(
                 project_path=str(project_path),
-                asset_directory=str(
-                    self.root / "projects" / "imported" / project_path.stem
-                ),
+                asset_directory=str(project_path.parents[1]),
                 file_count=4,
                 uncompressed_size=1024,
             )
@@ -207,6 +261,7 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
         app,
         project_path,
         project_relative,
+        project_option,
     ):
         self.assertFalse(app.exception)
         self.assertTrue(project_path.is_file())
@@ -221,8 +276,11 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
         selector = next(
             item for item in app.selectbox if item.label == "Open project"
         )
-        self.assertIn(project_relative, selector.options)
-        self.assertEqual(selector.value, project_relative)
+        expected_label = (
+            f"Production / {project_path.stem} / {project_path.stem}"
+        )
+        self.assertIn(expected_label, selector.options)
+        self.assertEqual(selector.value, project_option)
 
     @staticmethod
     def _button(app, label):

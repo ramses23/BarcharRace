@@ -21,6 +21,10 @@ from studio.image_validation import ImageValidationError, validate_image_file
 from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
 from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_storage import atomic_write_json
+from studio.workspace_paths import (
+    assert_user_write_path,
+    initialize_workspace,
+)
 from validators.dataset_validator import DatasetValidator
 
 
@@ -169,7 +173,27 @@ def build_project_bundle(project_data, *, root_dir):
     )
 
 
-def import_project_bundle(bundle, *, root_dir):
+def import_project_bundle(
+    bundle,
+    *,
+    root_dir=None,
+    workspace_root=None,
+    app_root=None,
+):
+    if workspace_root is not None:
+        if root_dir is not None:
+            raise ProjectBundleError("Use workspace_root or root_dir, not both.")
+        return _import_project_bundle_to_workspace(
+            bundle,
+            workspace_root=workspace_root,
+            app_root=app_root,
+        )
+    if root_dir is None:
+        raise ProjectBundleError("workspace_root is required for bundle import.")
+    return _import_project_bundle_legacy(bundle, root_dir=root_dir)
+
+
+def _import_project_bundle_legacy(bundle, *, root_dir):
     root_path = Path(root_dir).resolve()
     source = _bundle_source(bundle)
     import_root = root_path / "projects" / "imported"
@@ -671,6 +695,109 @@ def _bundle_fun_fact_assets(
     config["source"] = source_archive_path
 
 
+def _import_project_bundle_to_workspace(bundle, *, workspace_root, app_root=None):
+    layout = initialize_workspace(
+        workspace_root,
+        app_root=(
+            Path(app_root).resolve()
+            if app_root is not None
+            else Path(__file__).resolve().parents[2]
+        ),
+    )
+    source = _bundle_source(bundle)
+    staging_root = layout.cache_root / "bundle_imports"
+    assert_user_write_path(
+        staging_root,
+        app_root=layout.app_root,
+        workspace_root=layout.workspace_root,
+        operation="Bundle import staging",
+    ).mkdir(parents=True, exist_ok=True)
+    staging_directory = staging_root / f".bundle.{uuid4().hex}.tmp"
+    if source[0] == "directory" and staging_directory.is_relative_to(source[1]):
+        raise ProjectBundleError(
+            "Bundle source directory cannot contain the import staging area."
+        )
+    production_root = None
+    project_path = None
+
+    try:
+        staging_directory.mkdir(parents=True, exist_ok=False)
+        _materialize_bundle_source(source, staging_directory)
+        manifest, records, total_size, file_count = _validate_staged_bundle(
+            staging_directory
+        )
+        project_file = manifest.get("project_file")
+        if project_file != PROJECT_PATH or project_file not in records:
+            raise ProjectBundleError("Bundle manifest must reference project.json.")
+
+        staging_project_path = staging_directory / PROJECT_PATH
+        project_data = _read_staged_project_data(staging_project_path)
+        preset = load_project_file(staging_project_path)
+        validated_dataset = _validate_staged_project_dataset(
+            preset,
+            staging_directory=staging_directory,
+        )
+        _validate_staged_project_images(
+            project_data,
+            staging_directory=staging_directory,
+        )
+        _validate_staged_project_fun_facts(
+            preset,
+            validated_dataset=validated_dataset,
+            staging_directory=staging_directory,
+        )
+
+        slug = _unique_production_slug(
+            layout.workspace_root,
+            manifest.get("project_name") or project_data.get("name") or "project",
+        )
+        production_root = layout.productions_root / slug
+        _rewrite_staged_fun_fact_references(
+            project_data,
+            staging_directory=staging_directory,
+            payload_paths=set(records),
+            imported_relative_root=Path(),
+        )
+        _rewrite_project_references(
+            project_data,
+            payload_paths=set(records),
+            imported_relative_root=Path(),
+        )
+        chart = project_data.setdefault("chart", {})
+        chart["output_file"] = f"output/races/{slug}.mp4"
+        chart["frames_dir"] = f"output/frames/{slug}"
+        project_data["name"] = slug
+
+        staging_project_path.unlink()
+        (staging_directory / MANIFEST_PATH).unlink()
+        staged_projects = staging_directory / "projects"
+        staged_projects.mkdir()
+        staged_editable_project = staged_projects / f"{slug}.json"
+        atomic_write_json(
+            project_data,
+            staged_editable_project,
+            app_root=layout.app_root,
+            workspace_root=layout.workspace_root,
+            operation="Bundle project import",
+        )
+        load_project_file(staged_editable_project)
+        os.replace(staging_directory, production_root)
+        project_path = production_root / "projects" / f"{slug}.json"
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, ProjectBundleError):
+            raise
+        raise ProjectBundleError(f"Could not import project bundle: {exc}") from exc
+    finally:
+        shutil.rmtree(staging_directory, ignore_errors=True)
+
+    return ProjectBundleImport(
+        project_path=str(project_path),
+        asset_directory=str(production_root),
+        file_count=file_count,
+        uncompressed_size=total_size,
+    )
+
+
 def _add_archive_file(
     source_path,
     *,
@@ -897,6 +1024,17 @@ def _unique_import_slug(root_path, value):
         (root_path / "projects" / f"{candidate}.json").exists()
         or (root_path / "projects" / "imported" / candidate).exists()
     ):
+        candidate = f"{base}_{index}"
+        index += 1
+    return candidate
+
+
+def _unique_production_slug(workspace_root, value):
+    productions_root = Path(workspace_root).resolve() / "productions"
+    base = _safe_slug(value)
+    candidate = base
+    index = 2
+    while (productions_root / candidate).exists():
         candidate = f"{base}_{index}"
         index += 1
     return candidate

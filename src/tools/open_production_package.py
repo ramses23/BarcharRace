@@ -20,6 +20,11 @@ from src.studio.project_bundle import (
     import_project_bundle,
     inspect_project_bundle,
 )
+from src.studio.workspace_paths import (
+    WORKSPACE_ROOT_ENV,
+    load_workspace_settings,
+    validate_workspace_root,
+)
 from src.utils.file_size import format_file_size
 
 
@@ -49,7 +54,16 @@ def build_parser():
         "--root",
         type=Path,
         help=(
-            "BarChartStudio root. Defaults to the root containing this module."
+            "Legacy BarChartStudio root compatibility. New imports should use "
+            "--workspace."
+        ),
+    )
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        help=(
+            "User workspace root. Defaults to the configured BarChartStudio "
+            "workspace."
         ),
     )
     parser.add_argument(
@@ -74,8 +88,8 @@ def build_parser():
         type=Path,
         metavar="PROJECT_PATH",
         help=(
-            "Link an existing JSON project inside root/projects without "
-            "importing the package."
+            "Link an existing JSON project inside a workspace production "
+            "without importing the package."
         ),
     )
     parser.add_argument(
@@ -88,26 +102,31 @@ def build_parser():
 
 def run_from_options(options):
     root = _resolved_root(options.root)
+    legacy_mode = options.root is not None and options.workspace is None
+    workspace = None if legacy_mode else _resolved_workspace(options.workspace, root)
     package_path = options.package_path.resolve(strict=True)
     inspection = inspect_project_bundle(package_path)
 
     if options.adopt_project is not None:
         project = resolve_linked_project(
             options.adopt_project,
-            root_dir=root,
+            **_binding_roots(root, workspace),
         )
         binding = write_production_package_binding(
             package_path,
-            root_dir=root,
+            **_binding_roots(root, workspace),
             project_path=project.absolute_path,
             package_manifest_sha256=inspection.manifest_sha256,
         )
         _print_adoption_summary(binding)
     elif options.reimport:
-        imported = import_project_bundle(package_path, root_dir=root)
+        imported = import_project_bundle(
+            package_path,
+            **_import_roots(root, workspace),
+        )
         binding = write_production_package_binding(
             package_path,
-            root_dir=root,
+            **_binding_roots(root, workspace),
             project_path=imported.project_path,
             package_manifest_sha256=inspection.manifest_sha256,
         )
@@ -115,14 +134,17 @@ def run_from_options(options):
     else:
         binding = load_production_package_binding(
             package_path,
-            root_dir=root,
+            **_binding_roots(root, workspace),
             package_manifest_sha256=inspection.manifest_sha256,
         )
         if binding is None:
-            imported = import_project_bundle(package_path, root_dir=root)
+            imported = import_project_bundle(
+                package_path,
+                **_import_roots(root, workspace),
+            )
             binding = write_production_package_binding(
                 package_path,
-                root_dir=root,
+                **_binding_roots(root, workspace),
                 project_path=imported.project_path,
                 package_manifest_sha256=inspection.manifest_sha256,
             )
@@ -140,15 +162,25 @@ def run_from_options(options):
     return launch_project_studio(
         root=root,
         project_relative=binding.project.relative_path,
+        workspace_root=workspace,
         port=options.port,
         headless=options.headless,
     )
 
 
-def launch_project_studio(*, root, project_relative, port, headless):
+def launch_project_studio(
+    *,
+    root,
+    project_relative,
+    workspace_root=None,
+    port,
+    headless,
+):
     environment = os.environ.copy()
     environment[AUTOLOAD_PROJECT_ENV] = project_relative
     environment[AUTOLOAD_TOKEN_ENV] = uuid4().hex
+    if workspace_root is not None:
+        environment[WORKSPACE_ROOT_ENV] = str(workspace_root)
     command = [
         sys.executable,
         "-m",
@@ -190,6 +222,28 @@ def _resolved_root(value):
     if not root.is_dir():
         raise NotADirectoryError(f"BarChartStudio root is not a directory: {root}")
     return root
+
+
+def _resolved_workspace(value, app_root):
+    if value is None:
+        return load_workspace_settings(app_root=app_root).workspace_root
+    return validate_workspace_root(value, app_root=app_root)
+
+
+def _binding_roots(root, workspace):
+    return (
+        {"root_dir": root}
+        if workspace is None
+        else {"workspace_root": workspace, "app_root": root}
+    )
+
+
+def _import_roots(root, workspace):
+    return (
+        {"root_dir": root}
+        if workspace is None
+        else {"workspace_root": workspace, "app_root": root}
+    )
 
 
 def _print_import_summary(*, binding, file_count, uncompressed_size):
