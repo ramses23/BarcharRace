@@ -94,6 +94,19 @@ class WorkspaceSeparationTest(unittest.TestCase):
         self.assertFalse(self.settings_path.is_relative_to(self.app_root))
         self.assertEqual(list(self.settings_path.parent.glob("*.tmp")), [])
 
+    def test_render_cpu_preference_is_global_and_backwards_compatible(self):
+        save_workspace_settings(
+            self.workspace_root, app_root=self.app_root, settings_path=self.settings_path,
+            render_cpu_limit_enabled=True, render_cpu_limit_percent=82,
+        )
+        loaded = load_workspace_settings(app_root=self.app_root, settings_path=self.settings_path, environ={})
+        self.assertTrue(loaded.render_cpu_limit_enabled)
+        self.assertEqual(loaded.render_cpu_limit_percent, 82)
+        self.settings_path.write_text(json.dumps({"schema_version": 1, "workspace_root": str(self.workspace_root)}), encoding="utf-8")
+        legacy = load_workspace_settings(app_root=self.app_root, settings_path=self.settings_path, environ={})
+        self.assertTrue(legacy.render_cpu_limit_enabled)
+        self.assertEqual(legacy.render_cpu_limit_percent, 95)
+
     def test_relative_workspace_path_is_invalid(self):
         with self.assertRaises(WorkspacePathError):
             validate_workspace_root("relative/workspace", app_root=self.app_root)

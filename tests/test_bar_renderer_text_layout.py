@@ -1804,6 +1804,20 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         finally:
             renderer.close()
 
+    def test_category_label_canonical_positions_and_offsets(self):
+        sprite = BarSprite(name="Example", value=100, color="#4E79A7", x=100, y=90, width=240, height=40)
+        center = BarRenderer(config=ChartConfig(width=600, bar_label_position="inside_center", bar_label_offset_x=7, bar_label_offset_y=-3, logos_enabled=False))
+        right = BarRenderer(config=ChartConfig(width=600, bar_label_position="outside_right", bar_label_offset_x=5, logos_enabled=False, value_labels_enabled=False))
+        try:
+            centered = center._bar_label_layout(sprite)
+            outside = right._bar_label_layout(sprite)
+            self.assertEqual(centered["ha"], "center")
+            self.assertEqual(centered["y"], 87)
+            self.assertGreater(outside["x"], sprite.x + sprite.width)
+        finally:
+            center.close()
+            right.close()
+
     def test_lollipop_inside_left_logo_adds_a_circular_socket(self):
         renderer = BarRenderer(config=ChartConfig(
             bar_shape="lollipop",

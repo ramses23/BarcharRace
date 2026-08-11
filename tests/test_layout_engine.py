@@ -10,6 +10,24 @@ from models.bar_data import BarData
 
 
 class LayoutEngineTest(unittest.TestCase):
+    def test_manual_vertical_layout_is_pixel_compatible(self):
+        config = ChartConfig(logos_enabled=False, top_margin=200, bar_height=50, bar_gap=10)
+        sprites = LayoutEngine(config).build([BarData(name="A", value=2), BarData(name="B", value=1)])
+        self.assertEqual([(item.y, item.height) for item in sprites], [(200, 50), (260, 50)])
+
+    def test_fill_available_uses_visible_text_and_ignores_date_position(self):
+        config = ChartConfig(
+            logos_enabled=False, height=600, bar_vertical_layout_mode="fill_available",
+            bar_vertical_top_padding=10, bar_vertical_bottom_padding=10,
+            title_enabled=True, title_y=40, title_font_size=30,
+            subtitle_enabled=False, source_label_enabled=True, source_y=560,
+            source_font_size=12, time_label_enabled=True, time_label_y=300,
+        )
+        sprites = LayoutEngine(config).build([BarData(name=str(i), value=10-i) for i in range(4)])
+        self.assertEqual(len(sprites), 4)
+        self.assertGreaterEqual(sprites[0].y, 70)
+        self.assertLessEqual(sprites[-1].y + (sprites[-1].height / 2), 548)
+        self.assertTrue(all(a.y + (a.height / 2) <= b.y - (b.height / 2) for a, b in zip(sprites, sprites[1:])))
     def test_assigns_rank_by_value(self):
         config = ChartConfig(logos_enabled=False)
 

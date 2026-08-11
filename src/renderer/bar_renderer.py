@@ -374,7 +374,18 @@ class BarRenderer(TextCompositorMixin):
 
         left, _, panel_width = panel_geometry(self.config, self.fun_fact_config)
         panel_top = self.fun_fact_config.panel_margin
-        panel_height = self.config.height - (self.fun_fact_config.panel_margin * 2)
+        if self.fun_fact_config.layout == "editorial_right":
+            date_reserve = (
+                (self.config.time_label_font_size * self.config.dpi / 72.0)
+                + self.fun_fact_config.panel_padding
+                if self.config.time_label_enabled and self.fun_fact_config.editorial_reposition_time_label
+                else 0
+            )
+            panel_top += date_reserve + self.fun_fact_config.editorial_top_offset
+        panel_height = max(
+            1,
+            int(round(self.config.height - panel_top - self.fun_fact_config.panel_margin)),
+        )
         image = self._fun_fact_panel_image(
             active_fact.fact,
             panel_width,
@@ -402,6 +413,15 @@ class BarRenderer(TextCompositorMixin):
             self.config.subtitle_font_family,
             self.config.source_font_family,
             self.config.dpi,
+            self.fun_fact_config.layout,
+            self.fun_fact_config.editorial_background_mode,
+            self.fun_fact_config.editorial_background_color,
+            self.fun_fact_config.editorial_headline_size,
+            self.fun_fact_config.editorial_body_size,
+            self.fun_fact_config.editorial_credit_size,
+            self.fun_fact_config.editorial_image_area_ratio,
+            self.fun_fact_config.editorial_image_fit,
+            self.fun_fact_config.editorial_text_image_gap,
         )
         cached = self._lru_get(self._fun_fact_panel_cache, cache_key)
         if cached is not None:
@@ -412,13 +432,18 @@ class BarRenderer(TextCompositorMixin):
         canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
         radius = max(12, min(28, padding))
-        draw.rounded_rectangle(
-            (0, 0, width - 1, height - 1),
-            radius=radius,
-            fill=background,
-            outline=self._rgba8(fact.accent_color or self.config.resolved_title_text_color),
-            width=max(1, round(self.config.dpi / 96)),
-        )
+        background_mode = self.fun_fact_config.editorial_background_mode if self.fun_fact_config.layout == "editorial_right" else "card"
+        if background_mode != "transparent":
+            rectangle = (0, 0, width - 1, height - 1)
+            fill = background
+            if background_mode == "solid":
+                draw.rectangle(rectangle, fill=fill)
+            else:
+                draw.rounded_rectangle(
+                    rectangle, radius=radius, fill=fill,
+                    outline=self._rgba8(fact.accent_color or self.config.resolved_title_text_color),
+                    width=max(1, round(self.config.dpi / 96)),
+                )
 
         content_width = width - (padding * 2)
         y = padding
@@ -434,17 +459,17 @@ class BarRenderer(TextCompositorMixin):
         headline_font = self._fun_fact_font(
             self.config.title_font_family,
             self.config.title_font_weight,
-            max(18, round(self.config.title_font_size * 0.78)),
+            (self.fun_fact_config.editorial_headline_size if self.fun_fact_config.layout == "editorial_right" else max(18, round(self.config.title_font_size * 0.78))),
         )
         body_font = self._fun_fact_font(
             self.config.subtitle_font_family,
             self.config.subtitle_font_weight,
-            max(14, self.config.subtitle_font_size),
+            (self.fun_fact_config.editorial_body_size if self.fun_fact_config.layout == "editorial_right" else max(14, self.config.subtitle_font_size)),
         )
         credit_font = self._fun_fact_font(
             self.config.source_font_family,
             self.config.source_font_weight,
-            max(10, self.config.source_font_size),
+            (self.fun_fact_config.editorial_credit_size if self.fun_fact_config.layout == "editorial_right" else max(10, self.config.source_font_size)),
         )
         headline_color = self._readable_fun_fact_color(
             background,
@@ -480,7 +505,8 @@ class BarRenderer(TextCompositorMixin):
 
         image_height = 0
         if fact.image_path:
-            image_height = max(120, round(height * 0.34))
+            ratio = self.fun_fact_config.editorial_image_area_ratio if self.fun_fact_config.layout == "editorial_right" else 0.34
+            image_height = max(1, round(height * ratio))
         credit_height = (
             (self._line_height(draw, credit_font) * 2) + 2
             if fact.credit
@@ -489,7 +515,7 @@ class BarRenderer(TextCompositorMixin):
         bottom_reserved = padding + credit_height + (12 if fact.credit else 0)
         body_bottom = height - bottom_reserved - image_height
         if fact.image_path:
-            body_bottom -= max(14, padding // 2)
+            body_bottom -= (self.fun_fact_config.editorial_text_image_gap if self.fun_fact_config.layout == "editorial_right" else max(14, padding // 2))
         available_body_height = max(0, body_bottom - y)
         body_line_height = self._line_height(draw, body_font)
         body_spacing = max(3, round(body_font.size * 0.18))
@@ -515,13 +541,14 @@ class BarRenderer(TextCompositorMixin):
         )
 
         if fact.image_path:
-            image_top = max(y + max(14, padding // 2), height - bottom_reserved - image_height)
+            image_gap = self.fun_fact_config.editorial_text_image_gap if self.fun_fact_config.layout == "editorial_right" else max(14, padding // 2)
+            image_top = max(y + image_gap, height - bottom_reserved - image_height)
             image_height = max(1, min(image_height, height - bottom_reserved - image_top))
             photo = self._prepared_fun_fact_image(
                 fact.image_path,
                 content_width,
                 image_height,
-                fact.image_fit,
+                (self.fun_fact_config.editorial_image_fit if self.fun_fact_config.layout == "editorial_right" else fact.image_fit),
             )
             mask = Image.new("L", photo.size, 0)
             ImageDraw.Draw(mask).rounded_rectangle(
@@ -668,6 +695,8 @@ class BarRenderer(TextCompositorMixin):
         return y
 
     def _fun_fact_panel_background(self):
+        if self.fun_fact_config.layout == "editorial_right" and self.fun_fact_config.editorial_background_color:
+            return self._rgba8(self.fun_fact_config.editorial_background_color)
         base = np.asarray(mcolors.to_rgb(self.config.background_color), dtype=float)
         luminance = float(np.dot(base, (0.2126, 0.7152, 0.0722)))
         target = np.ones(3) if luminance < 0.5 else np.zeros(3)
@@ -2241,12 +2270,41 @@ class BarRenderer(TextCompositorMixin):
         ):
             layout = self._logo_layout(sprite, slot="secondary")
             if layout is not None:
-                layouts.append((
-                    "secondary",
-                    sprite.secondary_logo_path,
-                    layout,
-                    self._logo_position("secondary"),
-                ))
+                if (
+                    layouts
+                    and self.config.bar_secondary_logo_layout == "independent"
+                    and self._logo_position("secondary") == self._logo_position()
+                ):
+                    primary = layouts[0][2]
+                    gap = max(0.0, float(self.config.bar_secondary_logo_gap))
+                    position = self._logo_position("secondary")
+                    size = layout["size"]
+                    if position == "inside_left":
+                        layout = self._square_layout(
+                            primary["right"] + gap,
+                            primary["right"] + gap + size,
+                            sprite.y,
+                            size,
+                        )
+                    elif position in ("inside_right", "outside_left"):
+                        layout = self._square_layout(
+                            primary["left"] - gap - size,
+                            primary["left"] - gap,
+                            sprite.y,
+                            size,
+                        )
+                    if position.startswith("inside") and (
+                        layout["left"] < sprite.x
+                        or layout["right"] > sprite.x + sprite.width
+                    ):
+                        layout = None
+                if layout is not None:
+                    layouts.append((
+                        "secondary",
+                        sprite.secondary_logo_path,
+                        layout,
+                        self._logo_position("secondary"),
+                    ))
 
         return layouts
 
@@ -2697,13 +2755,15 @@ class BarRenderer(TextCompositorMixin):
         )
 
     def _bar_label_layout(self, sprite):
-        position = (
-            self.config.bar_label_position
-            if self._uses_advanced_appearance()
-            else "left"
-        )
+        position = {
+            "left": "outside_left",
+            "inside": "inside_left",
+            "outside": "outside_right",
+        }.get(self.config.bar_label_position, self.config.bar_label_position)
+        offset_x = self.config.bar_label_offset_x
+        offset_y = self.config.bar_label_offset_y
 
-        if position == "inside":
+        if position in ("inside_left", "inside_center", "inside_right"):
             padding = 18
             x = sprite.x + padding
             right_limit = sprite.x + sprite.width - padding
@@ -2719,23 +2779,36 @@ class BarRenderer(TextCompositorMixin):
                     right_logos[0] - self.config.logo_label_gap,
                 )
 
+            default_alignment = {
+                "inside_left": "left", "inside_center": "center", "inside_right": "right"
+            }[position]
+            if position == "inside_right" and self.config.value_labels_enabled:
+                value_text = format_value(sprite.value, self.config.value_format)
+                right_limit -= (
+                    self._value_label_text_width(value_text)
+                    + self.config.value_label_gap
+                )
             max_width = max(0.0, right_limit - x)
             alignment, anchor_x = self._bar_label_alignment_anchor(
                 x,
                 right_limit,
-                default="left",
+                default=default_alignment,
             )
             return {
-                "text": fit_text_to_width(
-                    sprite.name,
-                    max_width=max_width,
-                    font=self._measurement_font(
-                        self.config.label_font_size,
-                        self.config.label_font_family,
-                    ),
+                "text": (
+                    fit_text_to_width(
+                        sprite.name,
+                        max_width=max_width,
+                        font=self._measurement_font(
+                            self.config.label_font_size,
+                            self.config.label_font_family,
+                        ),
+                    )
+                    if max_width >= self.config.label_font_size
+                    else ""
                 ),
-                "x": anchor_x,
-                "y": sprite.y,
+                "x": anchor_x + offset_x,
+                "y": sprite.y + offset_y,
                 "ha": alignment,
                 "va": "center",
                 "color": self._label_inside_color(),
@@ -2756,14 +2829,14 @@ class BarRenderer(TextCompositorMixin):
                         self.config.label_font_family,
                     ),
                 ),
-                "x": anchor_x,
-                "y": sprite.y - (sprite.height / 2) - 7,
+                "x": anchor_x + offset_x,
+                "y": sprite.y - (sprite.height / 2) - 7 + offset_y,
                 "ha": alignment,
                 "va": "bottom",
                 "color": self.config.resolved_label_text_color,
             }
 
-        if position == "outside":
+        if position == "outside_right":
             left = sprite.x + sprite.width + self.config.value_label_gap
             right = self.config.width - self.config.value_label_edge_padding
             stacked = self.config.bar_value_position in ("auto", "outside")
@@ -2781,8 +2854,8 @@ class BarRenderer(TextCompositorMixin):
                         self.config.label_font_family,
                     ),
                 ),
-                "x": anchor_x,
-                "y": sprite.y - ((sprite.height * 0.2) if stacked else 0),
+                "x": anchor_x + offset_x,
+                "y": sprite.y - ((sprite.height * 0.2) if stacked else 0) + offset_y,
                 "ha": alignment,
                 "va": "center",
                 "color": self.config.resolved_label_text_color,
@@ -2797,8 +2870,8 @@ class BarRenderer(TextCompositorMixin):
         )
         return {
             "text": self._fit_bar_label(sprite),
-            "x": anchor_x,
-            "y": sprite.y,
+            "x": anchor_x + offset_x,
+            "y": sprite.y + offset_y,
             "ha": alignment,
             "va": "center",
             "color": self.config.resolved_label_text_color,
@@ -2862,6 +2935,24 @@ class BarRenderer(TextCompositorMixin):
                         right_logos[0] - self.config.logo_label_gap,
                     )
 
+                left_limit = sprite.x + self.config.value_label_inside_padding
+                left_logos = self._logo_group_extent(sprite, "inside_left")
+                if left_logos:
+                    left_limit = max(
+                        left_limit,
+                        left_logos[1] + self.config.logo_label_gap,
+                    )
+                if inside_x - text_width < left_limit:
+                    fits_outside = outside_x + text_width <= max_right
+                    return {
+                        "text": text,
+                        "x": outside_x if fits_outside else max_right,
+                        "y": sprite.y,
+                        "ha": "left" if fits_outside else "right",
+                        "va": "center",
+                        "color": custom_color or self.config.resolved_value_text_color,
+                    }
+
                 return {
                     "text": text,
                     "x": inside_x,
@@ -2883,7 +2974,7 @@ class BarRenderer(TextCompositorMixin):
 
             if position == "outside":
                 fits = outside_x + text_width <= max_right
-                stacked = self.config.bar_label_position == "outside"
+                stacked = self.config.bar_label_position in ("outside", "outside_right")
                 return {
                     "text": text,
                     "x": outside_x if fits else max_right,
@@ -2901,7 +2992,7 @@ class BarRenderer(TextCompositorMixin):
                     (sprite.height * 0.2)
                     if (
                         self._uses_advanced_appearance()
-                        and self.config.bar_label_position == "outside"
+                        and self.config.bar_label_position in ("outside", "outside_right")
                     )
                     else 0
                 ),

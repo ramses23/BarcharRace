@@ -69,6 +69,12 @@ class VideoExporterTest(unittest.TestCase):
         self.assertNotIn("-crf", command)
         self.assertEqual(command[command.index("-b:v") + 1], "8M")
 
+    def test_soft_cpu_limit_adds_ffmpeg_threads_to_both_modes(self):
+        exporter = VideoExporter(threads=6)
+        self.assertEqual(exporter.build_command()[exporter.build_command().index("-threads") + 1], "6")
+        stream = exporter.build_stream_command()
+        self.assertEqual(stream[stream.index("-threads") + 1], "6")
+
     def test_export_runs_ffmpeg_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_file = Path(temp_dir) / "nested" / "video.mp4"

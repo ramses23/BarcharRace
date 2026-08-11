@@ -662,6 +662,45 @@ def _workspace_panel(layout):
             disabled=not layout.workspace_root.is_dir(),
             key="open_workspace_folder",
         )
+        try:
+            preferences = load_workspace_settings(app_root=ROOT_DIR)
+            preference_enabled = preferences.render_cpu_limit_enabled
+            preference_percent = preferences.render_cpu_limit_percent
+        except (OSError, WorkspacePathError):
+            preference_enabled = True
+            preference_percent = 95
+        st.divider()
+        st.caption("Render performance (application preference)")
+        cpu_enabled = st.toggle(
+            "Use a soft CPU ceiling",
+            value=preference_enabled,
+            help="Cooperatively yields between frames and limits FFmpeg threads.",
+            key="render_cpu_limit_enabled",
+        )
+        cpu_percent = st.slider(
+            "CPU ceiling",
+            min_value=50,
+            max_value=100,
+            value=preference_percent,
+            step=1,
+            format="%d%%",
+            help="100% disables limiting.",
+            key="render_cpu_limit_percent",
+        )
+        save_performance = st.button(
+            "Save render preference",
+            icon=":material/save:",
+            key="save_render_cpu_preference",
+        )
+
+        if save_performance:
+            save_workspace_settings(
+                layout.workspace_root,
+                app_root=ROOT_DIR,
+                render_cpu_limit_enabled=cpu_enabled,
+                render_cpu_limit_percent=cpu_percent,
+            )
+            st.success("Render preference saved for this application.")
 
         if change_workspace or initialize:
             try:
@@ -1211,6 +1250,9 @@ def _project_form(
         steps_per_transition=render_settings["steps"],
         top_n=bars_settings["top_n"],
         max_visible_bars=canvas_settings["max_visible"],
+        bar_vertical_layout_mode=canvas_settings["bar_vertical_layout_mode"],
+        bar_vertical_top_padding=canvas_settings["bar_vertical_top_padding"],
+        bar_vertical_bottom_padding=canvas_settings["bar_vertical_bottom_padding"],
         png_compress_level=render_settings["png_compress_level"],
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
@@ -1733,6 +1775,9 @@ def _canvas_settings_from_values(
             values.get("rank_label_font_size"),
             18,
         ),
+        "bar_vertical_layout_mode": values.get("bar_vertical_layout_mode", "manual"),
+        "bar_vertical_top_padding": _int_in_range_or_default(values.get("bar_vertical_top_padding"), 24, 0, layout.height),
+        "bar_vertical_bottom_padding": _int_in_range_or_default(values.get("bar_vertical_bottom_padding"), 24, 0, layout.height),
         "title_enabled": bool(values.get("title_enabled", True)),
         "subtitle_enabled": bool(values.get("subtitle_enabled", True)),
         "time_label_enabled": bool(values.get("time_label_enabled", True)),
@@ -1823,7 +1868,7 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
     return {
         "enabled": bool(values.get("fun_facts_enabled", False)),
         "source": values.get("fun_facts_source"),
-        "layout": "right_panel",
+        "layout": values.get("fun_facts_layout", "right_panel"),
         "panel_width": _int_in_range_or_default(
             values.get("fun_facts_panel_width"),
             default_width,
@@ -1844,6 +1889,16 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         ),
         "fade_in": float(values.get("fun_facts_fade_in", 0.20)),
         "fade_out": float(values.get("fun_facts_fade_out", 0.20)),
+        "editorial_background_mode": values.get("fun_facts_editorial_background_mode", "card"),
+        "editorial_background_color": values.get("fun_facts_editorial_background_color"),
+        "editorial_headline_size": int(values.get("fun_facts_editorial_headline_size", 28)),
+        "editorial_body_size": int(values.get("fun_facts_editorial_body_size", 18)),
+        "editorial_credit_size": int(values.get("fun_facts_editorial_credit_size", 12)),
+        "editorial_image_area_ratio": float(values.get("fun_facts_editorial_image_area_ratio", 0.42)),
+        "editorial_image_fit": values.get("fun_facts_editorial_image_fit", "contain"),
+        "editorial_text_image_gap": int(values.get("fun_facts_editorial_text_image_gap", 18)),
+        "editorial_top_offset": int(values.get("fun_facts_editorial_top_offset", 0)),
+        "editorial_reposition_time_label": bool(values.get("fun_facts_editorial_reposition_time_label", True)),
     }
 
 
@@ -1870,7 +1925,8 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     with layout_column:
         layout = st.selectbox(
             "Layout",
-            ("right_panel",),
+            ("right_panel", "editorial_right"),
+            index=_option_index(("right_panel", "editorial_right"), settings["layout"]),
             key=_widget_key("fun_facts_layout"),
         )
     with width_column:
@@ -1920,6 +1976,21 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     if fade_in + fade_out > 1:
         st.error("Fade in plus fade out must be 1.0 or less.")
 
+    editorial = {key: settings[key] for key in settings if key.startswith("editorial_")}
+    if layout == "editorial_right":
+        with st.expander("Editorial layout", expanded=True, icon=":material/article:"):
+            editorial["editorial_background_mode"] = st.selectbox("Background", ("transparent", "solid", "card"), index=_option_index(("transparent", "solid", "card"), settings["editorial_background_mode"]), key=_widget_key("fun_facts_editorial_background_mode"))
+            editorial["editorial_background_color"] = st.color_picker("Background color", value=settings["editorial_background_color"] or "#111827", key=_widget_key("fun_facts_editorial_background_color"))
+            size_a, size_b, size_c = st.columns(3)
+            editorial["editorial_headline_size"] = size_a.number_input("Headline size", min_value=8, max_value=160, value=settings["editorial_headline_size"], key=_widget_key("fun_facts_editorial_headline_size"))
+            editorial["editorial_body_size"] = size_b.number_input("Body size", min_value=8, max_value=120, value=settings["editorial_body_size"], key=_widget_key("fun_facts_editorial_body_size"))
+            editorial["editorial_credit_size"] = size_c.number_input("Credit size", min_value=6, max_value=80, value=settings["editorial_credit_size"], key=_widget_key("fun_facts_editorial_credit_size"))
+            editorial["editorial_image_area_ratio"] = st.slider("Image area", 0.0, 0.8, settings["editorial_image_area_ratio"], 0.05, key=_widget_key("fun_facts_editorial_image_area_ratio"))
+            editorial["editorial_image_fit"] = st.selectbox("Image fit", ("contain", "cover"), index=_option_index(("contain", "cover"), settings["editorial_image_fit"]), key=_widget_key("fun_facts_editorial_image_fit"))
+            editorial["editorial_text_image_gap"] = st.number_input("Text/image gap", min_value=0, max_value=200, value=settings["editorial_text_image_gap"], key=_widget_key("fun_facts_editorial_text_image_gap"))
+            editorial["editorial_top_offset"] = st.number_input("Top offset", min_value=0, max_value=500, value=settings["editorial_top_offset"], key=_widget_key("fun_facts_editorial_top_offset"))
+            editorial["editorial_reposition_time_label"] = st.toggle("Place date at top of editorial column", value=settings["editorial_reposition_time_label"], key=_widget_key("fun_facts_editorial_reposition_time_label"))
+
     result = {
         "enabled": enabled,
         "source": source or None,
@@ -1929,6 +2000,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "panel_padding": int(panel_padding),
         "fade_in": float(fade_in),
         "fade_out": float(fade_out),
+        **editorial,
     }
     if not source:
         st.info("Choose a version-1 fun fact JSON file to validate and preview it.")
@@ -2258,6 +2330,25 @@ def _canvas_text_section(
         )
 
     layout_settings = get_layout_preset(layout_preset)
+    with st.expander("Vertical bar area", expanded=True, icon=":material/height:"):
+        vertical_mode = st.selectbox(
+            "Vertical layout",
+            ("manual", "fill_available"),
+            index=_option_index(("manual", "fill_available"), values.get("bar_vertical_layout_mode", "manual")),
+            help="Fill available adapts bar height and spacing to visible text and canvas height.",
+            key=_widget_key("bar_vertical_layout_mode"),
+        )
+        vertical_a, vertical_b = st.columns(2)
+        with vertical_a:
+            vertical_top_padding = st.number_input("Top padding", min_value=0, max_value=layout_settings.height, value=_int_in_range_or_default(values.get("bar_vertical_top_padding"), 24, 0, layout_settings.height), key=_widget_key("bar_vertical_top_padding"))
+        with vertical_b:
+            vertical_bottom_padding = st.number_input("Bottom padding", min_value=0, max_value=layout_settings.height, value=_int_in_range_or_default(values.get("bar_vertical_bottom_padding"), 24, 0, layout_settings.height), key=_widget_key("bar_vertical_bottom_padding"))
+        st.button(
+            "Use full vertical space",
+            icon=":material/height:",
+            on_click=_use_full_vertical_area,
+            key=_widget_key("use_full_vertical_area"),
+        )
     right_margin = _int_in_range_or_default(
         (
             layout_settings.right_margin
@@ -2696,6 +2787,9 @@ def _canvas_text_section(
     return {
         "layout_preset": layout_preset,
         "max_visible": int(max_visible),
+        "bar_vertical_layout_mode": vertical_mode,
+        "bar_vertical_top_padding": int(vertical_top_padding),
+        "bar_vertical_bottom_padding": int(vertical_bottom_padding),
         "label_min_x": int(label_min_x),
         "left_margin": int(left_margin),
         "rank_label_gap": int(rank_label_gap),
@@ -4239,6 +4333,12 @@ def _widget_key(name):
 
 def _set_session_value(key, value):
     st.session_state[key] = value
+
+
+def _use_full_vertical_area():
+    st.session_state[_widget_key("bar_vertical_layout_mode")] = "fill_available"
+    st.session_state[_widget_key("bar_vertical_top_padding")] = 0
+    st.session_state[_widget_key("bar_vertical_bottom_padding")] = 0
 
 
 def _safe_filename_key(value):

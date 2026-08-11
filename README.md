@@ -22,6 +22,11 @@ charts, animated scatter plots, and timeline animations.
 - Keep very large value labels inside a safe data-area width.
 - Draw the large time label as a background watermark behind chart content.
 - Auto-fit visible bars to the available vertical layout space.
+- Choose legacy manual bar rows or a reactive `fill_available` vertical layout
+  that reserves only visible title, subtitle, and source layers; the date
+  watermark never consumes bar-row space.
+- Place category labels outside-left, inside-left, inside-center, inside-right,
+  or outside-right with independent X/Y offsets and logo/value collision guards.
 - Apply reusable layout presets for common video formats.
 - Apply configurable font weights and max widths to title, subtitle, time
   label, and source label.
@@ -51,6 +56,14 @@ charts, animated scatter plots, and timeline animations.
 - Limit large frames with configurable top-N selection and optional "Other".
 - Precompute per-year sprites so transitions reuse prepared layout state.
 - Report per-stage render profiling timings for larger-dataset tuning.
+- Apply an application-wide soft render CPU ceiling (enabled at 95% by
+  default, 50–100%; 100% is unlimited) with cooperative frame throttling and
+  bounded FFmpeg threads. This preference lives in the local application
+  settings, not in portable project JSON.
+- Compose fun facts as the original `right_panel` card or an
+  `editorial_right` column with a real timeline date, configurable headline,
+  body, credit, image fit/area, spacing, offset, and transparent/solid/card
+  backgrounds.
 - Run a complete local production from a strict version-2 brief, including
   dataset construction, optional local logos, project assembly, preflight, and
   an isolated MP4 render.
@@ -80,6 +93,11 @@ On Windows, the selected workspace is persisted atomically in:
 ```text
 %LOCALAPPDATA%/BarChartStudio/settings.json
 ```
+
+The same application settings file stores the render CPU preference. Existing
+Workspace Separation V1 files containing only `schema_version` and
+`workspace_root` remain valid and receive the default 95% soft ceiling in
+memory until the preference is explicitly saved.
 
 The location can be changed or initialized from the native `Workspace` panel
 in Project Studio. A V1 workspace contains only these shared directories:

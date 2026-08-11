@@ -16,6 +16,8 @@ from pipeline.render_job import RenderJob
 from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_runtime import resolve_project_preset_paths
 from studio.project_storage import atomic_write_json
+from studio.workspace_paths import load_workspace_settings
+from utils.cpu_limiter import CpuLimitConfig
 
 
 def run_worker(
@@ -72,6 +74,13 @@ def run_worker(
         preset.chart_config,
         output_file=str(temporary_output),
     )
+    settings = load_workspace_settings(
+        app_root=Path(app_root).resolve() if app_root else SRC_DIR.parent,
+    )
+    cpu_limit_config = CpuLimitConfig(
+        enabled=settings.render_cpu_limit_enabled,
+        percent=settings.render_cpu_limit_percent,
+    )
 
     try:
         result = RenderJob(
@@ -81,6 +90,7 @@ def run_worker(
             fun_fact_config=getattr(preset, "fun_fact_config", None),
             project_root=root_path,
             progress_callback=callback,
+            cpu_limit_config=cpu_limit_config,
         ).run()
         os.replace(temporary_output, final_output)
         result = replace(result, output_file=str(final_output))

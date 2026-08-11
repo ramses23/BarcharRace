@@ -21,6 +21,9 @@ class ChartConfig:
     bar_gap: int = 18
     auto_fit_bar_count: bool = True
     max_visible_bars: int | None = None
+    bar_vertical_layout_mode: str = "manual"
+    bar_vertical_top_padding: int = 24
+    bar_vertical_bottom_padding: int = 24
     bar_shape: str = "rectangle"
     bar_border_enabled: bool = False
     bar_border_color: str = "#FFFFFF"
@@ -86,6 +89,8 @@ class ChartConfig:
     bar_secondary_logo_background_opacity: float = 1.0
     bar_label_position: str = "left"
     bar_label_alignment: str = "auto"
+    bar_label_offset_x: int = 0
+    bar_label_offset_y: int = 0
     bar_value_position: str = "auto"
     bar_value_use_theme_color: bool = True
     bar_value_color: str = "#FFFFFF"

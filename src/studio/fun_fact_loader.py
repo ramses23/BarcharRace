@@ -128,9 +128,9 @@ def _parse_fact(item, *, index, project_root, validate_images):
     body = _optional_text(item, "body", context)
     credit = _optional_text(item, "credit", context)
     layout = item.get("layout", "right_panel")
-    if layout != "right_panel":
+    if layout not in ("right_panel", "editorial_right"):
         raise FunFactFileError(
-            f"{context} field 'layout' must be 'right_panel'."
+            f"{context} field 'layout' must be 'right_panel' or 'editorial_right'."
         )
     image_fit = item.get("image_fit", "cover")
     if image_fit not in ("cover", "contain"):

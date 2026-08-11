@@ -89,6 +89,8 @@ DEFAULT_BAR_STYLE = {
     "bar_secondary_logo_background_opacity": 1.0,
     "bar_label_position": "left",
     "bar_label_alignment": "auto",
+    "bar_label_offset_x": 0,
+    "bar_label_offset_y": 0,
     "bar_value_position": "auto",
     "bar_value_use_theme_color": True,
     "bar_value_color": "#FFFFFF",
@@ -136,7 +138,10 @@ _ENUM_FIELDS = {
         "bottom_right",
     ),
     "bar_secondary_logo_shape": ("adaptive", "circle", "rounded", "square"),
-    "bar_label_position": ("left", "inside", "above", "outside"),
+    "bar_label_position": (
+        "outside_left", "inside_left", "inside_center", "inside_right",
+        "outside_right", "left", "inside", "above", "outside",
+    ),
     "bar_label_alignment": ("auto", "left", "center", "right"),
     "bar_value_position": ("auto", "outside", "inside", "above"),
 }
@@ -213,6 +218,8 @@ _INTEGER_BOUNDS = {
     "bar_shadow_offset_y": (-40, 40),
     "bar_value_shadow_offset_x": (-20, 20),
     "bar_value_shadow_offset_y": (-20, 20),
+    "bar_label_offset_x": (-500, 500),
+    "bar_label_offset_y": (-500, 500),
     "logo_size": (4, 160),
 }
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.chart_config import ChartConfig
+from config.fun_fact_config import FunFactConfig
 from config.layout_config import get_layout_preset
 from config.project_schema import (
     CURRENT_PROJECT_SCHEMA_VERSION,
@@ -17,11 +18,15 @@ from studio.project_storage import atomic_write_json
 
 
 _DEFAULT_CHART_CONFIG = ChartConfig()
+_DEFAULT_FUN_FACT_CONFIG = FunFactConfig()
 BAR_STYLE_FIELDS = tuple(
     field.name
     for field in fields(ChartConfig)
     if field.name.startswith("bar_")
-    and field.name not in ("bar_height", "bar_gap")
+    and field.name not in (
+        "bar_height", "bar_gap", "bar_vertical_layout_mode",
+        "bar_vertical_top_padding", "bar_vertical_bottom_padding",
+    )
 ) + ("logo_size",)
 
 
@@ -186,6 +191,9 @@ def build_project_data(
     steps_per_transition,
     top_n,
     max_visible_bars,
+    bar_vertical_layout_mode="manual",
+    bar_vertical_top_padding=24,
+    bar_vertical_bottom_padding=24,
     png_compress_level=1,
     frame_output_mode="ffmpeg_stream",
     bar_shape=None,
@@ -327,6 +335,9 @@ def build_project_data(
             "fps": fps,
             "steps_per_transition": steps_per_transition,
             "max_visible_bars": max_visible_bars,
+            "bar_vertical_layout_mode": bar_vertical_layout_mode,
+            "bar_vertical_top_padding": bar_vertical_top_padding,
+            "bar_vertical_bottom_padding": bar_vertical_bottom_padding,
             "frame_output_mode": frame_output_mode,
             "png_compress_level": _bounded_int_or_default(
                 png_compress_level,
@@ -568,6 +579,9 @@ def project_form_values(project_data=None):
         "steps_per_transition": chart.get("steps_per_transition", 24),
         "top_n": selection.get("top_n", 8),
         "max_visible_bars": chart.get("max_visible_bars", 8),
+        "bar_vertical_layout_mode": chart.get("bar_vertical_layout_mode", "manual"),
+        "bar_vertical_top_padding": chart.get("bar_vertical_top_padding", 24),
+        "bar_vertical_bottom_padding": chart.get("bar_vertical_bottom_padding", 24),
         "png_compress_level": chart.get("png_compress_level", 1),
         "frame_output_mode": chart.get("frame_output_mode", "ffmpeg_stream"),
         **{
@@ -588,6 +602,16 @@ def project_form_values(project_data=None):
         "fun_facts_panel_padding": fun_facts.get("panel_padding", 28),
         "fun_facts_fade_in": fun_facts.get("fade_in", 0.20),
         "fun_facts_fade_out": fun_facts.get("fade_out", 0.20),
+        **{
+            f"fun_facts_{field}": fun_facts.get(field, getattr(_DEFAULT_FUN_FACT_CONFIG, field))
+            for field in (
+                "editorial_background_mode", "editorial_background_color",
+                "editorial_headline_size", "editorial_body_size", "editorial_credit_size",
+                "editorial_image_area_ratio", "editorial_image_fit",
+                "editorial_text_image_gap", "editorial_top_offset",
+                "editorial_reposition_time_label",
+            )
+        },
     }
 
 

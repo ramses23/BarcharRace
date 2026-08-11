@@ -19,6 +19,7 @@ from studio.fun_fact_loader import load_fun_fact_scheduler
 from studio.package_paths import DEFAULT_PROJECT_ROOT
 from utils.frame_cleaner import clean_frame_directory
 from validators.dataset_validator import DatasetValidator
+from utils.cpu_limiter import CpuLimitConfig, SoftCpuLimiter
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,10 @@ class RenderResult:
     removed_frames: int
     output_file: str
     profile: RenderProfile
+    cpu_limit_percent: int = 100
+    ffmpeg_threads: int | None = None
+    cpu_throttle_events: int = 0
+    max_observed_cpu_percent: float = 0.0
 
     @property
     def average_frame_seconds(self):
@@ -69,6 +74,8 @@ class RenderJob:
         fun_fact_config=None,
         project_root=None,
         progress_callback=None,
+        cpu_limit_config=None,
+        cpu_limiter=None,
     ):
         self.config = config or ChartConfig()
         self.data_source_config = data_source_config or DataSourceConfig()
@@ -76,6 +83,8 @@ class RenderJob:
         self.fun_fact_config = fun_fact_config or FunFactConfig()
         self.project_root = project_root or DEFAULT_PROJECT_ROOT
         self.progress_callback = progress_callback
+        self.cpu_limit_config = cpu_limit_config or CpuLimitConfig(enabled=False, percent=100)
+        self.cpu_limiter = cpu_limiter or SoftCpuLimiter(self.cpu_limit_config)
 
     def run(self):
         if self.config.frame_output_mode not in ("png_sequence", "ffmpeg_stream"):
@@ -123,7 +132,7 @@ class RenderJob:
             config=chart_config,
             fun_fact_config=self.fun_fact_config,
         )
-        exporter = VideoExporter(config=chart_config)
+        exporter = VideoExporter(config=chart_config, threads=self.cpu_limiter.ffmpeg_threads)
         stream_mode = chart_config.frame_output_mode == "ffmpeg_stream"
 
         if stream_mode:
@@ -203,6 +212,7 @@ class RenderJob:
                     )
 
                 for step_index, frame_sprites in enumerate(frames):
+                    self.cpu_limiter.checkpoint()
                     if chart_config.animation.continuous_motion:
                         progress = (
                             step_index
@@ -270,6 +280,10 @@ class RenderJob:
             removed_frames=removed_frames,
             output_file=self.config.output_file,
             profile=profile,
+            cpu_limit_percent=(self.cpu_limit_config.percent if self.cpu_limit_config.enabled else 100),
+            ffmpeg_threads=self.cpu_limiter.ffmpeg_threads,
+            cpu_throttle_events=self.cpu_limiter.stats.throttle_events,
+            max_observed_cpu_percent=self.cpu_limiter.stats.max_observed_percent,
         )
 
     def _renderer_seconds(self, renderer, attribute):

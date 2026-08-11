@@ -380,7 +380,11 @@ def _convert_chart_value(key, value):
             "bottom_right",
         ),
         "bar_secondary_logo_shape": ("adaptive", "circle", "rounded", "square"),
-        "bar_label_position": ("left", "inside", "above", "outside"),
+        "bar_vertical_layout_mode": ("manual", "fill_available"),
+        "bar_label_position": (
+            "left", "inside", "above", "outside", "outside_left",
+            "inside_left", "inside_center", "inside_right", "outside_right",
+        ),
         "bar_label_alignment": ("auto", "left", "center", "right"),
         "bar_value_position": ("auto", "outside", "inside", "above"),
         "background_mode": ("color", "image"),
@@ -521,6 +525,10 @@ def _convert_chart_value(key, value):
         "bar_shadow_offset_y",
         "bar_value_shadow_offset_x",
         "bar_value_shadow_offset_y",
+        "bar_vertical_top_padding",
+        "bar_vertical_bottom_padding",
+        "bar_label_offset_x",
+        "bar_label_offset_y",
     ):
         if isinstance(value, bool) or not isinstance(value, int):
             raise ProjectFileError(f"Chart field '{key}' must be an integer.")
@@ -528,6 +536,17 @@ def _convert_chart_value(key, value):
         if key == "bar_gradient_color_count" and value not in (2, 3):
             raise ProjectFileError(
                 "Chart field 'bar_gradient_color_count' must be 2 or 3."
+            )
+        if key in (
+            "bar_vertical_top_padding",
+            "bar_vertical_bottom_padding",
+        ) and value < 0:
+            raise ProjectFileError(f"Chart field '{key}' must be >= 0.")
+        if key in ("bar_label_offset_x", "bar_label_offset_y") and not (
+            -500 <= value <= 500
+        ):
+            raise ProjectFileError(
+                f"Chart field '{key}' must be from -500 to 500."
             )
         return value
 
@@ -771,9 +790,9 @@ def _convert_fun_fact_value(key, value):
             )
         return value.strip()
     if key == "layout":
-        if value != "right_panel":
+        if value not in ("right_panel", "editorial_right"):
             raise ProjectFileError(
-                "Fun facts field 'layout' must be 'right_panel' in version 1."
+                "Fun facts field 'layout' must be 'right_panel' or 'editorial_right'."
             )
         return value
     if key == "panel_width":
@@ -800,6 +819,30 @@ def _convert_fun_fact_value(key, value):
         ):
             raise ProjectFileError(f"Fun facts field '{key}' must be from 0 to 1.")
         return float(value)
+    if key == "editorial_background_mode":
+        if value not in ("transparent", "solid", "card"):
+            raise ProjectFileError("Invalid editorial background mode.")
+        return value
+    if key == "editorial_image_fit":
+        if value not in ("contain", "cover"):
+            raise ProjectFileError("Invalid editorial image fit.")
+        return value
+    if key == "editorial_background_color":
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ProjectFileError("Editorial background color must be null or a color.")
+        return value
+    if key == "editorial_image_area_ratio":
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 0.8:
+            raise ProjectFileError("Editorial image area ratio must be from 0 to 0.8.")
+        return float(value)
+    if key in ("editorial_headline_size", "editorial_body_size", "editorial_credit_size", "editorial_text_image_gap", "editorial_top_offset"):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError(f"Fun facts field '{key}' must be a non-negative integer.")
+        return value
+    if key == "editorial_reposition_time_label":
+        if not isinstance(value, bool):
+            raise ProjectFileError("editorial_reposition_time_label must be boolean.")
+        return value
     return value
 
 

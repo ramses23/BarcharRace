@@ -566,6 +566,9 @@ Important boundaries:
   lookup, and text sprite caches. `BarRenderer` coordinates those pieces and
   the bar appearance/layout paths.
 - `VideoExporter` exports PNG sequences or opens a raw RGBA FFmpeg stream.
+- `SoftCpuLimiter` cooperatively samples total CPU between frames with
+  hysteresis; `VideoExporter` receives its derived FFmpeg thread count. CPU
+  policy is an application preference and must never enter project JSON.
 - `ChartConfig.frame_output_mode` selects `png_sequence` or `ffmpeg_stream`.
 - Project Studio's form may create a `ProjectDraft`, but only
   `save_project_data` persists it. The UI must not treat incidental widget
@@ -941,6 +944,17 @@ in verified, published checkpoints:
     read compatibility, native Studio workspace controls, and temporary-root
     security tests establish the boundary without migrating any real local
     content.
+
+19. **Editorial layout and render controls V1 - implemented for acceptance.**
+    Project Studio adds a backwards-compatible manual/fill-available vertical
+    bar layout, five canonical category-label positions with X/Y offsets and
+    collision fallbacks, and `editorial_right` fun facts with configurable
+    typography, image treatment, background, spacing, and a real timeline date
+    at the top of the reserved column. The global settings file adds an
+    enabled-by-default 95% soft CPU ceiling, cooperative frame throttling, and
+    proportional FFmpeg threads; 100% is unlimited. Five 1920x1080 acceptance
+    previews and their JSON inputs are generated only under
+    `WORKSPACE_ROOT/scratch/editorial_layout_render_controls_v1_acceptance/`.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

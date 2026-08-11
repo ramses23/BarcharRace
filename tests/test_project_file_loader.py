@@ -739,6 +739,24 @@ class ProjectFileLoaderTest(unittest.TestCase):
             with self.assertRaises(ProjectFileError):
                 load_project_file(project_path)
 
+    def test_rejects_invalid_vertical_padding_and_label_offsets(self):
+        invalid_values = {
+            "bar_vertical_top_padding": -1,
+            "bar_vertical_bottom_padding": -1,
+            "bar_label_offset_x": -501,
+            "bar_label_offset_y": 501,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bad_chart_control.json"
+            for field, value in invalid_values.items():
+                with self.subTest(field=field):
+                    project_path.write_text(
+                        json.dumps({"chart": {field: value}}),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaises(ProjectFileError):
+                        load_project_file(project_path)
+
     def test_rejects_invalid_rank_label_spacing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "bad.json"

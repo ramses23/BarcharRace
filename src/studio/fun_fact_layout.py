@@ -46,6 +46,14 @@ def apply_fun_fact_layout(chart_config, fun_fact_config):
         data_right - chart_config.source_x,
     )
     time_label_x = min(chart_config.time_label_x, data_right)
+    time_label_y = chart_config.time_label_y
+    if fun_fact_config.layout == "editorial_right" and fun_fact_config.editorial_reposition_time_label:
+        time_label_x = chart_config.width - fun_fact_config.panel_margin - fun_fact_config.panel_padding
+        time_label_y = (
+            fun_fact_config.panel_margin
+            + fun_fact_config.panel_padding
+            + (chart_config.time_label_font_size * chart_config.dpi / 144.0)
+        )
     value_label_edge_padding = max(
         chart_config.value_label_edge_padding,
         chart_config.width - data_right,
@@ -57,14 +65,15 @@ def apply_fun_fact_layout(chart_config, fun_fact_config):
         subtitle_max_width=subtitle_max,
         source_max_width=source_max,
         time_label_x=time_label_x,
+        time_label_y=time_label_y,
         value_label_edge_padding=value_label_edge_padding,
     )
 
 
 def validate_fun_fact_layout(chart_config, fun_fact_config):
-    if fun_fact_config.layout != "right_panel":
+    if fun_fact_config.layout not in ("right_panel", "editorial_right"):
         raise FunFactLayoutError(
-            "fun_facts.layout must be 'right_panel' in version 1."
+            "fun_facts.layout must be 'right_panel' or 'editorial_right'."
         )
     width = resolved_panel_width(chart_config, fun_fact_config)
     margin = fun_fact_config.panel_margin

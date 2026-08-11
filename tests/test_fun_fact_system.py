@@ -33,6 +33,14 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures" / "fun_facts"
 
 
 class FunFactSystemTest(unittest.TestCase):
+    def test_editorial_right_reserves_column_and_repositions_time_label(self):
+        chart = ChartConfig(width=1920, height=1080, left_margin=320, time_label_x=1500, time_label_y=900)
+        config = FunFactConfig(enabled=True, layout="editorial_right", panel_width=500, panel_margin=30, panel_padding=24)
+        adjusted = apply_fun_fact_layout(chart, config)
+        self.assertGreater(adjusted.right_margin, chart.right_margin)
+        self.assertEqual(adjusted.time_label_x, 1866)
+        self.assertAlmostEqual(adjusted.time_label_y, 179.0)
+
     def test_old_project_loads_with_fun_facts_disabled(self):
         preset = load_project_data({"schema_version": 1, "name": "legacy"})
 

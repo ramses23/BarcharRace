@@ -6,9 +6,10 @@ from config.chart_config import ChartConfig
 
 class VideoExporter:
 
-    def __init__(self, config=None, fps=None):
+    def __init__(self, config=None, fps=None, threads=None):
         self.config = config or ChartConfig()
         self.fps = fps or self.config.fps
+        self.threads = threads
 
     def export(self, frames_dir=None, output_file=None):
 
@@ -43,6 +44,8 @@ class VideoExporter:
 
         if self.config.ffmpeg_preset:
             cmd.extend(["-preset", self.config.ffmpeg_preset])
+        if self.threads is not None:
+            cmd.extend(["-threads", str(self.threads)])
 
         if self.config.video_bitrate:
             cmd.extend(["-b:v", self.config.video_bitrate])
@@ -69,6 +72,8 @@ class VideoExporter:
 
         if self.config.ffmpeg_preset:
             cmd.extend(["-preset", self.config.ffmpeg_preset])
+        if self.threads is not None:
+            cmd.extend(["-threads", str(self.threads)])
         if self.config.video_bitrate:
             cmd.extend(["-b:v", self.config.video_bitrate])
         elif self.config.video_crf is not None:

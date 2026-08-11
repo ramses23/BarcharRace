@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from uuid import uuid4
 
+from utils.cpu_limiter import (
+    DEFAULT_CPU_LIMIT_PERCENT,
+    normalized_cpu_limit_percent,
+)
+
 
 APP_NAME = "BarChartStudio"
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +35,8 @@ class WorkspaceSettings:
     workspace_root: Path
     settings_path: Path
     configured: bool
+    render_cpu_limit_enabled: bool = True
+    render_cpu_limit_percent: int = DEFAULT_CPU_LIMIT_PERCENT
 
 
 @dataclass(frozen=True)
@@ -152,9 +159,16 @@ def load_workspace_settings(
         ) from exc
     if not isinstance(data, dict):
         raise WorkspacePathError("Workspace settings must contain a JSON object.")
-    if set(data) != {"schema_version", "workspace_root"}:
+    required_fields = {"schema_version", "workspace_root"}
+    optional_fields = {
+        "render_cpu_limit_enabled",
+        "render_cpu_limit_percent",
+    }
+    if not required_fields.issubset(data) or not set(data).issubset(
+        required_fields | optional_fields
+    ):
         raise WorkspacePathError(
-            "Workspace settings support only schema_version and workspace_root."
+            "Workspace settings contain unsupported or missing fields."
         )
     if data.get("schema_version") != SETTINGS_SCHEMA_VERSION:
         raise WorkspacePathError("Workspace settings use an unsupported schema.")
@@ -162,7 +176,30 @@ def load_workspace_settings(
         data.get("workspace_root"),
         app_root=app_root,
     )
-    return WorkspaceSettings(workspace_root, path, configured=True)
+    cpu_limit_enabled = data.get("render_cpu_limit_enabled", True)
+    if not isinstance(cpu_limit_enabled, bool):
+        raise WorkspacePathError(
+            "render_cpu_limit_enabled must be boolean."
+        )
+    cpu_limit_percent = data.get(
+        "render_cpu_limit_percent",
+        DEFAULT_CPU_LIMIT_PERCENT,
+    )
+    if (
+        isinstance(cpu_limit_percent, bool)
+        or not isinstance(cpu_limit_percent, int)
+        or not 50 <= cpu_limit_percent <= 100
+    ):
+        raise WorkspacePathError(
+            "render_cpu_limit_percent must be an integer from 50 to 100."
+        )
+    return WorkspaceSettings(
+        workspace_root,
+        path,
+        configured=True,
+        render_cpu_limit_enabled=cpu_limit_enabled,
+        render_cpu_limit_percent=cpu_limit_percent,
+    )
 
 
 def save_workspace_settings(
@@ -171,6 +208,8 @@ def save_workspace_settings(
     app_root=APP_ROOT,
     settings_path=None,
     environ=None,
+    render_cpu_limit_enabled=None,
+    render_cpu_limit_percent=None,
 ):
     app_root = _existing_directory(app_root, label="app_root")
     path = _settings_path(settings_path, environ=environ)
@@ -183,9 +222,34 @@ def save_workspace_settings(
             f"Workspace settings must not be a symbolic link or junction: {path}"
         )
 
+    existing_enabled = True
+    existing_percent = DEFAULT_CPU_LIMIT_PERCENT
+    if path.is_file() and not _is_link(path):
+        try:
+            existing = load_workspace_settings(
+                app_root=app_root,
+                settings_path=path,
+                environ=environ,
+            )
+            existing_enabled = existing.render_cpu_limit_enabled
+            existing_percent = existing.render_cpu_limit_percent
+        except WorkspacePathError:
+            pass
+    enabled = (
+        existing_enabled
+        if render_cpu_limit_enabled is None
+        else bool(render_cpu_limit_enabled)
+    )
+    percent = normalized_cpu_limit_percent(
+        existing_percent
+        if render_cpu_limit_percent is None
+        else render_cpu_limit_percent
+    )
     payload = {
         "schema_version": SETTINGS_SCHEMA_VERSION,
         "workspace_root": str(workspace_root),
+        "render_cpu_limit_enabled": enabled,
+        "render_cpu_limit_percent": percent,
     }
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
@@ -198,7 +262,13 @@ def save_workspace_settings(
     finally:
         if temporary.exists():
             temporary.unlink()
-    return WorkspaceSettings(workspace_root, path, configured=True)
+    return WorkspaceSettings(
+        workspace_root,
+        path,
+        configured=True,
+        render_cpu_limit_enabled=enabled,
+        render_cpu_limit_percent=percent,
+    )
 
 
 def workspace_layout(
