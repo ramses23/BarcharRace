@@ -59,7 +59,8 @@ class LayoutEngine:
         return sprites
 
     def _visible_bars(self, sorted_bars):
-        limit = len(sorted_bars)
+        nonzero_bars = [bar for bar in sorted_bars if bar.value != 0]
+        limit = len(nonzero_bars)
 
         if self.config.max_visible_bars is not None:
             limit = min(limit, max(0, self.config.max_visible_bars))
@@ -70,7 +71,7 @@ class LayoutEngine:
         ):
             limit = min(limit, self.config.bar_capacity)
 
-        return sorted_bars[:limit]
+        return nonzero_bars[:limit]
 
     def _vertical_geometry(self, count):
         if self.config.bar_vertical_layout_mode != "fill_available" or count <= 0:

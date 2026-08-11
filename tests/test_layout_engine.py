@@ -205,7 +205,7 @@ class LayoutEngineTest(unittest.TestCase):
 
         self.assertEqual([sprite.name for sprite in sprites], ["A", "B"])
 
-    def test_zero_values_do_not_divide_by_zero(self):
+    def test_zero_values_are_not_rendered(self):
         config = ChartConfig(logos_enabled=False)
 
         sprites = LayoutEngine(config=config).build(
@@ -215,7 +215,24 @@ class LayoutEngineTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual([sprite.width for sprite in sprites], [0, 0])
+        self.assertEqual(sprites, [])
+
+    def test_zero_values_are_removed_from_mixed_data(self):
+        config = ChartConfig(logos_enabled=False)
+
+        sprites = LayoutEngine(config=config).build(
+            [
+                BarData(name="Visible A", value=100),
+                BarData(name="Hidden zero", value=0),
+                BarData(name="Visible B", value=50),
+            ]
+        )
+
+        self.assertEqual(
+            [sprite.name for sprite in sprites],
+            ["Visible A", "Visible B"],
+        )
+        self.assertEqual([sprite.rank for sprite in sprites], [1, 2])
 
 
 if __name__ == "__main__":
