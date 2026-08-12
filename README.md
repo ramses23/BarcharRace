@@ -402,19 +402,20 @@ The latest preview stays visible across normal widget reruns. A separate
 preview fingerprint marks it stale only when a render-relevant change remains
 outside the automatic visual scope.
 
-The collapsed `Appearance presets` panel saves the current `Canvas` and
-`Bars` appearance as a reusable local preset. Enter a unique name and choose
+The collapsed `Appearance presets` panel saves the current `Canvas`, `Bars`,
+and `Fun facts` appearance as a reusable local preset. Enter a unique name and choose
 `Save new preset`; in another project, select that preset and choose `Apply
 preset`. `Update preset` replaces the selected preset with the current visual
 settings, while deletion requires confirmation. Applying a preset updates the
 in-memory draft and automatic preview but never saves the project JSON.
 
 Appearance presets use the independent versioned contract
-`appearance-preset-v1` and remain under the app-owned
-`APP_ROOT/presets/appearance/` library in V1.
+`appearance-preset-v2` and remain under the app-owned
+`APP_ROOT/presets/appearance/` library. Existing V1 presets remain loadable.
 They include canvas layout, background, typography, text visibility and
-placement, value formatting, and every bar-appearance control. They exclude
-project content and behavior: title/source text, dataset columns, category
+placement, value formatting, every bar-appearance control, and Fun Fact panel,
+fade, and editorial styling. They exclude project content and behavior:
+title/source text, Fun Fact enabled/source/content, dataset columns, category
 colors and logos, Top N, animation, output paths, and export settings remain
 those of the destination project. The JSON files are ignored by Git so local
 personal presets are not committed accidentally; copy a preset file explicitly

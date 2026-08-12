@@ -9,6 +9,7 @@ from studio.appearance_presets import (
     APPEARANCE_PRESET_SCHEMA_VERSION,
     BAR_APPEARANCE_FIELDS,
     CANVAS_APPEARANCE_FIELDS,
+    FUN_FACT_APPEARANCE_FIELDS,
     AppearancePresetError,
     apply_appearance_preset,
     build_appearance_preset,
@@ -62,6 +63,26 @@ class AppearancePresetsTest(unittest.TestCase):
                     "logo": "logos/toyota.png",
                 },
             },
+            "fun_facts": {
+                "enabled": True,
+                "source": "fun_facts/source-project.json",
+                "layout": "editorial_right",
+                "panel_width": 480,
+                "panel_margin": 24,
+                "panel_padding": 20,
+                "fade_in": 0.3,
+                "fade_out": 0.4,
+                "editorial_background_mode": "transparent",
+                "editorial_background_color": "#102030",
+                "editorial_headline_size": 36,
+                "editorial_body_size": 22,
+                "editorial_credit_size": 13,
+                "editorial_image_area_ratio": 0.5,
+                "editorial_image_fit": "cover",
+                "editorial_text_image_gap": 21,
+                "editorial_top_offset": 17,
+                "editorial_reposition_time_label": False,
+            },
         }
 
     def test_builds_complete_visual_only_preset(self):
@@ -70,11 +91,22 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.name, "Documentary dark")
         self.assertEqual(set(preset.canvas), set(CANVAS_APPEARANCE_FIELDS))
         self.assertEqual(set(preset.bars), set(BAR_APPEARANCE_FIELDS))
+        self.assertEqual(
+            set(preset.fun_facts),
+            set(FUN_FACT_APPEARANCE_FIELDS),
+        )
         self.assertEqual(preset.canvas["layout_preset"], "vertical_shorts")
         self.assertEqual(preset.canvas["title_font_size"], 44)
         self.assertEqual(preset.bars["bar_shape"], "capsule")
         self.assertEqual(preset.bars["logo_size"], 42)
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
+        self.assertEqual(preset.fun_facts["layout"], "editorial_right")
+        self.assertEqual(
+            preset.fun_facts["editorial_background_mode"],
+            "transparent",
+        )
+        self.assertNotIn("enabled", preset.fun_facts)
+        self.assertNotIn("source", preset.fun_facts)
         self.assertNotIn("title", preset.chart_values)
         self.assertNotIn("output_file", preset.chart_values)
         self.assertNotIn("fps", preset.chart_values)
@@ -123,6 +155,12 @@ class AppearancePresetsTest(unittest.TestCase):
             "selection": {"top_n": 12, "aggregate_other": False},
             "dataset": {"name_column": "country"},
             "categories": {"Mexico": {"color": "#00FF00"}},
+            "fun_facts": {
+                "enabled": True,
+                "source": "fun_facts/target-project.json",
+                "layout": "right_panel",
+                "editorial_headline_size": 20,
+            },
         }
         original = copy.deepcopy(target)
 
@@ -138,6 +176,43 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(applied["selection"], original["selection"])
         self.assertEqual(applied["dataset"], original["dataset"])
         self.assertEqual(applied["categories"], original["categories"])
+        self.assertTrue(applied["fun_facts"]["enabled"])
+        self.assertEqual(
+            applied["fun_facts"]["source"],
+            "fun_facts/target-project.json",
+        )
+        self.assertEqual(applied["fun_facts"]["layout"], "editorial_right")
+        self.assertEqual(applied["fun_facts"]["editorial_headline_size"], 36)
+
+    def test_loads_v1_preset_without_overwriting_target_fun_facts(self):
+        current = build_appearance_preset("Legacy preset", self.project_data())
+        legacy_data = current.to_dict()
+        legacy_data["schema_version"] = 1
+        del legacy_data["fun_facts"]
+        del legacy_data["bars"]["bar_label_offset_x"]
+        del legacy_data["bars"]["bar_label_offset_y"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "legacy.json"
+            path.write_text(json.dumps(legacy_data), encoding="utf-8")
+            legacy = load_appearance_preset(path)
+
+        target = {
+            "name": "target-project",
+            "chart": {},
+            "fun_facts": {
+                "enabled": True,
+                "source": "fun_facts/target.json",
+                "layout": "right_panel",
+            },
+        }
+        applied = apply_appearance_preset(target, legacy)
+
+        self.assertEqual(legacy.schema_version, 1)
+        self.assertIsNone(legacy.fun_facts)
+        self.assertEqual(legacy.bars["bar_label_offset_x"], 0)
+        self.assertEqual(legacy.bars["bar_label_offset_y"], 0)
+        self.assertEqual(applied["fun_facts"], target["fun_facts"])
 
     def test_catalog_keeps_valid_presets_and_reports_invalid_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -166,6 +241,10 @@ class AppearancePresetsTest(unittest.TestCase):
         missing = preset.to_dict()
         del missing["canvas"]["layout_preset"]
         cases.append(missing)
+
+        missing_fun_fact = preset.to_dict()
+        del missing_fun_fact["fun_facts"]["layout"]
+        cases.append(missing_fun_fact)
 
         invalid = preset.to_dict()
         invalid["bars"]["bar_shape"] = "triangle"

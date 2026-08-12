@@ -164,12 +164,32 @@ class BarStyleEditorTest(unittest.TestCase):
         }
 
         self.assertIn("bar_gradient_enabled", simple_fields)
+        self.assertIn("bar_label_position", simple_fields)
+        self.assertIn("bar_label_alignment", simple_fields)
+        self.assertIn("bar_label_offset_x", simple_fields)
+        self.assertIn("bar_label_offset_y", simple_fields)
         self.assertNotIn("bar_fill_type", simple_fields)
         self.assertNotIn("bar_border_color", simple_fields)
         self.assertIn("bar_texture_preset", advanced_fields)
         self.assertNotIn("bar_gradient_direction", advanced_fields)
         self.assertNotIn("bar_secondary_logo_layout", advanced_fields)
         self.assertNotIn("bar_glow_color", advanced_fields)
+
+        category_descriptors = {
+            descriptor["field"]: descriptor
+            for descriptor in visible_bar_style_fields({
+                "bar_appearance_mode": "simple",
+            })
+            if descriptor["field"].startswith("bar_label_")
+        }
+        self.assertEqual(
+            category_descriptors["bar_label_position"]["group"],
+            "Category text",
+        )
+        self.assertEqual(
+            category_descriptors["bar_label_position"]["label"],
+            "Category text position",
+        )
 
         visible_primary_fields = {
             field["field"]

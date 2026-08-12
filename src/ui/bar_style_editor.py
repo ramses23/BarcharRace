@@ -281,6 +281,12 @@ _TRACK_FIELDS = {
     "bar_track_color",
     "bar_track_opacity",
 }
+_CATEGORY_TEXT_FIELDS = {
+    "bar_label_position",
+    "bar_label_alignment",
+    "bar_label_offset_x",
+    "bar_label_offset_y",
+}
 
 
 def visible_bar_style_fields(settings):
@@ -338,11 +344,15 @@ def _bar_style_group(field):
         return "Effects"
     if field in _TRACK_FIELDS:
         return "Track"
+    if field in _CATEGORY_TEXT_FIELDS:
+        return "Category text"
     return "Content"
 
 
 def _bar_style_field_visible(field, group, settings):
     advanced = settings["bar_appearance_mode"] == "advanced"
+    if group == "Category text":
+        return True
     if group == "Simple":
         return not advanced and (
             field != "bar_gradient_lighten"
@@ -421,6 +431,14 @@ def _bar_style_field_visible(field, group, settings):
 
 
 def _bar_style_label(field):
+    category_text_labels = {
+        "bar_label_position": "Category text position",
+        "bar_label_alignment": "Category text alignment",
+        "bar_label_offset_x": "Category text offset X",
+        "bar_label_offset_y": "Category text offset Y",
+    }
+    if field in category_text_labels:
+        return category_text_labels[field]
     return field.removeprefix("bar_").replace("_", " ").title()
 
 

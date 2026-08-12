@@ -2784,29 +2784,46 @@ class BarRenderer(TextCompositorMixin):
             }[position]
             if position == "inside_right" and self.config.value_labels_enabled:
                 value_text = format_value(sprite.value, self.config.value_format)
-                right_limit -= (
-                    self._value_label_text_width(value_text)
-                    + self.config.value_label_gap
-                )
+                value_layout = self._value_label_layout(sprite, value_text)
+                value_width = self._value_label_text_width(value_layout["text"])
+                value_anchor = value_layout["x"]
+                if value_layout["ha"] == "right":
+                    value_left = value_anchor - value_width
+                    value_right = value_anchor
+                elif value_layout["ha"] == "center":
+                    value_left = value_anchor - (value_width / 2)
+                    value_right = value_anchor + (value_width / 2)
+                else:
+                    value_left = value_anchor
+                    value_right = value_anchor + value_width
+                if (
+                    value_left < sprite.x + sprite.width
+                    and value_right > sprite.x
+                ):
+                    right_limit = min(
+                        right_limit,
+                        value_left - self.config.value_label_gap,
+                    )
             max_width = max(0.0, right_limit - x)
             alignment, anchor_x = self._bar_label_alignment_anchor(
                 x,
                 right_limit,
                 default=default_alignment,
             )
+            text = (
+                fit_text_to_width(
+                    sprite.name,
+                    max_width=max_width,
+                    font=self._measurement_font(
+                        self.config.label_font_size,
+                        self.config.label_font_family,
+                    ),
+                )
+                if max_width >= self.config.label_font_size
+                else ""
+            )
             return {
-                "text": (
-                    fit_text_to_width(
-                        sprite.name,
-                        max_width=max_width,
-                        font=self._measurement_font(
-                            self.config.label_font_size,
-                            self.config.label_font_family,
-                        ),
-                    )
-                    if max_width >= self.config.label_font_size
-                    else ""
-                ),
+                "text": text,
                 "x": anchor_x + offset_x,
                 "y": sprite.y + offset_y,
                 "ha": alignment,
@@ -2861,6 +2878,13 @@ class BarRenderer(TextCompositorMixin):
                 "color": self.config.resolved_label_text_color,
             }
 
+        return self._outside_left_bar_label_layout(
+            sprite,
+            offset_x=offset_x,
+            offset_y=offset_y,
+        )
+
+    def _outside_left_bar_label_layout(self, sprite, *, offset_x, offset_y):
         left = self._bar_label_min_x(sprite)
         right = self._label_x(sprite)
         alignment, anchor_x = self._bar_label_alignment_anchor(

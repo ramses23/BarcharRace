@@ -188,7 +188,7 @@ function renderFields(state) {
     const details = document.createElement("details")
     details.className = "bar-group"
     details.dataset.group = groupName
-    const defaultOpen = ["Simple", "Fill", "Frame"].includes(groupName)
+    const defaultOpen = ["Simple", "Fill", "Frame", "Category text"].includes(groupName)
     details.open = state.openGroups.has(groupName)
       ? state.openGroups.get(groupName)
       : defaultOpen

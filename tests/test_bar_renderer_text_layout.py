@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 from config.chart_config import ChartConfig
+from config.value_format_config import get_value_format
 from models.bar_sprite import BarSprite
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
@@ -1817,6 +1818,70 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         finally:
             center.close()
             right.close()
+
+    def test_inside_right_category_uses_space_from_an_outside_value(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=700,
+            bar_appearance_mode="advanced",
+            bar_label_position="inside_right",
+            bar_label_alignment="right",
+            label_font_size=21,
+            bar_logo_position="inside_left",
+            logo_size=58,
+            bar_value_position="outside",
+            value_format=get_value_format("compact"),
+            rank_labels_enabled=False,
+            label_min_x=40,
+            left_margin=200,
+        ))
+        sprite = BarSprite(
+            name="SEGA",
+            value=3_900_000,
+            color="#4E79A7",
+            x=200,
+            y=90,
+            width=220,
+            height=60,
+            logo_path="logo.png",
+        )
+        try:
+            layout = renderer._bar_label_layout(sprite)
+            self.assertEqual(layout["text"], "SEGA")
+            self.assertGreater(layout["x"], sprite.x)
+        finally:
+            renderer.close()
+
+    def test_inside_category_disappears_instead_of_moving_outside(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=500,
+            bar_appearance_mode="advanced",
+            bar_label_position="inside_right",
+            bar_label_alignment="right",
+            label_font_size=21,
+            bar_logo_position="inside_left",
+            logo_size=58,
+            bar_value_position="outside",
+            value_format=get_value_format("compact"),
+            rank_labels_enabled=False,
+            label_min_x=40,
+            left_margin=200,
+        ))
+        sprite = BarSprite(
+            name="SEGA",
+            value=3_900_000,
+            color="#4E79A7",
+            x=200,
+            y=90,
+            width=90,
+            height=60,
+            logo_path="logo.png",
+        )
+        try:
+            layout = renderer._bar_label_layout(sprite)
+            self.assertEqual(layout["text"], "")
+            self.assertGreaterEqual(layout["x"], sprite.x)
+        finally:
+            renderer.close()
 
     def test_lollipop_inside_left_logo_adds_a_circular_socket(self):
         renderer = BarRenderer(config=ChartConfig(

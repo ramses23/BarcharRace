@@ -13,7 +13,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 1
+APPEARANCE_PRESET_SCHEMA_VERSION = 2
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -67,11 +67,32 @@ BAR_APPEARANCE_FIELDS = (
     "value_format",
     *BAR_STYLE_FIELDS,
 )
+FUN_FACT_APPEARANCE_FIELDS = (
+    "layout",
+    "panel_width",
+    "panel_margin",
+    "panel_padding",
+    "fade_in",
+    "fade_out",
+    "editorial_background_mode",
+    "editorial_background_color",
+    "editorial_headline_size",
+    "editorial_body_size",
+    "editorial_credit_size",
+    "editorial_image_area_ratio",
+    "editorial_image_fit",
+    "editorial_text_image_gap",
+    "editorial_top_offset",
+    "editorial_reposition_time_label",
+)
 APPEARANCE_CHART_FIELDS = (
     *CANVAS_APPEARANCE_FIELDS,
     *BAR_APPEARANCE_FIELDS,
 )
-_ROOT_FIELDS = {"schema_version", "name", "canvas", "bars"}
+_ROOT_FIELDS_BY_VERSION = {
+    1: {"schema_version", "name", "canvas", "bars"},
+    2: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+}
 _MAX_NAME_LENGTH = 80
 
 
@@ -84,7 +105,9 @@ class AppearancePreset:
     name: str
     canvas: dict
     bars: dict
+    fun_facts: dict | None = None
     path: Path | None = None
+    schema_version: int = APPEARANCE_PRESET_SCHEMA_VERSION
 
     @property
     def chart_values(self):
@@ -94,12 +117,15 @@ class AppearancePreset:
         }
 
     def to_dict(self):
-        return {
-            "schema_version": APPEARANCE_PRESET_SCHEMA_VERSION,
+        data = {
+            "schema_version": self.schema_version,
             "name": self.name,
             "canvas": copy.deepcopy(self.canvas),
             "bars": copy.deepcopy(self.bars),
         }
+        if self.schema_version >= 2:
+            data["fun_facts"] = copy.deepcopy(self.fun_facts)
+        return data
 
 
 @dataclass(frozen=True)
@@ -122,6 +148,7 @@ def build_appearance_preset(name, project_data):
         ) from exc
 
     chart_config = preset.chart_config
+    fun_fact_config = preset.fun_fact_config
     raw_chart = project_data.get("chart")
     raw_chart = raw_chart if isinstance(raw_chart, dict) else {}
 
@@ -148,6 +175,10 @@ def build_appearance_preset(name, project_data):
             field: copy.deepcopy(current_value(field))
             for field in BAR_APPEARANCE_FIELDS
         },
+        fun_facts={
+            field: copy.deepcopy(getattr(fun_fact_config, field))
+            for field in FUN_FACT_APPEARANCE_FIELDS
+        },
     )
     return _validated_preset(candidate.to_dict())
 
@@ -165,6 +196,13 @@ def apply_appearance_preset(project_data, preset):
         raise AppearancePresetError("Project section 'chart' must be an object.")
 
     chart.update(preset.chart_values)
+    if preset.fun_facts is not None:
+        fun_facts = updated.setdefault("fun_facts", {})
+        if not isinstance(fun_facts, dict):
+            raise AppearancePresetError(
+                "Project section 'fun_facts' must be an object."
+            )
+        fun_facts.update(copy.deepcopy(preset.fun_facts))
     return updated
 
 
@@ -191,7 +229,9 @@ def load_appearance_preset(path):
         name=preset.name,
         canvas=preset.canvas,
         bars=preset.bars,
+        fun_facts=preset.fun_facts,
         path=path,
+        schema_version=preset.schema_version,
     )
 
 
@@ -243,7 +283,9 @@ def save_appearance_preset(preset, directory, *, overwrite=False):
         name=preset.name,
         canvas=preset.canvas,
         bars=preset.bars,
+        fun_facts=preset.fun_facts,
         path=path,
+        schema_version=preset.schema_version,
     )
 
 
@@ -291,8 +333,17 @@ def _validated_preset(data):
     if not isinstance(data, dict):
         raise AppearancePresetError("Appearance preset root must be an object.")
 
-    unknown = set(data) - _ROOT_FIELDS
-    missing = _ROOT_FIELDS - set(data)
+    schema_version = data.get("schema_version")
+    expected_root_fields = _ROOT_FIELDS_BY_VERSION.get(schema_version)
+
+    if expected_root_fields is None:
+        raise AppearancePresetError(
+            "Unsupported appearance preset schema version: "
+            f"{schema_version}"
+        )
+
+    unknown = set(data) - expected_root_fields
+    missing = expected_root_fields - set(data)
 
     if unknown:
         raise AppearancePresetError(
@@ -302,12 +353,6 @@ def _validated_preset(data):
         raise AppearancePresetError(
             "Missing appearance preset fields: " + ", ".join(sorted(missing))
         )
-    if data["schema_version"] != APPEARANCE_PRESET_SCHEMA_VERSION:
-        raise AppearancePresetError(
-            "Unsupported appearance preset schema version: "
-            f"{data['schema_version']}"
-        )
-
     name = _validated_name(data["name"])
     canvas = _validated_section(
         data["canvas"],
@@ -318,16 +363,31 @@ def _validated_preset(data):
         data["bars"],
         expected_fields=BAR_APPEARANCE_FIELDS,
         section_name="bars",
+        missing_defaults=(
+            {
+                "bar_label_offset_x": 0,
+                "bar_label_offset_y": 0,
+            }
+            if schema_version == 1
+            else None
+        ),
     )
+    fun_facts = None
+    if schema_version >= 2:
+        fun_facts = _validated_section(
+            data["fun_facts"],
+            expected_fields=FUN_FACT_APPEARANCE_FIELDS,
+            section_name="fun_facts",
+        )
 
     try:
-        load_project_config(
-            {
-                "name": name,
-                "chart": {**canvas, **bars},
-            },
-            default_name=name,
-        )
+        validation_project = {
+            "name": name,
+            "chart": {**canvas, **bars},
+        }
+        if fun_facts is not None:
+            validation_project["fun_facts"] = fun_facts
+        load_project_config(validation_project, default_name=name)
     except ProjectFileError as exc:
         raise AppearancePresetError(
             f"Invalid appearance preset '{name}': {exc}"
@@ -337,18 +397,31 @@ def _validated_preset(data):
         name=name,
         canvas=canvas,
         bars=bars,
+        fun_facts=fun_facts,
+        schema_version=schema_version,
     )
 
 
-def _validated_section(data, *, expected_fields, section_name):
+def _validated_section(
+    data,
+    *,
+    expected_fields,
+    section_name,
+    missing_defaults=None,
+):
     if not isinstance(data, dict):
         raise AppearancePresetError(
             f"Appearance preset section '{section_name}' must be an object."
         )
 
+    values = copy.deepcopy(data)
+    if isinstance(missing_defaults, dict):
+        for field, value in missing_defaults.items():
+            values.setdefault(field, copy.deepcopy(value))
+
     expected = set(expected_fields)
-    unknown = set(data) - expected
-    missing = expected - set(data)
+    unknown = set(values) - expected
+    missing = expected - set(values)
 
     if unknown:
         raise AppearancePresetError(
@@ -360,7 +433,7 @@ def _validated_section(data, *, expected_fields, section_name):
         )
 
     return {
-        field: copy.deepcopy(data[field])
+        field: copy.deepcopy(values[field])
         for field in expected_fields
     }
 

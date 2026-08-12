@@ -1338,9 +1338,10 @@ def _appearance_presets_panel(*, loaded_project_data, loaded_project_path):
         icon=":material/style:",
     ):
         st.caption(
-            "Reuse Canvas and Bars styling without copying project data, "
-            "categories, animation, or export paths. Applying a preset changes "
-            "the current draft; Save project remains explicit."
+            "Reuse Canvas, Bars, and Fun Facts styling without copying project "
+            "data, categories, Fun Fact content, animation, or export paths. "
+            "Applying a preset changes the current draft; Save project remains "
+            "explicit."
         )
 
         notice = st.session_state.pop(APPEARANCE_PRESET_NOTICE_STATE, None)
@@ -1402,7 +1403,9 @@ def _appearance_presets_panel(*, loaded_project_data, loaded_project_path):
                 key=_widget_key("delete_appearance_preset"),
             )
 
-        st.caption("Save the current Canvas and Bars appearance as a new preset.")
+        st.caption(
+            "Save the current Canvas, Bars, and Fun Facts appearance as a new preset."
+        )
         new_preset_name = st.text_input(
             "New preset name",
             placeholder="For example: Dark documentary",
@@ -2369,6 +2372,12 @@ def _canvas_text_section(
         st.caption(
             "Set the label boundary, bar position, and the span that keeps "
             "rankings from moving right with the bars."
+        )
+        st.caption(
+            "Category size is under Text sizes. Position, alignment, and "
+            "X/Y offsets are under Bars and categories > Bar appearance > "
+            "Category text. Text placed inside a bar is shortened and then "
+            "hidden as the available space disappears."
         )
         label_column, bar_start_column, span_column = st.columns(3)
 
