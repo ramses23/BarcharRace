@@ -24,7 +24,7 @@ class TextCompositorMixin:
                 font_family=self.config.time_label_font_family,
                 font_weight=self.config.time_label_font_weight,
                 color=self.config.resolved_time_label_text_color,
-                opacity=0.22,
+                opacity=self.config.time_label_opacity,
             )
             if command is not None:
                 background_commands.append(command)
@@ -40,6 +40,7 @@ class TextCompositorMixin:
                 self.config.title_font_family,
                 self.config.title_font_weight,
                 self.config.resolved_title_text_color,
+                self.config.title_text_opacity,
             ),
             (
                 (
@@ -53,6 +54,7 @@ class TextCompositorMixin:
                 self.config.subtitle_font_family,
                 self.config.subtitle_font_weight,
                 self.config.resolved_subtitle_text_color,
+                self.config.subtitle_text_opacity,
             ),
             (
                 (
@@ -66,9 +68,10 @@ class TextCompositorMixin:
                 self.config.source_font_family,
                 self.config.source_font_weight,
                 self.config.resolved_source_text_color,
+                self.config.source_text_opacity,
             ),
         )
-        for text, x, y, font_size, font_family, font_weight, color in header_specs:
+        for text, x, y, font_size, font_family, font_weight, color, opacity in header_specs:
             command = self._text_command(
                 text,
                 x,
@@ -79,6 +82,7 @@ class TextCompositorMixin:
                 font_family=font_family,
                 font_weight=font_weight,
                 color=color,
+                opacity=opacity,
             )
             if command is not None:
                 foreground_commands.append(command)
@@ -99,7 +103,7 @@ class TextCompositorMixin:
                     font_family=self.config.rank_label_font_family,
                     font_weight="bold",
                     color=self.config.resolved_rank_label_text_color,
-                    opacity=opacity,
+                    opacity=opacity * self.config.rank_label_text_opacity,
                 )
                 if command is not None:
                     bar_commands.append(command)
@@ -116,7 +120,7 @@ class TextCompositorMixin:
                     font_family=self.config.label_font_family,
                     font_weight="normal",
                     color=name_layout["color"],
-                    opacity=opacity,
+                    opacity=opacity * self.config.label_text_opacity,
                 )
                 if command is not None:
                     bar_commands.append(command)
@@ -137,7 +141,7 @@ class TextCompositorMixin:
                     font_family=self.config.value_font_family,
                     font_weight="normal",
                     color=value_layout["color"],
-                    opacity=opacity,
+                    opacity=opacity * self.config.value_text_opacity,
                     stroke_width=(
                         self.config.bar_value_border_width
                         if self.config.bar_value_border_enabled

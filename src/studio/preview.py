@@ -67,7 +67,10 @@ def render_project_preview(
     )
     chart_config = apply_fun_fact_layout(chart_config, preset.fun_fact_config)
     selector = BarSelector(config=chart_config.selection)
-    layout = LayoutEngine(config=chart_config)
+    layout = LayoutEngine(
+        config=chart_config,
+        fun_fact_config=preset.fun_fact_config,
+    )
     preview_mode = _preview_mode(preview_mode, years)
 
     if preview_mode == "transition":

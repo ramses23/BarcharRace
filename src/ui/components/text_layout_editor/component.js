@@ -22,10 +22,11 @@ function buildInstance(parentElement) {
   const stage = document.createElement("div")
   stage.className = "layout-stage"
   stage.tabIndex = 0
+  stage.setAttribute("aria-label", "Canvas text placement editor")
   wrap.appendChild(stage)
   const hint = document.createElement("div")
   hint.className = "layout-hint"
-  hint.textContent = "Drag text directly. Arrow keys move 1 px; Shift + arrows move 10 px."
+  hint.textContent = "Drag text directly. Arrow keys move 1 px; Shift + arrows move 10 px. Dashed overlays come from the selected rendered frame."
   root.append(toolbar, wrap, hint)
   parentElement.appendChild(root)
   return { root, toolbar, status, stage, active: "title", positions: null, data: null, scale: 1, drag: null, incoming: null }
@@ -41,9 +42,14 @@ function stageDimensions(state) {
 }
 
 function anchor(name) { return name === "date" ? "right" : "left" }
+function isManaged(state, name) { return Boolean(state.data.elements?.[name]?.managed) }
+function displayPosition(state, name) {
+  const effective = state.data.geometry?.effective_positions?.[name]
+  return isManaged(state, name) && effective ? effective : state.positions[name]
+}
 
 function positionNode(state, node, name) {
-  const position = state.positions[name]
+  const position = displayPosition(state, name)
   const definition = state.data.elements[name]
   const pixels = Number(definition.font_size) * Number(state.data.dpi) / 72
   node.style.left = `${position.x * state.scale}px`
@@ -55,15 +61,50 @@ function positionNode(state, node, name) {
   node.style.opacity = definition.opacity ?? 1
   node.style.transform = anchor(name) === "right" ? "translate(-100%, -50%)" : "translate(0, -50%)"
   node.classList.toggle("active", name === state.active)
+  node.classList.toggle("managed", isManaged(state, name))
+  node.setAttribute("aria-label", `${definition.label || name}${isManaged(state, name) ? ", managed by editorial layout" : ""}`)
 }
 
 function updateStatus(state) {
-  const position = state.positions?.[state.active]
+  const position = displayPosition(state, state.active)
   const label = state.data?.elements?.[state.active]?.label || state.active
-  state.status.textContent = position ? `${label}: X ${position.x} · Y ${position.y}` : "Select an element"
+  const suffix = isManaged(state, state.active) ? " · managed by editorial layout" : ""
+  state.status.textContent = position ? `${label}: X ${position.x} · Y ${position.y}${suffix}` : "Select an element"
 }
 
 function emit(state) { state.setStateValue("positions", clone(state.positions)) }
+
+function addRect(state, rect, className, label) {
+  if (!rect || Number(rect.width) <= 0 || Number(rect.height) <= 0) return
+  const node = document.createElement("div")
+  node.className = `geometry-rect ${className}`
+  node.style.left = `${Number(rect.x) * state.scale}px`
+  node.style.top = `${Number(rect.y) * state.scale}px`
+  node.style.width = `${Number(rect.width) * state.scale}px`
+  node.style.height = `${Number(rect.height) * state.scale}px`
+  if (label) {
+    const tag = document.createElement("span")
+    tag.textContent = label
+    node.appendChild(tag)
+  }
+  state.stage.appendChild(node)
+}
+
+function renderGeometry(state) {
+  const geometry = state.data.geometry || {}
+  addRect(state, geometry.safe_area, "safe-area", "safe")
+  addRect(state, geometry.data_area, "data-area", "bars")
+  addRect(state, geometry.ranking_lane, "ranking-lane", "rank")
+  addRect(state, geometry.category_lane, "category-lane", "category")
+  addRect(state, geometry.value_lane, "value-lane", "value")
+  for (const row of geometry.row_rects || []) addRect(state, row, "bar-row", "")
+  for (const bar of geometry.bar_rects || []) addRect(state, bar, "bar-extent", "")
+  for (const logo of geometry.primary_logo_rects || []) addRect(state, logo, "primary-logo", "L1")
+  for (const logo of geometry.secondary_logo_rects || []) addRect(state, logo, "secondary-logo", "L2")
+  addRect(state, geometry.collision_rect, "collision-area", "collision")
+  addRect(state, geometry.editorial_rect, "editorial-card", "editorial")
+  for (const [name, rect] of Object.entries(geometry.text_bounds || {})) addRect(state, rect, `text-bound text-bound-${name}`, "")
+}
 
 function render(state) {
   if (!state.data || !state.positions) return
@@ -73,29 +114,16 @@ function render(state) {
   state.stage.style.height = `${dimensions.height}px`
   state.stage.style.setProperty("--canvas-background", state.data.theme.background_color || "#fff")
   state.stage.replaceChildren()
-  const safe = document.createElement("div")
-  safe.className = "layout-safe-area"
-  state.stage.appendChild(safe)
-  const layout = state.data.layout
-  const count = Math.max(3, Math.min(8, Number(layout.bar_count) || 6))
-  const usable = Math.max(1, state.data.canvas_height - layout.top_margin - layout.bottom_margin)
-  for (let index = 0; index < count; index += 1) {
-    const bar = document.createElement("div")
-    bar.className = "layout-bar"
-    bar.style.left = `${layout.left_margin * state.scale}px`
-    bar.style.top = `${(layout.top_margin + index * usable / count) * state.scale}px`
-    bar.style.width = `${Math.max(20, (state.data.canvas_width - layout.left_margin - layout.right_margin) * (1 - index * .07)) * state.scale}px`
-    bar.style.height = `${Math.max(2, layout.bar_height * state.scale)}px`
-    bar.style.background = state.data.theme.bar_color || "#4e79a7"
-    state.stage.appendChild(bar)
-  }
+  renderGeometry(state)
   for (const name of elementNames) {
     const definition = state.data.elements[name]
     const node = document.createElement("div")
     node.className = "layout-element"
     node.dataset.name = name
     node.textContent = definition.text
+    node.tabIndex = 0
     node.onpointerdown = event => startDrag(state, event)
+    node.onclick = () => setActive(state, name)
     positionNode(state, node, name)
     state.stage.appendChild(node)
   }
@@ -112,6 +140,7 @@ function startDrag(state, event) {
   const node = event.currentTarget
   const name = node.dataset.name
   setActive(state, name)
+  if (isManaged(state, name)) return
   state.stage.focus()
   node.setPointerCapture(event.pointerId)
   node.classList.add("dragging")
@@ -146,6 +175,7 @@ function endDrag(state, event) {
 }
 
 function align(state, action) {
+  if (isManaged(state, state.active)) return
   if (action === "reset") state.positions = clone(state.data.preset_positions)
   else if (action === "left") state.positions[state.active].x = 0
   else if (action === "center") state.positions[state.active].x = Math.round(state.data.canvas_width / 2)
@@ -160,12 +190,16 @@ export default function (component) {
   if (!state) {
     state = buildInstance(parentElement)
     instances.set(parentElement, state)
+    state.resizeObserver = new ResizeObserver(() => {
+      if (state.data && !state.drag) render(state)
+    })
+    state.resizeObserver.observe(state.root)
     state.toolbar.onclick = event => {
       const action = event.target?.dataset?.action
       if (action) align(state, action)
     }
     state.stage.onkeydown = event => {
-      if (!state.positions?.[state.active] || !event.key.startsWith("Arrow")) return
+      if (!state.positions?.[state.active] || !event.key.startsWith("Arrow") || isManaged(state, state.active)) return
       const distance = event.shiftKey ? 10 : 1
       const position = state.positions[state.active]
       if (event.key === "ArrowLeft") position.x -= distance
@@ -180,10 +214,8 @@ export default function (component) {
   state.setStateValue = setStateValue
   state.data = data
   const incoming = JSON.stringify(data.positions)
-  if (state.incoming === null || (incoming !== state.incoming && incoming !== JSON.stringify(state.positions))) {
-    state.positions = clone(data.positions)
-  }
+  if (!state.drag && (state.incoming === null || (incoming !== state.incoming && incoming !== JSON.stringify(state.positions)))) state.positions = clone(data.positions)
   state.incoming = incoming
   render(state)
-  return () => { state.root.remove(); instances.delete(parentElement) }
+  return () => { state.resizeObserver?.disconnect(); state.root.remove(); instances.delete(parentElement) }
 }

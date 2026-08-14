@@ -35,6 +35,14 @@ class VideoExporterTest(unittest.TestCase):
                 "18",
                 "-pix_fmt",
                 "yuv420p",
+                "-x264-params",
+                (
+                    "keyint=48:min-keyint=24:bframes=0:ref=1:open-gop=0:"
+                    "colorprim=bt709:transfer=bt709:colormatrix=bt709:"
+                    "fullrange=off"
+                ),
+                "-movflags",
+                "+faststart",
                 "output\\video.mp4",
             ],
         )
@@ -57,6 +65,8 @@ class VideoExporterTest(unittest.TestCase):
         self.assertEqual(command[command.index("-preset") + 1], "slow")
         self.assertEqual(command[command.index("-crf") + 1], "22")
         self.assertEqual(command[command.index("-pix_fmt") + 1], "yuv444p")
+        self.assertNotIn("-x264-params", command)
+        self.assertNotIn("-movflags", command)
 
     def test_bitrate_mode_omits_crf(self):
         config = ChartConfig(
@@ -105,7 +115,17 @@ class VideoExporterTest(unittest.TestCase):
         self.assertEqual(command[command.index("-s") + 1], "1280x720")
         self.assertEqual(command[command.index("-r") + 1], "24")
         self.assertEqual(command[command.index("-i") + 1], "-")
+        params = command[command.index("-x264-params") + 1]
+        self.assertIn("keyint=48:min-keyint=24", params)
+        self.assertIn("bframes=0:ref=1:open-gop=0", params)
+        self.assertIn("colorprim=bt709:transfer=bt709", params)
         self.assertEqual(command[-1], "output\\video.mp4")
+
+    def test_h264_movflags_are_only_added_for_compatible_containers(self):
+        command = VideoExporter().build_stream_command("output/video.mkv")
+
+        self.assertIn("-x264-params", command)
+        self.assertNotIn("-movflags", command)
 
     def test_finish_stream_reports_ffmpeg_stderr(self):
         process = Mock()

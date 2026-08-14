@@ -5,8 +5,11 @@ from pathlib import Path
 import _test_path
 from config.bar_selection_config import BarSelectionConfig
 from config.chart_config import ChartConfig
+from config.fun_fact_config import FunFactConfig
 from core.layout_engine import LayoutEngine
 from models.bar_data import BarData
+from utils.text_fit import measure_text_width, measurement_font
+from utils.value_formatter import format_value
 
 
 class LayoutEngineTest(unittest.TestCase):
@@ -233,6 +236,151 @@ class LayoutEngineTest(unittest.TestCase):
             ["Visible A", "Visible B"],
         )
         self.assertEqual([sprite.rank for sprite in sprites], [1, 2])
+
+    def test_reserves_measured_lane_for_explicit_outside_values(self):
+        config = ChartConfig(
+            width=1000,
+            dpi=72,
+            left_margin=100,
+            right_margin=300,
+            value_label_edge_padding=300,
+            value_label_gap=12,
+            value_font_size=24,
+            bar_appearance_mode="advanced",
+            bar_value_position="outside",
+            logos_enabled=False,
+        )
+        bars = [
+            BarData(name="A", value=779_346_252.6),
+            BarData(name="B", value=655_129_405.8),
+        ]
+
+        sprites = LayoutEngine(config=config).build(bars)
+        font = measurement_font(
+            config.value_font_size,
+            config.dpi,
+            config.value_font_family or config.font_family,
+        )
+        widest_text = max(
+            (
+                format_value(bar.value, value_format=config.value_format)
+                for bar in bars
+            ),
+            key=lambda text: measure_text_width(text, font),
+        )
+        value_right = (
+            sprites[0].x
+            + sprites[0].width
+            + config.value_label_gap
+            + measure_text_width(widest_text, font)
+        )
+
+        self.assertLess(sprites[0].width, config.max_bar_width)
+        self.assertLessEqual(
+            value_right,
+            config.width - config.value_label_edge_padding,
+        )
+
+    def test_unified_mode_reserves_lane_for_explicit_outside_values(self):
+        config = ChartConfig(
+            width=1000,
+            dpi=72,
+            left_margin=100,
+            right_margin=300,
+            value_label_edge_padding=300,
+            value_label_gap=12,
+            value_font_size=24,
+            bar_appearance_mode="unified",
+            bar_value_position="outside",
+            logos_enabled=False,
+        )
+
+        sprite = LayoutEngine(config=config).build([
+            BarData(name="A", value=779_346_252.6),
+        ])[0]
+
+        self.assertLess(sprite.width, config.max_bar_width)
+
+    def test_keeps_full_bar_width_when_outside_lane_already_fits(self):
+        config = ChartConfig(
+            width=1000,
+            dpi=72,
+            left_margin=100,
+            right_margin=400,
+            value_label_edge_padding=20,
+            value_font_size=12,
+            bar_appearance_mode="advanced",
+            bar_value_position="outside",
+            logos_enabled=False,
+        )
+
+        sprite = LayoutEngine(config=config).build([
+            BarData(name="A", value=100),
+        ])[0]
+
+        self.assertEqual(sprite.width, config.max_bar_width)
+
+    def test_auto_value_position_keeps_legacy_bar_width(self):
+        config = ChartConfig(
+            width=1000,
+            left_margin=100,
+            right_margin=300,
+            value_label_edge_padding=300,
+            bar_appearance_mode="advanced",
+            bar_value_position="auto",
+            logos_enabled=False,
+        )
+
+        sprite = LayoutEngine(config=config).build([
+            BarData(name="A", value=779_346_252.6),
+        ])[0]
+
+        self.assertEqual(sprite.width, config.max_bar_width)
+
+    def test_floating_editorial_card_limits_only_intersecting_rows(self):
+        config = ChartConfig(
+            width=1000,
+            height=600,
+            dpi=72,
+            left_margin=100,
+            right_margin=50,
+            top_margin=100,
+            bar_height=50,
+            bar_gap=50,
+            value_label_edge_padding=20,
+            value_label_gap=10,
+            value_font_size=12,
+            bar_appearance_mode="advanced",
+            bar_value_position="outside",
+            logos_enabled=False,
+        )
+        fun_facts = FunFactConfig(
+            enabled=True,
+            layout="editorial_floating",
+            editorial_card_x=500,
+            editorial_card_y=175,
+            editorial_card_width=450,
+            editorial_card_height=250,
+            editorial_collision_gap=20,
+        )
+        bars = [
+            BarData(name="A", value=100),
+            BarData(name="B", value=40),
+            BarData(name="C", value=30),
+            BarData(name="D", value=20),
+        ]
+
+        sprites = LayoutEngine(
+            config=config,
+            fun_fact_config=fun_facts,
+        ).build(bars)
+
+        scales = [sprite.width / sprite.value for sprite in sprites]
+        self.assertTrue(all(abs(scale - scales[0]) < 1e-9 for scale in scales))
+        self.assertGreater(sprites[0].x + sprites[0].width, 500)
+        self.assertLessEqual(sprites[1].x + sprites[1].width, 480)
+        self.assertLessEqual(sprites[2].x + sprites[2].width, 480)
+        self.assertLessEqual(sprites[3].x + sprites[3].width, 480)
 
 
 if __name__ == "__main__":

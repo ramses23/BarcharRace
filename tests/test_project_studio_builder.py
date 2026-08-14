@@ -105,12 +105,19 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             source_font_family="DejaVu Sans",
             rank_label_font_family="DejaVu Sans Mono",
             title_text_color="#101112",
+            title_text_opacity=0.91,
             subtitle_text_color="#202122",
+            subtitle_text_opacity=0.82,
             label_text_color="#303132",
+            label_text_opacity=0.73,
             value_text_color="#404142",
+            value_text_opacity=0.64,
             time_label_text_color="#505152",
+            time_label_opacity=0.65,
             source_text_color="#606162",
+            source_text_opacity=0.46,
             rank_label_text_color="#707172",
+            rank_label_text_opacity=0.37,
             title_font_size=42,
             subtitle_font_size=24,
             label_font_size=21,
@@ -180,12 +187,19 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             "DejaVu Sans Mono",
         )
         self.assertEqual(loaded["chart"]["title_text_color"], "#101112")
+        self.assertEqual(loaded["chart"]["title_text_opacity"], 0.91)
         self.assertEqual(loaded["chart"]["subtitle_text_color"], "#202122")
+        self.assertEqual(loaded["chart"]["subtitle_text_opacity"], 0.82)
         self.assertEqual(loaded["chart"]["label_text_color"], "#303132")
+        self.assertEqual(loaded["chart"]["label_text_opacity"], 0.73)
         self.assertEqual(loaded["chart"]["value_text_color"], "#404142")
+        self.assertEqual(loaded["chart"]["value_text_opacity"], 0.64)
         self.assertEqual(loaded["chart"]["time_label_text_color"], "#505152")
+        self.assertEqual(loaded["chart"]["time_label_opacity"], 0.65)
         self.assertEqual(loaded["chart"]["source_text_color"], "#606162")
+        self.assertEqual(loaded["chart"]["source_text_opacity"], 0.46)
         self.assertEqual(loaded["chart"]["rank_label_text_color"], "#707172")
+        self.assertEqual(loaded["chart"]["rank_label_text_opacity"], 0.37)
         self.assertEqual(loaded["chart"]["title_font_size"], 42)
         self.assertEqual(loaded["chart"]["rank_label_font_size"], 17)
         self.assertFalse(loaded["chart"]["title_enabled"])
@@ -433,6 +447,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "label_text_color": "#303132",
                     "value_text_color": "#404142",
                     "time_label_text_color": "#505152",
+                    "time_label_opacity": 0.47,
                     "source_text_color": "#606162",
                     "rank_label_text_color": "#707172",
                     "title_font_size": 42,
@@ -475,6 +490,18 @@ class ProjectStudioBuilderTest(unittest.TestCase):
                     "name_column": "source",
                     "value_column": "amount",
                 },
+                "fun_facts": {
+                    "enabled": True,
+                    "source": "fun_facts/facts.json",
+                    "layout": "editorial_floating",
+                    "editorial_orientation": "horizontal",
+                    "editorial_card_x": 840,
+                    "editorial_card_y": 500,
+                    "editorial_card_width": 900,
+                    "editorial_card_height": 360,
+                    "editorial_image_position": "left",
+                    "editorial_collision_gap": 32,
+                },
                 "categories": {
                     "Coal": {
                         "label": "Carbon",
@@ -492,6 +519,12 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["year_column"], "period")
         self.assertEqual(values["name_column"], "source")
         self.assertEqual(values["value_column"], "amount")
+        self.assertEqual(values["fun_facts_layout"], "editorial_floating")
+        self.assertEqual(values["fun_facts_editorial_orientation"], "horizontal")
+        self.assertEqual(values["fun_facts_editorial_card_x"], 840)
+        self.assertEqual(values["fun_facts_editorial_card_height"], 360)
+        self.assertEqual(values["fun_facts_editorial_image_position"], "left")
+        self.assertEqual(values["fun_facts_editorial_collision_gap"], 32)
         self.assertEqual(values["layout_preset"], "vertical_shorts")
         self.assertEqual(values["theme"], "midnight_contrast")
         self.assertEqual(values["typography_preset"], "compact")
@@ -511,6 +544,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(values["label_text_color"], "#303132")
         self.assertEqual(values["value_text_color"], "#404142")
         self.assertEqual(values["time_label_text_color"], "#505152")
+        self.assertEqual(values["time_label_opacity"], 0.47)
         self.assertEqual(values["source_text_color"], "#606162")
         self.assertEqual(values["rank_label_text_color"], "#707172")
         self.assertEqual(values["title_font_size"], 42)

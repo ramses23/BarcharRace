@@ -105,7 +105,7 @@ DEFAULT_BAR_STYLE = {
 
 _ENUM_FIELDS = {
     "bar_shape": BAR_SHAPES,
-    "bar_appearance_mode": ("simple", "advanced"),
+    "bar_appearance_mode": ("simple", "advanced", "unified"),
     "bar_fill_type": ("solid", "gradient", "texture"),
     "bar_gradient_direction": ("horizontal", "vertical", "diagonal"),
     "bar_texture_preset": (
@@ -223,10 +223,6 @@ _INTEGER_BOUNDS = {
     "logo_size": (4, 160),
 }
 
-_SIMPLE_FIELDS = {
-    "bar_gradient_enabled",
-    "bar_gradient_lighten",
-}
 _FRAME_FIELDS = {
     "bar_border_enabled",
     "bar_border_color",
@@ -238,6 +234,7 @@ _FRAME_FIELDS = {
     "bar_shadow_offset_y",
 }
 _FILL_FIELDS = {
+    "bar_gradient_lighten",
     "bar_fill_type",
     "bar_gradient_direction",
     "bar_gradient_color_count",
@@ -290,11 +287,16 @@ _CATEGORY_TEXT_FIELDS = {
 
 
 def visible_bar_style_fields(settings):
-    settings = normalize_bar_style(settings)
+    settings = unified_bar_style(settings)
     descriptors = []
 
     for field in DEFAULT_BAR_STYLE:
-        if field in {"bar_shape", "bar_appearance_mode", "bar_texture_custom_image"}:
+        if field in {
+            "bar_shape",
+            "bar_appearance_mode",
+            "bar_gradient_enabled",
+            "bar_texture_custom_image",
+        }:
             continue
 
         group = _bar_style_group(field)
@@ -308,7 +310,12 @@ def visible_bar_style_fields(settings):
             "value": settings[field],
         }
         if field in _ENUM_FIELDS:
-            descriptor.update(type="enum", options=list(_ENUM_FIELDS[field]))
+            options = (
+                ("solid", "gradient")
+                if field == "bar_fill_type"
+                else _ENUM_FIELDS[field]
+            )
+            descriptor.update(type="enum", options=list(options))
         elif field in _BOOLEAN_FIELDS:
             descriptor["type"] = "boolean"
         elif field in _COLOR_FIELDS:
@@ -330,8 +337,6 @@ def visible_bar_style_fields(settings):
 
 
 def _bar_style_group(field):
-    if field in _SIMPLE_FIELDS:
-        return "Simple"
     if field in _FRAME_FIELDS:
         return "Frame"
     if field in _FILL_FIELDS:
@@ -350,36 +355,42 @@ def _bar_style_group(field):
 
 
 def _bar_style_field_visible(field, group, settings):
-    advanced = settings["bar_appearance_mode"] == "advanced"
     if group == "Category text":
         return True
-    if group == "Simple":
-        return not advanced and (
-            field != "bar_gradient_lighten"
-            or settings["bar_gradient_enabled"]
-        )
     if group == "Frame":
         if field in {"bar_border_color", "bar_border_width"}:
             return settings["bar_border_enabled"]
         if field.startswith("bar_shadow_") and field != "bar_shadow_enabled":
             return settings["bar_shadow_enabled"]
         return True
-    if not advanced:
-        return False
-
     fill_type = settings["bar_fill_type"]
     if field in {
         "bar_gradient_direction",
         "bar_gradient_color_count",
-        "bar_highlight_position",
     }:
         return fill_type == "gradient"
+    if field == "bar_highlight_position":
+        return (
+            fill_type == "gradient"
+            and settings["bar_gradient_color_count"] == 3
+        )
+    if field == "bar_gradient_lighten":
+        return (
+            fill_type == "gradient"
+            and settings["bar_fill_use_category_color"]
+            and settings["bar_gradient_color_count"] == 2
+            and settings["bar_gradient_direction"] == "horizontal"
+        )
     if field in {"bar_fill_color_center", "bar_fill_color_end"}:
-        return fill_type == "gradient" and not settings["bar_fill_use_category_color"]
+        return (
+            fill_type == "gradient"
+            and settings["bar_gradient_color_count"] == 3
+            and not settings["bar_fill_use_category_color"]
+        )
     if field == "bar_fill_color_start":
         return not settings["bar_fill_use_category_color"]
 
-    texture_active = settings["bar_texture_enabled"] or fill_type == "texture"
+    texture_active = settings["bar_texture_enabled"]
     if group == "Texture" and field != "bar_texture_enabled":
         return texture_active
     if field in {"bar_bevel_size", "bar_bevel_highlight_opacity"}:
@@ -465,6 +476,8 @@ def bar_style_editor(*, settings, bar_colors, background_color, key=None):
     if not component_v2_runtime_available():
         return current_settings
 
+    editor_settings = unified_bar_style(current_settings)
+
     component = component_renderer(
         "bar_style_editor_v2",
         html=_COMPONENT_HTML,
@@ -473,8 +486,8 @@ def bar_style_editor(*, settings, bar_colors, background_color, key=None):
     )
     component(
         data={
-            "settings": current_settings,
-            "fields": visible_bar_style_fields(current_settings),
+            "settings": editor_settings,
+            "fields": visible_bar_style_fields(editor_settings),
             "bar_colors": list(bar_colors[:3]),
             "background_color": background_color,
             "custom_texture_data": _custom_texture_data(current_settings),
@@ -483,6 +496,40 @@ def bar_style_editor(*, settings, bar_colors, background_color, key=None):
         height="content",
     )
     return current_settings
+
+
+def unified_bar_style(settings):
+    """Map legacy modes to the single editor model without mutating input."""
+    values = normalize_bar_style(settings)
+    legacy_mode = values["bar_appearance_mode"]
+
+    if values["bar_fill_type"] == "texture":
+        values["bar_fill_type"] = "solid"
+        values["bar_texture_enabled"] = True
+
+    if legacy_mode == "simple":
+        values["bar_fill_type"] = (
+            "gradient" if values["bar_gradient_enabled"] else "solid"
+        )
+        values["bar_fill_use_category_color"] = True
+        values["bar_gradient_direction"] = "horizontal"
+        values["bar_gradient_color_count"] = 2
+        values["bar_edge_darkening"] = 0.0
+        values["bar_texture_enabled"] = False
+        values["bar_bevel_enabled"] = False
+        values["bar_inner_shadow_opacity"] = 0.0
+        values["bar_top_highlight_opacity"] = 0.0
+        values["bar_bottom_shade_opacity"] = 0.0
+        values["bar_outer_glow_enabled"] = False
+        values["bar_inner_glow_opacity"] = 0.0
+        values["bar_shine_enabled"] = False
+        values["bar_track_enabled"] = False
+        values["bar_value_position"] = "auto"
+        values["bar_value_use_theme_color"] = True
+
+    values["bar_gradient_enabled"] = values["bar_fill_type"] == "gradient"
+    values["bar_appearance_mode"] = "unified"
+    return values
 
 
 def _custom_texture_data(settings):

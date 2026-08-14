@@ -55,6 +55,7 @@ class VideoExporter:
         if self.config.video_pixel_format:
             cmd.extend(["-pix_fmt", self.config.video_pixel_format])
 
+        self._append_h264_playback_compatibility(cmd, output_file)
         cmd.append(str(output_file))
 
         return cmd
@@ -81,8 +82,28 @@ class VideoExporter:
         if self.config.video_pixel_format:
             cmd.extend(["-pix_fmt", self.config.video_pixel_format])
 
+        self._append_h264_playback_compatibility(cmd, output_file)
         cmd.append(str(output_file))
         return cmd
+
+    def _append_h264_playback_compatibility(self, cmd, output_file):
+        """Keep libx264 output resilient across hardware video decoders."""
+        if self.config.video_codec != "libx264":
+            return
+
+        fps = max(1, int(round(float(self.fps))))
+        cmd.extend(
+            [
+                "-x264-params",
+                (
+                    f"keyint={fps * 2}:min-keyint={fps}:bframes=0:ref=1:"
+                    "open-gop=0:colorprim=bt709:transfer=bt709:"
+                    "colormatrix=bt709:fullrange=off"
+                ),
+            ]
+        )
+        if output_file.suffix.lower() in {".mp4", ".m4v", ".mov"}:
+            cmd.extend(["-movflags", "+faststart"])
 
     def open_stream(self, output_file=None):
         output_file = Path(output_file or self.config.output_file)
