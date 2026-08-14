@@ -50,14 +50,23 @@ The project is a usable MVP:
 - Auto-fit visible bars to the vertical capacity of the active layout.
 - Configurable typography weights and max widths for title, subtitle, time
   label, and source label.
+- Base text opacity is configurable from `0.0` to `1.0` for title, subtitle,
+  date, source, category, value, ranking, and Fun Fact headline/body/credit.
+  Every field defaults to `1.0` except the historical date watermark at `0.22`.
+  The compositor multiplies this base by row animation or Fun Fact fade alpha;
+  preview, renderer, Studio, project JSON, Text Placement, and presets share the
+  same values.
 - Reusable typography presets.
 - Four configurable bar shapes: rectangle, rounded, capsule, and lollipop.
 - Configurable bar borders, shadows, and gradients, exposed through a live
   appearance editor in Project Studio.
-- Bar appearance has a backward-compatible `simple` mode and an `advanced`
-  material mode. Advanced mode supports multi-direction two/three-color fills,
-  procedural or custom textures, bevel, inner shadow/glow, top/bottom depth,
-  outer glow, shine, row tracks, and independent logo/label/value placement.
+- Bar appearance is edited through one unified, contextual control model with
+  an active-settings summary. The renderer automatically keeps compatible
+  category-color solids and classic gradients on the vector backend, while
+  multi-direction/two-or-three-color materials, custom colors, textures,
+  bevel, inner shadow/glow, top/bottom depth, outer glow, shine, and row tracks
+  select the cached material backend. Legacy `simple` and `advanced` project
+  values remain loadable and pixel-compatible but are not user-facing modes.
   Logos can be outside-left, inside-left, inside-right, or hidden, with adaptive,
   circular, rounded, or square masks plus independent size, padding, background,
   and border controls for the primary and secondary slots. Project Studio
@@ -71,12 +80,20 @@ The project is a usable MVP:
 - Value format presets.
 - Logo resolution and rendering.
 - External JSON project files.
-- Fun Fact Overlay System V1 schedules one editorial `right_panel` card by
-  exact annual or display-only monthly timeline labels. It supports cached
+- Fun Fact Overlay System V1 schedules one editorial card by exact annual or
+  display-only monthly timeline labels. It supports cached
   headline/body/image/credit composition, EXIF-aware cover/contain images,
   alpha fades during existing frames, scheduled and forced previews, Project
-  Studio controls, preflight, and portable bundle assets. The reserved panel
-  region is stable for the whole video and does not change frame count or FPS.
+  Studio controls, preflight, and portable bundle assets. `right_panel` and
+  `editorial_right` reserve a stable full-height column. Editorial Layout V2
+  adds a movable `editorial_floating` rectangle with vertical/horizontal
+  composition, left/right image placement, and per-row collision geometry.
+  Studio also exposes a CCv2 editor with body drag, eight resize handles,
+  keyboard movement, canvas bounds, and synchronized X/Y/width/height inputs.
+  Card/solid backgrounds can add deterministic grain, paper, dots, or diagonal
+  texture at configurable intensity without replacing the base color;
+  transparent cards ignore texture.
+  None of the layouts changes frame count or FPS.
 - External project files use `schema_version`; version 2 is current.
   Unversioned/version-0 and version-1 data are migrated in memory before
   validation and saved back as version 2. The v0 migration moves legacy `chart.animation` and
@@ -108,7 +125,7 @@ The project is a usable MVP:
 - Gradient bars are rendered as one reusable `PolyCollection` with a 64-segment
   baseline per visible bar plus localized curve detail, avoiding a separate
   bicubic `AxesImage` resample for every bar on every frame.
-- Advanced materials are assembled by a reusable custom Agg artist. The
+- Material styles are assembled by a reusable custom Agg artist. The
   renderer caches each 256x64 category material, resized fills, antialiased
   shape masks, border masks, and logo sprites with bounded LRU stores. For every
   frame it composites fill, texture, depth, shine, and border into compact
@@ -117,7 +134,7 @@ The project is a usable MVP:
   correct underlay ordering during rank crossings. Text remains a separate sharp
   layer. Logos are clipped, backed, bordered, and faded inside cached compact
   sprites submitted by one global direct Agg artist. This path supports every
-  Advanced shape/effect combination without falling back to the old
+  layered shape/effect combination without falling back to the old
   clipped-image stack.
 - In an identical repeated eight-bar 1080p A/B check, the compositor reduced
   Advanced Fill from 0.1367s/frame to 0.0983s/frame and the fully layered sample
@@ -130,7 +147,7 @@ The project is a usable MVP:
   background fell from 206.162s total / 202.250s draw to 67.430s total /
   64.714s draw, preserving `cover`, `contain`, and `stretch` behavior.
 - The general logo compositor replaces each visible logo's Matplotlib image and
-  three supporting patches in both Simple and Advanced modes. It preserves all
+  three supporting patches in both internal render paths. It preserves all
   positions, adaptive/explicit shapes, opacity, background, and border controls.
   On that same 457-frame project it reduced 67.430s total / 64.714s draw again
   to 57.022s total / 54.297s draw.
@@ -156,8 +173,11 @@ The project is a usable MVP:
   production or scratch `project_root`. Project Studio creates user content in
   the configured external workspace, opens production/scratch projects in
   place, and labels repository examples/projects as read-only sources that are
-  cloned to scratch on save. Advanced fields not exposed in the form remain
+  cloned to scratch on save. Project fields not exposed in the form remain
   preserved.
+- Project Library option identities remain portable paths, while their visible
+  labels are deterministic and name-first. Duplicate stems add location
+  context; the sidebar displays the full selected name, kind, and portable path.
 - Project Studio builds an immutable `ProjectDraft` snapshot from the form and
   tracks a canonical fingerprint of both its JSON data and destination path.
   It also tracks a render-dependency fingerprint and a narrower automatic
@@ -175,10 +195,13 @@ The project is a usable MVP:
   and confirmed-delete actions operate on that library. Applying changes only
   `CURRENT_DRAFT_STATE`, refreshes visual widgets, and participates in Auto
   preview without saving the destination project JSON.
-- The `appearance-preset-v2` contract includes Canvas layout/background,
+- The `appearance-preset-v5` contract includes Canvas layout/background,
   typography, text visibility/placement, value formatting, all fields in
-  `BAR_STYLE_FIELDS`, and reusable Fun Fact layout/panel/fade/editorial styling.
-  V1 files remain loadable. Presets deliberately exclude title/source content,
+  `BAR_STYLE_FIELDS`, and reusable Fun Fact layout/panel/fade/editorial styling,
+  including floating-card geometry, all base text opacities, editorial text
+  colors, and card texture. V1–V4 remain loadable; missing date opacity receives
+  `0.22`, other missing opacities receive `1.0`, and texture defaults to `none`.
+  Presets deliberately exclude title/source content,
   Fun Fact enabled/source/content, datasets, selection/Top N, categories and
   their assets, animation, render/export settings, and output paths. Personal
   preset JSON files are Git-ignored; the tracked `.gitkeep` preserves the
@@ -213,6 +236,11 @@ The project is a usable MVP:
   state/video, dataset snapshot, portable bundle, and generated JSON live on
   the right. A compact out-of-order header shows project identity, dataset
   dimensions, destination JSON, and dirty/saved state.
+- Controls retain that navigator and their existing widget keys, but are
+  grouped by identity/mapping/source, canvas/content/typography,
+  selection/appearance, Fun Fact scheduling/editorial geometry, and
+  motion/encoding/output. CPU preferences are visually separated inside the
+  Workspace panel and appearance presets remain collapsed.
 - Project/CSV loading and bundle import remain in the sidebar project library.
   Unsaved destructive transitions use a non-dismissible `st.dialog`. Advanced
   controls use icon-labelled collapsed expanders to reduce initial density.
@@ -226,23 +254,34 @@ The project is a usable MVP:
   labels, values, date, source, and ranking. The selectors use a curated list
   of up to 30 common installed fonts and render each option in its own family.
   Each element falls back to the active theme font when its family is null.
-- Font selection, visual text placement, and bar appearance are Custom
+- Font selection, visual text placement, editorial-card geometry, and bar appearance are Custom
   Components v2. Inline source assets are registered once per active Streamlit
   component manager, state is synchronized through named `setStateValue`
   fields, and styles are isolated with Streamlit theme CSS variables. Do not
   reintroduce `components.v1`, iframe messages, or manual frame sizing.
-- Bar-appearance fields are contextual. Simple and Advanced mode, fill type,
-  texture, bevel, glow, shine, track, primary/secondary logo, border,
+- Editorial-card gestures remain local in JavaScript and emit only at the end.
+  Each event includes an instance-scoped id and its starting rectangle; Python
+  consumes it once and accepts it only if the draft still matches that base.
+  This replaces monotonic frontend revision comparisons, which were unsafe
+  across CCv2 remounts, and prevents stale gestures from overwriting numeric or
+  section changes. External reruns do not rebuild the DOM during pointer capture.
+- Bar-appearance fields are contextual. Fill type, texture, bevel, glow, shine,
+  track, primary/secondary logo, border,
   background, and value styling controls reveal only their active dependents.
-  Hidden values remain in normalized settings for reversible switching. The
-  CCv2 frontend stores each control group's expanded state per mounted
+  The CCv2 frontend stores each control group's expanded state per mounted
   component and captures it before rebuilding the DOM, so field updates do not
-  collapse the section being edited.
+  collapse the section being edited. New bar-style changes persist the
+  `unified` model; legacy mode values are converted for editing without
+  rewriting an untouched project.
 - Project Studio exposes point-size controls for title, subtitle, category,
   value, date, source, and ranking text. A visual layout editor lets users drag
   title, subtitle, date, and source on a scaled canvas, nudge with arrow keys,
-  align horizontally, and reset to preset positions. X/Y coordinates remain
-  the persisted format. Unset title/subtitle X coordinates inherit
+  align horizontally, and reset to preset positions. Text Placement V2 gets a
+  real selected frame from Python and draws `SceneGeometry` overlays for data,
+  rows, actual bar extents, text bounds, ranking/category/value lanes, logo
+  slots, editorial card, and collision area. JavaScript only scales this
+  geometry; it must not duplicate `LayoutEngine`. X/Y coordinates remain the
+  persisted format. Unset title/subtitle X coordinates inherit
   `ChartConfig.left_margin` for backward compatibility.
 - Project Studio exposes `Category label start`, `Bar start`, and `Category
   area span` in Canvas. They persist `label_min_x`, `left_margin`, and
@@ -306,6 +345,11 @@ The project is a usable MVP:
   source text.
 - MP4 export with configurable FFmpeg codec, CRF, bitrate, preset, and pixel
   format.
+- `libx264` export uses a closed two-second GOP, one reference frame, no
+  B-frames, limited-range BT.709 VUI metadata, and fast-start MP4/MOV metadata
+  to reduce persistent background shadows caused by corrupted temporal
+  references in hardware-accelerated players. Other codecs keep their existing
+  command.
 - Unit tests and a real FFmpeg integration test.
 - The automation workstream begins with a renderer-independent dataset layer in
   `src/automation`. `DatasetBuilder` is the common structural contract and
@@ -579,6 +623,11 @@ Important boundaries:
   loader validation and rendering pipeline.
 - Custom UI wrappers own CCv2 registration/state hydration. Renderer and config
   modules must never depend on Streamlit component result objects.
+- `src/core/scene_geometry.py` owns renderer-adjacent overlay geometry in
+  final-canvas pixels. `src/studio/layout_preview.py` builds the selected Studio
+  scene through Timeline/selection/layout without rendering it. Text Placement
+  and the editorial-card editor must share this contract. Their JavaScript may
+  scale/draw and handle local gestures, but geometry truth remains in Python.
 - UI dataset caching belongs in `src/ui/dataset_cache.py`. Data importers and
   the render pipeline remain independent of Streamlit.
 - Render preflight/progress/cancel/status/profile presentation belongs in
@@ -590,9 +639,9 @@ Important boundaries:
   propagate into `RenderJob` and stop frame generation.
 - A UI cancel action must terminate the whole render process tree so an FFmpeg
   child cannot remain orphaned.
-- Pixel-exact Simple and Advanced frame signatures are renderer contracts. An
-  intentional visual change must be inspected before updating their expected
-  hashes.
+- Pixel-exact legacy Simple and Advanced frame signatures are renderer
+  contracts; the unified classic gradient must match the Simple signature. An
+  intentional visual change must be inspected before updating expected hashes.
 - `scripts/run_studio.ps1` is the canonical Windows entry point. It must invoke
   `.venv\Scripts\python.exe` explicitly and run the environment doctor before
   starting Streamlit.
@@ -661,7 +710,11 @@ Current configuration layers:
   section plus an independent version-1 external JSON file. `Timeline` resolves
   exact display labels from `DatasetConfig.time_label_column`, or `str(period)`
   for older annual projects. V1 rejects overlapping ranges and supports one
-  cached `right_panel` overlay without adding frames or changing duration.
+  cached overlay without adding frames or changing duration. The
+  `editorial_floating` layout does not shrink every row to a fixed column:
+  `LayoutEngine` intersects the configured card rectangle with row bands,
+  reserves the measured value lane where needed, and applies the strictest
+  resulting limit as one common pixels-per-value scale to all bars.
   The generic engine validates, schedules, packages, and renders only supplied
   local content; editorial selection, image discovery/download, licensing, and
   topic-specific facts remain responsibilities of separate production packages.
@@ -669,7 +722,11 @@ Current configuration layers:
   `presets/appearance/*.json` and are owned by
   `src/studio/appearance_presets.py`. Keep their schema independent from the
   project schema, validate them through the normal project loader, and apply
-  them only to the destination project's reusable visual fields.
+  them only to the destination project's reusable visual fields. V5 includes
+  every base text opacity, editorial text colors, and card texture; V4 includes
+  date opacity; V3 includes
+  floating editorial position, size, orientation, image side, and collision
+  gap; V1–V4 remain readable through compatibility defaults.
 - Project schema ownership lives in `src/config/project_schema.py`. Every new
   schema version adds one sequential migration from the immediately preceding
   version; migrations deep-copy their input and never mutate caller data.
@@ -861,10 +918,12 @@ in verified, published checkpoints:
    versioned builder/storage output, and a canonical sample are implemented.
 5. **Modern components — completed.** Font, layout, and bar controls use CCv2
    with isolated themed styles and controlled named state. Legacy iframe APIs
-   are removed, and dependent Advanced controls are generated contextually.
+   are removed, and dependent appearance controls are generated contextually.
 6. **Modular renderer and UI — completed.** Reusable image artists, the cached
    text compositor, and render-workflow presentation have dedicated modules.
-   Pixel-exact Simple and Advanced frame signatures guard renderer output.
+   Pixel-exact legacy Simple and Advanced frame signatures guard renderer
+   output, and unified classic gradients are checked against the Simple
+   signature.
 7. **Reproducible development — completed.** The PowerShell launcher always
    uses the repository `.venv`; the doctor validates Python, dependencies,
    write access, sample configuration, FFmpeg, and FFprobe. Dependencies are
@@ -926,8 +985,8 @@ in verified, published checkpoints:
 
 16. **Reusable appearance presets - completed.** Project Studio saves the
     current Canvas, Bars, and Fun Facts appearance as strict local
-    `appearance-preset-v2` JSON, then applies, updates, or deletes it from a
-    shared library. V1 files remain compatible. Applying a preset preserves
+    `appearance-preset-v5` JSON, then applies, updates, or deletes it from a
+    shared library. V1–V4 files remain compatible. Applying a preset preserves
     destination data, content, Fun Fact source/enabled state, categories,
     motion, and export settings, remains an unsaved draft change, and refreshes
     the automatic preview.
@@ -958,6 +1017,38 @@ in verified, published checkpoints:
     proportional FFmpeg threads; 100% is unlimited. Five 1920x1080 acceptance
     previews and their JSON inputs are generated only under
     `WORKSPACE_ROOT/scratch/editorial_layout_render_controls_v1_acceptance/`.
+
+20. **Editorial Layout V2 - implemented.** Fun Facts can use an explicit
+    `editorial_floating` rectangle instead of reserving the whole right column.
+    Project Studio exposes vertical/horizontal composition, X/Y, width/height,
+    left/right image placement, and a safety gap. The renderer composes the
+    horizontal card natively, while `LayoutEngine` detects which bar rows
+    intersect the rectangle and derives one common collision-safe
+    pixels-per-value scale. Rows outside the card band retain the available
+    canvas width, and bars, inside logos, plus outside/automatic values stay
+    clear of the card. Project JSON, auto preview, render jobs, portable
+    bundles, and appearance presets all use the same configuration; older
+    fixed-column layouts and V1–V4 presets remain compatible.
+
+21. **Editorial card reliability, complete text opacity, and card texture -
+    implemented.** The floating-card CCv2 editor reconciles instance-scoped
+    gesture events against their starting rectangle instead of comparing a
+    frontend revision counter that resets on remount. Drag/resize remains
+    local and emits once at gesture end; external reruns preserve pointer
+    capture, while duplicate or stale events cannot overwrite the draft.
+    Canvas, Bars, and Fun Facts expose all requested base text opacities, which
+    multiply animation/fade alpha in preview and render. Editorial backgrounds
+    add deterministic grain, paper, dots, or diagonal textures with intensity,
+    color preservation, transparent-mode bypass, V5 preset persistence, and
+    backward-compatible defaults.
+
+21. **Unified bar appearance - implemented.** Project Studio exposes one Bars
+    appearance model instead of mutually exclusive Simple and Advanced modes.
+    Contextual groups and active-setting chips make the effective combination
+    explicit. The renderer selects the vector or cached material backend from
+    the active features, while legacy `simple`/`advanced` JSON remains loadable
+    and unchanged until the user edits its bar style. Loader, layout, renderer,
+    CCv2 state, documentation, and pixel-exact regressions share this contract.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active

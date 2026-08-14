@@ -8,6 +8,93 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_all_text_opacities_default_validate_and_roundtrip(self):
+        fields = {
+            "title_text_opacity": 1.0,
+            "subtitle_text_opacity": 1.0,
+            "label_text_opacity": 1.0,
+            "value_text_opacity": 1.0,
+            "time_label_opacity": 0.22,
+            "source_text_opacity": 1.0,
+            "rank_label_text_opacity": 1.0,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy = root / "legacy_text_opacity.json"
+            legacy.write_text(json.dumps({"chart": {}}), encoding="utf-8")
+            config = load_project_file(legacy).chart_config
+            for field, default in fields.items():
+                self.assertEqual(getattr(config, field), default)
+
+            configured = root / "configured_text_opacity.json"
+            configured.write_text(
+                json.dumps({
+                    "chart": {
+                        field: index / 10
+                        for index, field in enumerate(fields, start=1)
+                    }
+                }),
+                encoding="utf-8",
+            )
+            config = load_project_file(configured).chart_config
+            for index, field in enumerate(fields, start=1):
+                self.assertEqual(getattr(config, field), index / 10)
+
+            for field in fields:
+                for boundary in (0.0, 1.0):
+                    path = root / f"boundary_{field}_{boundary}.json"
+                    path.write_text(
+                        json.dumps({"chart": {field: boundary}}),
+                        encoding="utf-8",
+                    )
+                    self.assertEqual(
+                        getattr(load_project_file(path).chart_config, field),
+                        boundary,
+                    )
+                for invalid in (-0.01, 1.01):
+                    path = root / f"invalid_{field}_{invalid}.json"
+                    path.write_text(
+                        json.dumps({"chart": {field: invalid}}),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ProjectFileError, rf"{field}.*0 to 1"):
+                        load_project_file(path)
+
+    def test_date_opacity_defaults_and_accepts_boundaries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy_path = root / "legacy.json"
+            legacy_path.write_text(json.dumps({"chart": {}}), encoding="utf-8")
+            self.assertEqual(
+                load_project_file(legacy_path).chart_config.time_label_opacity,
+                0.22,
+            )
+
+            for opacity in (0.0, 0.22, 0.5, 1.0):
+                with self.subTest(opacity=opacity):
+                    path = root / f"opacity_{opacity}.json"
+                    path.write_text(
+                        json.dumps({"chart": {"time_label_opacity": opacity}}),
+                        encoding="utf-8",
+                    )
+                    self.assertEqual(
+                        load_project_file(path).chart_config.time_label_opacity,
+                        opacity,
+                    )
+
+            for opacity in (-0.01, 1.01):
+                with self.subTest(invalid_opacity=opacity):
+                    path = root / f"invalid_{opacity}.json"
+                    path.write_text(
+                        json.dumps({"chart": {"time_label_opacity": opacity}}),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        ProjectFileError,
+                        "time_label_opacity.*0 to 1",
+                    ):
+                        load_project_file(path)
+
     def test_accepts_automatic_title_width(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "automatic_title_width.json"
@@ -190,6 +277,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                             "label_text_color": "#303132",
                             "value_text_color": "#404142",
                             "time_label_text_color": "#505152",
+                            "time_label_opacity": 0.47,
                             "source_text_color": "#606162",
                             "rank_label_text_color": "#707172",
                             "title_font_size": 42,
@@ -358,6 +446,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
         self.assertEqual(preset.chart_config.label_text_color, "#303132")
         self.assertEqual(preset.chart_config.value_text_color, "#404142")
         self.assertEqual(preset.chart_config.time_label_text_color, "#505152")
+        self.assertEqual(preset.chart_config.time_label_opacity, 0.47)
         self.assertEqual(preset.chart_config.source_text_color, "#606162")
         self.assertEqual(preset.chart_config.rank_label_text_color, "#707172")
         self.assertEqual(preset.chart_config.title_font_size, 42)
@@ -639,6 +728,18 @@ class ProjectFileLoaderTest(unittest.TestCase):
 
                 with self.assertRaises(ProjectFileError):
                     load_project_file(project_path)
+
+    def test_accepts_unified_bar_appearance_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "unified.json"
+            project_path.write_text(
+                json.dumps({"chart": {"bar_appearance_mode": "unified"}}),
+                encoding="utf-8",
+            )
+
+            preset = load_project_file(project_path)
+
+        self.assertEqual(preset.chart_config.bar_appearance_mode, "unified")
 
     def test_rejects_unknown_typography_preset(self):
         with tempfile.TemporaryDirectory() as temp_dir:

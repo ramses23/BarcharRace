@@ -37,6 +37,13 @@ class AppearancePresetsTest(unittest.TestCase):
                 "max_visible_bars": 7,
                 "title_font_size": 44,
                 "title_text_color": "#ABCDEF",
+                "title_text_opacity": 0.84,
+                "subtitle_text_opacity": 0.73,
+                "label_text_opacity": 0.62,
+                "value_text_opacity": 0.51,
+                "time_label_opacity": 0.47,
+                "source_text_opacity": 0.4,
+                "rank_label_text_opacity": 0.35,
                 "left_margin": 240,
                 "bar_appearance_mode": "advanced",
                 "bar_shape": "capsule",
@@ -74,9 +81,17 @@ class AppearancePresetsTest(unittest.TestCase):
                 "fade_out": 0.4,
                 "editorial_background_mode": "transparent",
                 "editorial_background_color": "#102030",
+                "editorial_background_texture": "paper",
+                "editorial_background_texture_intensity": 0.33,
                 "editorial_headline_size": 36,
+                "editorial_headline_color": "#F0F0F0",
+                "editorial_headline_opacity": 0.9,
                 "editorial_body_size": 22,
+                "editorial_body_color": "#D0D0D0",
+                "editorial_body_opacity": 0.8,
                 "editorial_credit_size": 13,
+                "editorial_credit_color": "#B0B0B0",
+                "editorial_credit_opacity": 0.7,
                 "editorial_image_area_ratio": 0.5,
                 "editorial_image_fit": "cover",
                 "editorial_text_image_gap": 21,
@@ -97,6 +112,8 @@ class AppearancePresetsTest(unittest.TestCase):
         )
         self.assertEqual(preset.canvas["layout_preset"], "vertical_shorts")
         self.assertEqual(preset.canvas["title_font_size"], 44)
+        self.assertEqual(preset.canvas["time_label_opacity"], 0.47)
+        self.assertEqual(preset.canvas["title_text_opacity"], 0.84)
         self.assertEqual(preset.bars["bar_shape"], "capsule")
         self.assertEqual(preset.bars["logo_size"], 42)
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
@@ -105,6 +122,8 @@ class AppearancePresetsTest(unittest.TestCase):
             preset.fun_facts["editorial_background_mode"],
             "transparent",
         )
+        self.assertEqual(preset.fun_facts["editorial_background_texture"], "paper")
+        self.assertEqual(preset.fun_facts["editorial_body_opacity"], 0.8)
         self.assertNotIn("enabled", preset.fun_facts)
         self.assertNotIn("source", preset.fun_facts)
         self.assertNotIn("title", preset.chart_values)
@@ -213,6 +232,121 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(legacy.bars["bar_label_offset_x"], 0)
         self.assertEqual(legacy.bars["bar_label_offset_y"], 0)
         self.assertEqual(applied["fun_facts"], target["fun_facts"])
+
+    def test_loads_v2_preset_with_floating_editorial_defaults(self):
+        current = build_appearance_preset("V2 preset", self.project_data())
+        legacy_data = current.to_dict()
+        legacy_data["schema_version"] = 2
+        for field in (
+            "editorial_orientation",
+            "editorial_card_x",
+            "editorial_card_y",
+            "editorial_card_width",
+            "editorial_card_height",
+            "editorial_image_position",
+            "editorial_collision_gap",
+        ):
+            del legacy_data["fun_facts"][field]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "v2.json"
+            path.write_text(json.dumps(legacy_data), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertEqual(loaded.schema_version, 2)
+        self.assertEqual(loaded.fun_facts["editorial_orientation"], "vertical")
+        self.assertIsNone(loaded.fun_facts["editorial_card_x"])
+        self.assertEqual(loaded.fun_facts["editorial_image_position"], "right")
+        self.assertEqual(loaded.fun_facts["editorial_collision_gap"], 24)
+
+    def test_loads_v1_to_v3_presets_with_legacy_date_opacity(self):
+        current = build_appearance_preset("Legacy opacity", self.project_data())
+
+        for schema_version in (1, 2, 3):
+            legacy_data = current.to_dict()
+            legacy_data["schema_version"] = schema_version
+            del legacy_data["canvas"]["time_label_opacity"]
+            if schema_version == 1:
+                del legacy_data["fun_facts"]
+                del legacy_data["bars"]["bar_label_offset_x"]
+                del legacy_data["bars"]["bar_label_offset_y"]
+            if schema_version == 2:
+                for field in (
+                    "editorial_orientation",
+                    "editorial_card_x",
+                    "editorial_card_y",
+                    "editorial_card_width",
+                    "editorial_card_height",
+                    "editorial_image_position",
+                    "editorial_collision_gap",
+                ):
+                    del legacy_data["fun_facts"][field]
+
+            with self.subTest(schema_version=schema_version):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    path = Path(temp_dir) / "legacy.json"
+                    path.write_text(json.dumps(legacy_data), encoding="utf-8")
+                    loaded = load_appearance_preset(path)
+
+                self.assertEqual(loaded.canvas["time_label_opacity"], 0.22)
+
+    def test_loads_v1_to_v4_presets_with_new_visual_defaults(self):
+        current = build_appearance_preset("Legacy full opacity", self.project_data())
+        new_canvas_fields = (
+            "title_text_opacity",
+            "subtitle_text_opacity",
+            "label_text_opacity",
+            "value_text_opacity",
+            "source_text_opacity",
+            "rank_label_text_opacity",
+        )
+        new_fun_fact_fields = (
+            "editorial_background_texture",
+            "editorial_background_texture_intensity",
+            "editorial_headline_color",
+            "editorial_headline_opacity",
+            "editorial_body_color",
+            "editorial_body_opacity",
+            "editorial_credit_color",
+            "editorial_credit_opacity",
+        )
+
+        for schema_version in (1, 2, 3, 4):
+            data = current.to_dict()
+            data["schema_version"] = schema_version
+            for field in new_canvas_fields:
+                del data["canvas"][field]
+            if schema_version == 1:
+                del data["fun_facts"]
+                del data["bars"]["bar_label_offset_x"]
+                del data["bars"]["bar_label_offset_y"]
+            else:
+                for field in new_fun_fact_fields:
+                    del data["fun_facts"][field]
+                if schema_version == 2:
+                    for field in (
+                        "editorial_orientation",
+                        "editorial_card_x",
+                        "editorial_card_y",
+                        "editorial_card_width",
+                        "editorial_card_height",
+                        "editorial_image_position",
+                        "editorial_collision_gap",
+                    ):
+                        del data["fun_facts"][field]
+
+            with self.subTest(schema_version=schema_version), tempfile.TemporaryDirectory() as temp_dir:
+                path = Path(temp_dir) / "legacy.json"
+                path.write_text(json.dumps(data), encoding="utf-8")
+                loaded = load_appearance_preset(path)
+
+                for field in new_canvas_fields:
+                    self.assertEqual(loaded.canvas[field], 1.0)
+                if schema_version >= 2:
+                    self.assertEqual(loaded.fun_facts["editorial_background_texture"], "none")
+                    self.assertEqual(loaded.fun_facts["editorial_headline_opacity"], 1.0)
+                    self.assertEqual(loaded.fun_facts["editorial_body_opacity"], 1.0)
+                    self.assertEqual(loaded.fun_facts["editorial_credit_opacity"], 1.0)
 
     def test_catalog_keeps_valid_presets_and_reports_invalid_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:

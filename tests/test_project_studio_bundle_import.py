@@ -276,9 +276,7 @@ class ProjectStudioBundleImportTest(unittest.TestCase):
         selector = next(
             item for item in app.selectbox if item.label == "Open project"
         )
-        expected_label = (
-            f"Production / {project_path.stem} / {project_path.stem}"
-        )
+        expected_label = f"{project_path.stem} — Production"
         self.assertIn(expected_label, selector.options)
         self.assertEqual(selector.value, project_option)
 

@@ -26,6 +26,8 @@ function button(label, active, onClick) {
 
 function emit(state, field, value) {
   state.settings[field] = value
+  state.settings.bar_appearance_mode = "unified"
+  if (field === "bar_fill_type") state.settings.bar_gradient_enabled = value === "gradient"
   state.setStateValue("settings", clone(state.settings))
   render(state)
 }
@@ -33,14 +35,6 @@ function emit(state, field, value) {
 function renderHeader(state) {
   const header = document.createElement("div")
   header.className = "bar-editor-header"
-  const mode = document.createElement("div")
-  mode.innerHTML = '<span class="bar-editor-label">Appearance</span>'
-  const modeButtons = document.createElement("div")
-  modeButtons.className = "bar-button-row"
-  for (const value of ["simple", "advanced"]) {
-    modeButtons.appendChild(button(value[0].toUpperCase() + value.slice(1), state.settings.bar_appearance_mode === value, () => emit(state, "bar_appearance_mode", value)))
-  }
-  mode.appendChild(modeButtons)
   const shape = document.createElement("div")
   shape.innerHTML = '<span class="bar-editor-label">Shape</span>'
   const shapeButtons = document.createElement("div")
@@ -49,23 +43,62 @@ function renderHeader(state) {
     shapeButtons.appendChild(button(value[0].toUpperCase() + value.slice(1), state.settings.bar_shape === value, () => emit(state, "bar_shape", value)))
   }
   shape.appendChild(shapeButtons)
-  header.append(mode, shape)
+  header.append(shape)
   state.root.appendChild(header)
 }
 
 function fillBackground(state, color) {
   const s = state.settings
-  if (s.bar_appearance_mode === "simple") {
-    return s.bar_gradient_enabled ? `linear-gradient(to right, ${color}, color-mix(in srgb, ${color} 70%, white))` : color
-  }
   if (s.bar_fill_type !== "gradient") return s.bar_fill_use_category_color ? color : s.bar_fill_color_start
-  const start = s.bar_fill_use_category_color ? color : s.bar_fill_color_start
-  const center = s.bar_fill_use_category_color ? `color-mix(in srgb, ${color} 68%, white)` : s.bar_fill_color_center
-  const end = s.bar_fill_use_category_color ? color : s.bar_fill_color_end
+  const classicVectorGradient = s.bar_fill_use_category_color
+    && s.bar_gradient_direction === "horizontal"
+    && Number(s.bar_gradient_color_count) === 2
+    && Number(s.bar_edge_darkening) <= 0
+  const lightenPercent = Math.max(0, Math.min(100, Number(s.bar_gradient_lighten) * 100))
+  const start = s.bar_fill_use_category_color
+    ? (classicVectorGradient ? color : `color-mix(in srgb, ${color} 76%, black)`)
+    : s.bar_fill_color_start
+  const center = s.bar_fill_use_category_color
+    ? `color-mix(in srgb, ${color} 70%, white)`
+    : s.bar_fill_color_center
+  const end = s.bar_fill_use_category_color
+    ? (classicVectorGradient ? `color-mix(in srgb, ${color} ${100 - lightenPercent}%, white)` : color)
+    : s.bar_fill_color_end
   const direction = { horizontal: "to right", vertical: "to bottom", diagonal: "135deg" }[s.bar_gradient_direction] || "to right"
   return Number(s.bar_gradient_color_count) === 2
     ? `linear-gradient(${direction}, ${start}, ${end})`
     : `linear-gradient(${direction}, ${start}, ${center} ${Number(s.bar_highlight_position) * 100}%, ${end})`
+}
+
+function renderActiveSummary(state) {
+  const s = state.settings
+  const summary = document.createElement("div")
+  summary.className = "bar-active-summary"
+  const items = [
+    s.bar_shape.replaceAll("_", " "),
+    `${s.bar_fill_use_category_color ? "category" : "custom"} ${s.bar_fill_type}`,
+  ]
+  if (s.bar_fill_type === "gradient") items.push(`${s.bar_gradient_direction} · ${s.bar_gradient_color_count} stops`)
+  if (s.bar_texture_enabled) items.push("texture")
+  if (s.bar_border_enabled) items.push("border")
+  if (s.bar_shadow_enabled) items.push("shadow")
+  if (s.bar_bevel_enabled) items.push("bevel")
+  if (Number(s.bar_inner_shadow_opacity) > 0) items.push("inner shadow")
+  if (Number(s.bar_top_highlight_opacity) > 0 || Number(s.bar_bottom_shade_opacity) > 0) items.push("depth")
+  if (s.bar_outer_glow_enabled || Number(s.bar_inner_glow_opacity) > 0) items.push("glow")
+  if (s.bar_shine_enabled) items.push("shine")
+  if (s.bar_track_enabled) items.push("track")
+  items.push(`logo ${s.bar_logo_position.replaceAll("_", " ")}`)
+  if (s.bar_secondary_logo_enabled) items.push(`second logo ${s.bar_secondary_logo_layout.replaceAll("_", " ")}`)
+  items.push(`labels ${s.bar_label_position.replaceAll("_", " ")}`)
+  items.push(`values ${s.bar_value_position.replaceAll("_", " ")}`)
+  for (const item of items) {
+    const chip = document.createElement("span")
+    chip.className = "bar-active-chip"
+    chip.textContent = item
+    summary.appendChild(chip)
+  }
+  state.root.appendChild(summary)
 }
 
 function previewLogoSize(value) {
@@ -188,7 +221,7 @@ function renderFields(state) {
     const details = document.createElement("details")
     details.className = "bar-group"
     details.dataset.group = groupName
-    const defaultOpen = ["Simple", "Fill", "Frame", "Category text"].includes(groupName)
+    const defaultOpen = ["Fill", "Frame", "Category text", "Content"].includes(groupName)
     details.open = state.openGroups.has(groupName)
       ? state.openGroups.get(groupName)
       : defaultOpen
@@ -211,6 +244,7 @@ function render(state) {
   rememberOpenGroups(state)
   state.root.replaceChildren()
   renderHeader(state)
+  renderActiveSummary(state)
   renderPreview(state)
   renderFields(state)
 }

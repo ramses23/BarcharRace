@@ -125,7 +125,10 @@ class RenderJob:
         )
         chart_config = apply_fun_fact_layout(self.config, self.fun_fact_config)
         selector = BarSelector(config=chart_config.selection)
-        layout = LayoutEngine(config=chart_config)
+        layout = LayoutEngine(
+            config=chart_config,
+            fun_fact_config=self.fun_fact_config,
+        )
         motion = MotionEngine(animation_config=chart_config.animation)
         renderer = BarRenderer(
             output_dir=chart_config.frames_dir,

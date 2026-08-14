@@ -216,12 +216,19 @@ def build_project_data(
     source_font_family=None,
     rank_label_font_family=None,
     title_text_color=None,
+    title_text_opacity=None,
     subtitle_text_color=None,
+    subtitle_text_opacity=None,
     label_text_color=None,
+    label_text_opacity=None,
     value_text_color=None,
+    value_text_opacity=None,
     time_label_text_color=None,
+    time_label_opacity=None,
     source_text_color=None,
+    source_text_opacity=None,
     rank_label_text_color=None,
+    rank_label_text_opacity=None,
     title_font_size=None,
     subtitle_font_size=None,
     label_font_size=None,
@@ -362,12 +369,19 @@ def build_project_data(
             "bar_shadow_offset_x": bar_shadow_offset_x,
             "bar_shadow_offset_y": bar_shadow_offset_y,
             "title_text_color": title_text_color,
+            "title_text_opacity": title_text_opacity,
             "subtitle_text_color": subtitle_text_color,
+            "subtitle_text_opacity": subtitle_text_opacity,
             "label_text_color": label_text_color,
+            "label_text_opacity": label_text_opacity,
             "value_text_color": value_text_color,
+            "value_text_opacity": value_text_opacity,
             "time_label_text_color": time_label_text_color,
+            "time_label_opacity": time_label_opacity,
             "source_text_color": source_text_color,
+            "source_text_opacity": source_text_opacity,
             "rank_label_text_color": rank_label_text_color,
+            "rank_label_text_opacity": rank_label_text_opacity,
             "title_font_size": title_font_size,
             "subtitle_font_size": subtitle_font_size,
             "label_font_size": label_font_size,
@@ -445,11 +459,7 @@ def build_project_data(
             if value is not None
         }
         has_existing = isinstance(project_data.get("fun_facts"), dict)
-        has_configuration = bool(
-            cleaned_fun_facts.get("enabled")
-            or cleaned_fun_facts.get("source")
-            or has_existing
-        )
+        has_configuration = bool(cleaned_fun_facts or has_existing)
         if has_configuration:
             project_data["fun_facts"] = cleaned_fun_facts
         else:
@@ -530,12 +540,19 @@ def project_form_values(project_data=None):
         "source_font_family": chart.get("source_font_family"),
         "rank_label_font_family": chart.get("rank_label_font_family"),
         "title_text_color": chart.get("title_text_color"),
+        "title_text_opacity": chart.get("title_text_opacity", 1.0),
         "subtitle_text_color": chart.get("subtitle_text_color"),
+        "subtitle_text_opacity": chart.get("subtitle_text_opacity", 1.0),
         "label_text_color": chart.get("label_text_color"),
+        "label_text_opacity": chart.get("label_text_opacity", 1.0),
         "value_text_color": chart.get("value_text_color"),
+        "value_text_opacity": chart.get("value_text_opacity", 1.0),
         "time_label_text_color": chart.get("time_label_text_color"),
+        "time_label_opacity": chart.get("time_label_opacity", 0.22),
         "source_text_color": chart.get("source_text_color"),
+        "source_text_opacity": chart.get("source_text_opacity", 1.0),
         "rank_label_text_color": chart.get("rank_label_text_color"),
+        "rank_label_text_opacity": chart.get("rank_label_text_opacity", 1.0),
         "title_font_size": chart.get("title_font_size"),
         "subtitle_font_size": chart.get("subtitle_font_size"),
         "label_font_size": chart.get("label_font_size"),
@@ -606,10 +623,19 @@ def project_form_values(project_data=None):
             f"fun_facts_{field}": fun_facts.get(field, getattr(_DEFAULT_FUN_FACT_CONFIG, field))
             for field in (
                 "editorial_background_mode", "editorial_background_color",
+                "editorial_background_texture",
+                "editorial_background_texture_intensity",
                 "editorial_headline_size", "editorial_body_size", "editorial_credit_size",
+                "editorial_headline_color", "editorial_headline_opacity",
+                "editorial_body_color", "editorial_body_opacity",
+                "editorial_credit_color", "editorial_credit_opacity",
                 "editorial_image_area_ratio", "editorial_image_fit",
                 "editorial_text_image_gap", "editorial_top_offset",
                 "editorial_reposition_time_label",
+                "editorial_orientation", "editorial_card_x",
+                "editorial_card_y", "editorial_card_width",
+                "editorial_card_height", "editorial_image_position",
+                "editorial_collision_gap",
             )
         },
     }

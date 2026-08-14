@@ -20,7 +20,8 @@ charts, animated scatter plots, and timeline animations.
 - Render rank labels for each bar.
 - Keep bar labels separated from rank-label columns in compact layouts.
 - Keep very large value labels inside a safe data-area width.
-- Draw the large time label as a background watermark behind chart content.
+- Draw the large time label as a background watermark behind chart content,
+  with configurable 0–100% opacity (22% by default).
 - Auto-fit visible bars to the available vertical layout space.
 - Choose legacy manual bar rows or a reactive `fill_available` vertical layout
   that reserves only visible title, subtitle, and source layers; the date
@@ -33,7 +34,7 @@ charts, animated scatter plots, and timeline animations.
 - Apply reusable typography presets.
 - Render rectangle, rounded, capsule, and lollipop bar shapes.
 - Render independent projected shadows, borders, gradients, textures, depth,
-  glow, shine, and background tracks through Simple or Advanced appearance.
+  glow, shine, and background tracks through one unified appearance editor.
 - Resolve and render optional logos for bars.
 - Export PNG frames to MP4 with configurable FFmpeg quality options.
 - Report render progress through a reusable `RenderJob` callback.
@@ -60,10 +61,11 @@ charts, animated scatter plots, and timeline animations.
   default, 50–100%; 100% is unlimited) with cooperative frame throttling and
   bounded FFmpeg threads. This preference lives in the local application
   settings, not in portable project JSON.
-- Compose fun facts as the original `right_panel` card or an
-  `editorial_right` column with a real timeline date, configurable headline,
-  body, credit, image fit/area, spacing, offset, and transparent/solid/card
-  backgrounds.
+- Compose fun facts as the original `right_panel`, the stable
+  `editorial_right` column, or a movable `editorial_floating` card. Floating
+  cards can be vertical or horizontal and configure their canvas rectangle,
+  image side, bar safety gap, typography, image fit/area, and
+  transparent/solid/card background.
 - Run a complete local production from a strict version-2 brief, including
   dataset construction, optional local logos, project assembly, preflight, and
   an isolated MP4 render.
@@ -360,6 +362,12 @@ scratch. A generated production project can be opened in place; it no longer
 needs an editable copy under the repository. Repository projects are listed as
 read-only legacy entries and are cloned to scratch when saved.
 
+The Project Library selector keeps each portable path as its internal identity
+but displays the meaningful project name first, for example
+`most_used_web_browsers — Production`. Duplicate stems add their production,
+scratch, example, or legacy context deterministically. The selected full name,
+location kind, and portable relative path appear immediately below the selector.
+
 This MVP is intentionally local and single-job. It has no automatic downloads,
 remote logo discovery, scheduler or queue, retry/resume recovery, cloud
 publication, or new automation UI. See `production/README.md` for the complete
@@ -410,8 +418,12 @@ settings, while deletion requires confirmation. Applying a preset updates the
 in-memory draft and automatic preview but never saves the project JSON.
 
 Appearance presets use the independent versioned contract
-`appearance-preset-v2` and remain under the app-owned
-`APP_ROOT/presets/appearance/` library. Existing V1 presets remain loadable.
+`appearance-preset-v5` and remain under the app-owned
+`APP_ROOT/presets/appearance/` library. Existing V1–V4 presets remain
+loadable. Older files receive compatible defaults for fields that did not yet
+exist: date opacity remains the legacy `0.22`, every other text opacity is
+fully opaque, card texture is `none`, and floating-card geometry retains its
+previous defaults.
 They include canvas layout, background, typography, text visibility and
 placement, value formatting, every bar-appearance control, and Fun Fact panel,
 fade, and editorial styling. They exclude project content and behavior:
@@ -436,7 +448,7 @@ session draft and are included when the project is saved, previewed, or
 rendered. Bulk logo matching still evaluates every category, not only the
 visible page.
 
-The expanded `Canvas -> Category label area` panel exposes three compatible
+The expanded `Canvas -> Category and bar geometry` panel exposes three compatible
 layout fields:
 
 - `Category label start` writes `chart.label_min_x`;
@@ -456,18 +468,52 @@ updates, and leave typography and placement settings intact so an element can
 be restored without reconfiguring it. Older projects remain fully visible
 because every visibility field defaults to `true`.
 
-The font picker, visual text-position editor, and live bar-appearance editor
+`Canvas -> Text colors and opacity` exposes independent base opacity for title,
+subtitle, date, and source. `Bars -> Bar text colors and opacity` does the same
+for category, value, and ranking text, while `Fun facts -> Editorial layout ->
+Editorial text` controls headline, body, and credit. Values are stored from
+`0.0` to `1.0`; older projects remain visually identical because every new
+field defaults to `1.0` except the historical date watermark, which remains
+`0.22`. The effective renderer alpha is `configured opacity × animation/fade
+opacity`, so transitions still work without overwriting the chosen base value.
+The same settings drive the in-memory preview, saved JSON, final renderer, Text
+Placement representation, and appearance presets.
+
+The font picker, visual text-position editor, editorial-card editor, and live bar-appearance editor
 use Streamlit Custom Components v2. They are controlled components: Python
 rehydrates their current session value and the frontend emits named state with
 `setStateValue`. They no longer use iframe messaging or the legacy components
 v1 API. Component styles are isolated and consume Streamlit theme variables.
 
-The bar editor exposes controls contextually. Simple mode shows only its
-gradient plus shared border/projected-shadow controls. Advanced sections appear
-for fill, texture, depth, effects, track, content, and frame, while dependent
-fields remain hidden until their parent feature is enabled (for example bevel
-size, glow details, second-logo layout, or value border settings). Inactive
-values remain preserved in the project JSON.
+Text Placement V2 builds the selected preview frame with the normal
+`Timeline`, `BarSelector`, `LayoutEngine`, and Fun Fact layout, then converts
+the resulting scene to final-canvas-pixel geometry in Python. The frontend only
+scales and draws real row/bar extents, ranking/category/value lanes, text
+bounds, logo slots, editorial and collision rectangles. Title, subtitle, date,
+and source keep drag, keyboard nudge, alignment, and preset reset. When the
+editorial layout owns the date position, the editor shows that effective
+position and marks it as managed instead of saving an overridden coordinate.
+
+`Fun facts -> Editorial layout -> Position and size` retains exact X/Y/width/
+height number inputs and adds a controlled visual card editor. Drag the card
+body to move it or use its eight edge/corner handles to resize. Interaction is
+local while dragging and emits one update on pointer release; arrow keys move
+1 canvas pixel and Shift+arrows move 10. Both input directions use final-canvas
+pixels, shared minimum dimensions, and clamping that keeps the whole card
+inside the canvas. The editor reuses the same Python scene overlays as Text
+Placement. Gesture events carry a unique component-instance id and the geometry
+from which the gesture started. Python consumes each event once and accepts it
+only when that base still matches the current draft, which prevents stale
+events and keeps a remounted component responsive after section changes. An
+unrelated rerun during a drag does not replace the active DOM or pointer
+capture.
+
+The bar editor exposes one contextual model for fill, texture, depth, effects,
+track, category text, content, and frame. Dependent fields remain hidden until
+their parent feature is enabled (for example bevel size, glow details,
+second-logo layout, or value border settings), and active-setting chips make
+the effective combination visible. The frontend writes one unified state;
+backend selection is automatic.
 
 Project Studio uses a dark creative-workspace theme configured natively in
 `.streamlit/config.toml`; colors, typography, borders, and widget styling do
@@ -488,6 +534,16 @@ status, completed video, dataset snapshot, portable bundle action, and
 generated JSON. On narrower windows the columns stack naturally. A compact
 header identifies the project, destination JSON, dataset size, and saved/dirty
 state without consuming the editing area.
+
+Within that stable navigator, controls are grouped as project identity/column
+mapping/source in Data; canvas/background, available content area, geometry,
+and typography in Canvas; selection/visible rows and appearance in Bars;
+source/scheduling, card layout, editorial style, position/size, and preview in
+Fun Facts; and motion/duration, encoding, and output in Export. Existing widget
+keys and the `CURRENT_DRAFT_STATE` bridge remain unchanged so switching sections
+does not discard unsaved values. Workspace CPU preferences are visually
+separated from workspace location controls, and appearance presets remain in a
+collapsed panel.
 
 The sidebar is the project library: open/new actions, portable ZIP import, and
 CSV selection stay separate from the creative controls. Destructive project,
@@ -565,7 +621,12 @@ Example:
     "auto_fit_bar_count": true,
     "max_visible_bars": null,
     "bar_shape": "capsule",
-    "bar_appearance_mode": "simple",
+    "bar_appearance_mode": "unified",
+    "bar_fill_type": "gradient",
+    "bar_gradient_direction": "horizontal",
+    "bar_gradient_color_count": 2,
+    "bar_fill_use_category_color": true,
+    "bar_edge_darkening": 0,
     "bar_border_enabled": true,
     "bar_border_color": "#FFFFFF",
     "bar_border_width": 1.5,
@@ -659,7 +720,9 @@ Fun Fact Overlay System V1 draws an editorial card inside the same PIL and
 Matplotlib render pipeline as the bar chart. Bars continue moving while the
 card fades in and out; enabling the feature does not add frames, change FPS,
 or change the estimated or rendered playback duration. V1 permits one active
-fact at a time and supports the `right_panel` layout.
+fact at a time. Editorial Layout V2 adds `editorial_floating` without changing
+the independent version-1 fact-content contract or the version-2 project
+schema.
 
 The engine only validates, schedules, packages, and renders facts supplied by
 the project. It does not select editorial facts, search for images, download
@@ -686,6 +749,48 @@ The panel plus its margins are reserved for the entire video, including frames
 without an active fact. Bar width, outside value labels, title, subtitle,
 source, and the large time label therefore remain inside a stable data area
 instead of being covered when a card appears.
+
+`editorial_right` keeps the same stable right-column behavior with additional
+editorial typography and background controls. `editorial_floating` instead
+uses an explicit rectangle and does not reserve a full-height column:
+
+```json
+"fun_facts": {
+  "enabled": true,
+  "source": "fun_facts/fun_facts.json",
+  "layout": "editorial_floating",
+  "panel_padding": 28,
+  "editorial_orientation": "horizontal",
+  "editorial_card_x": 900,
+  "editorial_card_y": 520,
+  "editorial_card_width": 900,
+  "editorial_card_height": 360,
+  "editorial_image_position": "right",
+  "editorial_collision_gap": 24,
+  "editorial_background_mode": "card",
+  "editorial_background_color": "#111827",
+  "editorial_background_texture": "paper",
+  "editorial_background_texture_intensity": 0.2,
+  "editorial_headline_opacity": 1.0,
+  "editorial_body_opacity": 0.9,
+  "editorial_credit_opacity": 0.75
+}
+```
+
+Card backgrounds support `none`, `grain`, `paper`, `dots`, and `diagonal`
+textures. The texture modifies material detail without replacing the selected
+background color, and its intensity can be set from 0% to 100%. Transparent
+background mode deliberately ignores the texture. Project Studio's card editor,
+Latest Preview, and final render use the same stored choice and deterministic
+material generator.
+
+The layout engine intersects that rectangle with each visible bar row. It
+reserves the measured outside-value lane only on the affected vertical band,
+then derives one common pixels-per-value scale for every bar. Rows above or
+below the card can therefore extend into the otherwise free space, while
+intersecting rows keep bars, inside logos, and outside/automatic values clear
+of the card. The common scale preserves honest proportional comparison and
+remains stable through rank transitions.
 
 The referenced `fun_facts.json` uses this independent version-1 contract:
 
@@ -742,6 +847,12 @@ for design review, or return to normal timeline scheduling. Final-render
 preflight reports the fact id, field, and resolved path for invalid JSON,
 missing images, unsupported layouts/fits, unresolved dates, overlaps, or panel
 geometry that leaves no useful chart area.
+
+For `editorial_floating`, the editor exposes card orientation, X/Y position,
+width/height, image side, and a bar/card safety gap. These controls participate
+in auto preview, project persistence, portable bundles, and V5 appearance
+presets; content fields such as the enabled state, source JSON, and fact copy
+remain project-specific.
 
 ## Portable Project Bundles
 
@@ -1195,7 +1306,8 @@ Current test coverage includes:
 - category-label boundary, bar-start, and label-area persistence
 - category labels and colors from project files
 - explicit category logo paths from project files
-- deterministic simple/advanced renderer image signatures
+- deterministic legacy Simple/Advanced renderer signatures plus unified
+  vector-renderer equivalence
 - real render integration test with FFmpeg
 
 GitHub Actions runs the locked dependency install, `pip check`, FFmpeg/FFprobe
@@ -1281,9 +1393,10 @@ caches, and `bar_renderer.py` remains the scene/bar coordinator. In the UI,
 status, and render-profile presentation so `project_studio.py` can focus on the
 editor form and draft state.
 
-Two pixel-exact regression fixtures cover the Simple and Advanced appearance
-paths. If an intentional renderer change alters either signature, inspect the
-new frame first and update the reference hash in the same reviewed change.
+Pixel-exact regression fixtures cover both legacy appearance paths and verify
+that the unified classic gradient remains identical to the optimized legacy
+Simple result. If an intentional renderer change alters a signature, inspect
+the new frame first and update the reference hash in the same reviewed change.
 
 ## Important Concepts
 
@@ -1359,26 +1472,30 @@ place. Enabled bar gradients are batched into one reusable color-segment
 collection instead of creating and resampling one bicubic image per visible
 bar. Curved shapes add detail only around their rounded regions.
 
-The `Bar appearance` panel in Project Studio combines shape cards with a live
-preview and controls for gradient, border, shadow color, opacity, width, and
-offset. The selected values are stored in the project JSON. Its collapsible
-control groups preserve their open or closed state while a field change
-rebuilds the component, so adjusting a slider, checkbox, color, or selection
-does not collapse the section being edited.
+The `Bar appearance` panel in Project Studio is one unified editor: there is no
+Simple/Advanced selector and therefore no second set of settings that can stay
+active invisibly. Shape, Fill, Texture, Depth, Effects, Track, Category text,
+Content, and Frame controls share one normalized state. Contextual controls
+appear only while their parent feature is active, and a compact chip summary
+shows the active shape, fill, effects, logo placement, and value placement.
+The live preview and collapsible groups preserve their open or closed state
+while a field change rebuilds the component.
 
-`Bar appearance` has two modes:
+The renderer chooses its internal backend automatically. Category-color solid
+fills and the classic two-stop horizontal gradient use the optimized vector
+path. Textures, custom colors, multidirectional or three-stop gradients, depth,
+glow, shine, and tracks activate the cached RGBA material compositor. This is
+an implementation detail rather than a user mode: combining controls cannot
+leave an alternate appearance profile hidden in the project.
 
-- `Simple` preserves the optimized solid/gradient renderer and the original
-  border and projected-shadow controls.
-- `Advanced` builds a cached RGBA material per category and composites shape,
-  fill, texture, depth, shine, and border into compact per-bar sprites that are
-  sent directly to Agg through one reusable artist. Tracks, projected shadows,
-  and glow are batched into three global vector collections so their layer order
-  remains correct while bars cross. Text stays as an independent sharp layer;
-  logos use their own direct sprite compositor. It exposes tabs for Fill,
-  Texture, Depth, Effects, Track, Content, and Border & shadow.
+Legacy project and appearance-preset JSON containing
+`bar_appearance_mode="simple"` or `"advanced"` remains loadable and renders
+unchanged. The editor presents either legacy representation through the unified
+controls; the first bar-style edit writes `bar_appearance_mode="unified"` while
+preserving the visible result. Untouched legacy files are not rewritten merely
+by opening them.
 
-Advanced Fill supports solid, gradient, or textured materials; horizontal,
+Unified Fill supports solid or gradient materials; horizontal,
 vertical, and diagonal gradients; two or three color stops; movable highlight;
 and edge darkening. Category colors can remain authoritative or be replaced by
 custom start, center, and end colors.
@@ -1413,9 +1530,9 @@ bar_shine_opacity
 The projected `bar_shadow_*` controls remain exclusively responsible for the
 shadow behind the bar. They do not modify bevel, inner shadow, or glow.
 
-Advanced materials intentionally cost more to rasterize, but the compositor
-reduces that cost for every Advanced combination. In the same repeated
-eight-bar 1920x1080 A/B check, Advanced Fill improved from `0.1367s/frame` to
+Material combinations intentionally cost more to rasterize, but the compositor
+reduces that cost for every layered combination. In the same repeated
+eight-bar 1920x1080 A/B check, material Fill improved from `0.1367s/frame` to
 `0.0983s/frame` (about 28%), while the fully layered texture/depth/glow sample
 improved from `0.1570s/frame` to `0.1296s/frame` (about 17%). Materials, resized
 fills, antialiased shape masks, border masks, prepared logos, and composed logo
@@ -1424,26 +1541,27 @@ sprites use bounded caches.
 On the real 457-frame national-team cumulative project with capsule bars,
 inside-right flags, projected shadows, and direct FFmpeg streaming, total time
 fell from `100.213s` to `57.146s`. Draw time fell from `96.494s` to `54.601s`,
-about a 43% reduction, while MP4 export remained below one second. Simple is
-still the fastest choice, but Advanced no longer creates one clipped
-Matplotlib image plus multiple effect patches for every visible bar.
+about a 43% reduction, while MP4 export remained below one second. The editor
+automatically keeps compatible styles on the faster vector path; layered
+materials no longer create one clipped Matplotlib image plus multiple effect
+patches for every visible bar.
 
 Static background images use a direct Agg artist after `cover`, `contain`, or
 `stretch` is resolved once at canvas size. This avoids sending the same full-HD
 image through Matplotlib's `AxesImage` resampler on every frame. With the same
-457-frame project, 316 matched logos, Advanced capsule bars, and a full-canvas
+457-frame project, 316 matched logos, material capsule bars, and a full-canvas
 JPEG background, total time fell from `206.162s` to `67.430s`; draw time fell
 from `202.250s` to `64.714s`, about a 68% reduction.
 
 Visible logos are also composed once per file, target size, mask, background,
 and border combination. One direct Agg command list replaces each logo's former
 Matplotlib image, clip patch, background patch, and border patch. This applies
-to Simple and Advanced modes and preserves outside-left, inside-left,
+to both internal render paths and preserves outside-left, inside-left,
 inside-right, hidden, square, rounded, circle, and adaptive behavior. On the
 same 457-frame background-image project, this reduced total time again from
 `67.430s` to `57.022s` and draw time from `64.714s` to `54.297s`.
 
-Advanced Track can draw a full-width background bar behind each value. Content
+Track can draw a full-width background bar behind each value. Content
 controls can place logos outside-left, inside-left, inside-right, or hide them.
 Logo masks can follow the bar automatically or use circle, rounded, or square
 shapes, with independent padding, background, opacity, border color, and border
@@ -1467,9 +1585,10 @@ category labels, values, date, source, and ranking. Each dropdown renders its
 font name and `Aa 123` sample using that family. `Project default` inherits the
 base font retained by the project.
 
-The `Text colors` panel provides independent color controls for the title,
-subtitle, category labels, values, date, source, and ranking. Older projects
-without these fields continue to inherit their original theme colors. An
+The compact text-color panels provide independent color and base-opacity
+controls for title, subtitle, category labels, values, date, source, and
+ranking. Older projects without these fields continue to inherit their original
+theme colors and remain fully opaque except for the historical 22% date. An
 explicit category or value color also applies when that text is placed inside
 a bar; the automatic contrast color remains active when no override exists.
 
@@ -1582,6 +1701,12 @@ video_crf = 18
 CRF mode is the default quality mode. When `video_bitrate` is set, bitrate mode
 is used and `video_crf` is omitted from the FFmpeg command.
 
+`libx264` exports use a closed, two-second GOP with one reference frame and no
+B-frames, declare limited-range BT.709 color metadata, and optimize MP4/MOV
+containers for playback. These compatibility settings reduce persistent
+background artifacts in hardware-accelerated players without changing the
+configured CRF, bitrate, preset, or pixel format.
+
 After a successful Project Studio render, the persistent result card includes
 an embedded video player, the final path and size, the render profile, and an
 MP4 download button. Videos larger than 200 MB remain playable from disk but
@@ -1646,7 +1771,7 @@ ChartConfig.logo_size
 ChartConfig.logo_file_extensions
 ```
 
-In Project Studio, Advanced `Bar appearance > Content` exposes the primary
+In Project Studio, `Bar appearance > Content` exposes the primary
 logo size through `ChartConfig.logo_size`, alongside its position, shape,
 padding, background, and border controls. The secondary logo keeps its own
 independent size and styling, so changing either logo does not resize the

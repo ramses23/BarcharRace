@@ -23,7 +23,8 @@ def text_layout_editor(
     preset_positions=None,
     elements,
     theme,
-    layout,
+    geometry=None,
+    layout=None,
     key=None,
 ):
     normalized_positions = _normalize_positions(positions)
@@ -31,9 +32,9 @@ def text_layout_editor(
         preset_positions,
         fallback=normalized_positions,
     )
-    current_positions = _normalize_positions(
-        component_state_value(key, "positions", normalized_positions),
-        fallback=normalized_positions,
+    current_positions = text_layout_editor_positions(
+        key=key,
+        positions=normalized_positions,
     )
     if not component_v2_runtime_available():
         return current_positions
@@ -53,12 +54,20 @@ def text_layout_editor(
             "preset_positions": normalized_preset_positions,
             "elements": elements,
             "theme": theme,
-            "layout": layout,
+            "geometry": geometry if isinstance(geometry, dict) else {},
         },
         key=key,
         height="content",
     )
     return current_positions
+
+
+def text_layout_editor_positions(*, key, positions):
+    normalized_positions = _normalize_positions(positions)
+    return _normalize_positions(
+        component_state_value(key, "positions", normalized_positions),
+        fallback=normalized_positions,
+    )
 
 
 def _normalize_positions(positions, fallback=None):

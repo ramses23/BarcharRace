@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import numpy as np
 from PIL import Image, ImageChops
 
 import _test_path
@@ -21,7 +22,7 @@ from models.fun_fact import ActiveFunFact, FunFact, FunFactCollection
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
 from pipeline.render_job import RenderJob
-from studio.fun_fact_layout import apply_fun_fact_layout
+from studio.fun_fact_layout import apply_fun_fact_layout, editorial_geometry
 from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
 from studio.preview import render_project_preview
 from studio.project_bundle import build_project_bundle, import_project_bundle
@@ -65,6 +66,109 @@ class FunFactSystemTest(unittest.TestCase):
 
         self.assertTrue(preset.fun_fact_config.enabled)
         self.assertEqual(preset.fun_fact_config.panel_width, 520)
+
+    def test_project_loader_accepts_floating_editorial_geometry(self):
+        preset = load_project_data({
+            "schema_version": 2,
+            "name": "floating-facts",
+            "fun_facts": {
+                "enabled": True,
+                "source": "fun_facts/facts.json",
+                "layout": "editorial_floating",
+                "editorial_orientation": "horizontal",
+                "editorial_card_x": 880,
+                "editorial_card_y": 520,
+                "editorial_card_width": 900,
+                "editorial_card_height": 360,
+                "editorial_image_position": "left",
+                "editorial_collision_gap": 30,
+            },
+        })
+
+        self.assertEqual(preset.fun_fact_config.layout, "editorial_floating")
+        self.assertEqual(preset.fun_fact_config.editorial_orientation, "horizontal")
+        self.assertEqual(preset.fun_fact_config.editorial_card_width, 900)
+        self.assertEqual(preset.fun_fact_config.editorial_image_position, "left")
+
+    def test_project_loader_roundtrips_editorial_text_and_texture_style(self):
+        legacy = load_project_data({"name": "legacy-facts"}).fun_fact_config
+        self.assertEqual(legacy.editorial_background_texture, "none")
+        self.assertEqual(legacy.editorial_headline_opacity, 1.0)
+        self.assertEqual(legacy.editorial_body_opacity, 1.0)
+        self.assertEqual(legacy.editorial_credit_opacity, 1.0)
+
+        preset = load_project_data({
+            "name": "styled-facts",
+            "fun_facts": {
+                "editorial_background_mode": "card",
+                "editorial_background_color": "#203040",
+                "editorial_background_texture": "paper",
+                "editorial_background_texture_intensity": 0.4,
+                "editorial_headline_color": "#F0F1F2",
+                "editorial_headline_opacity": 0.8,
+                "editorial_body_color": "#D0D1D2",
+                "editorial_body_opacity": 0.6,
+                "editorial_credit_color": "#A0A1A2",
+                "editorial_credit_opacity": 0.45,
+            },
+        })
+
+        config = preset.fun_fact_config
+        self.assertEqual(config.editorial_background_texture, "paper")
+        self.assertEqual(config.editorial_background_texture_intensity, 0.4)
+        self.assertEqual(config.editorial_headline_color, "#F0F1F2")
+        self.assertEqual(config.editorial_headline_opacity, 0.8)
+        self.assertEqual(config.editorial_body_opacity, 0.6)
+        self.assertEqual(config.editorial_credit_opacity, 0.45)
+
+        for field in (
+            "editorial_background_texture_intensity",
+            "editorial_headline_opacity",
+            "editorial_body_opacity",
+            "editorial_credit_opacity",
+        ):
+            for boundary in (0.0, 1.0):
+                with self.subTest(field=field, boundary=boundary):
+                    config = load_project_data({
+                        "fun_facts": {field: boundary},
+                    }).fun_fact_config
+                    self.assertEqual(getattr(config, field), boundary)
+            for invalid in (-0.01, 1.01):
+                with self.subTest(field=field, invalid=invalid):
+                    with self.assertRaisesRegex(ProjectFileError, rf"{field}.*0 to 1"):
+                        load_project_data({"fun_facts": {field: invalid}})
+
+        with self.assertRaisesRegex(ProjectFileError, "background texture"):
+            load_project_data({
+                "fun_facts": {"editorial_background_texture": "marble"},
+            })
+
+    def test_floating_editorial_layout_keeps_global_chart_width(self):
+        chart = ChartConfig(
+            width=1920,
+            height=1080,
+            left_margin=320,
+            right_margin=120,
+            time_label_x=1500,
+            time_label_y=900,
+        )
+        config = FunFactConfig(
+            enabled=True,
+            layout="editorial_floating",
+            editorial_orientation="horizontal",
+            editorial_card_x=900,
+            editorial_card_y=520,
+            editorial_card_width=900,
+            editorial_card_height=360,
+            editorial_collision_gap=24,
+        )
+
+        adjusted = apply_fun_fact_layout(chart, config)
+
+        self.assertEqual(adjusted.right_margin, chart.right_margin)
+        self.assertEqual(editorial_geometry(chart, config), (900, 520, 900, 360))
+        self.assertEqual(adjusted.time_label_x, 1772)
+        self.assertEqual(adjusted.time_label_y, 367)
 
     def test_project_loader_rejects_unknown_fun_fact_configuration(self):
         with self.assertRaisesRegex(ProjectFileError, "Unknown key"):
@@ -355,6 +459,201 @@ class FunFactSystemTest(unittest.TestCase):
         )
         self.assertGreaterEqual(ratio, 4.5)
 
+    def test_explicit_editorial_text_colors_are_authoritative_with_opacity_and_fade(self):
+        fact = FunFact(
+            "colors", "1", "1", "Headline",
+            body="Body", credit="Credit",
+        )
+        expected = (
+            (255, 0, 0, 204),
+            (0, 255, 0, 153),
+            (0, 0, 255, 102),
+        )
+
+        for orientation in ("vertical", "horizontal"):
+            with self.subTest(orientation=orientation), tempfile.TemporaryDirectory() as temp_dir:
+                renderer = BarRenderer(
+                    output_dir=temp_dir,
+                    config=ChartConfig(
+                        width=640,
+                        height=360,
+                        title_text_color="#000000",
+                        subtitle_text_color="#000000",
+                        source_text_color="#000000",
+                    ),
+                    fun_fact_config=FunFactConfig(
+                        enabled=True,
+                        layout=(
+                            "editorial_floating"
+                            if orientation == "horizontal"
+                            else "editorial_right"
+                        ),
+                        editorial_orientation=orientation,
+                        editorial_background_color="#FFFFFF",
+                        editorial_headline_color="#FF0000",
+                        editorial_headline_opacity=0.8,
+                        editorial_body_color="#00FF00",
+                        editorial_body_opacity=0.6,
+                        editorial_credit_color="#0000FF",
+                        editorial_credit_opacity=0.4,
+                    ),
+                )
+                fills = []
+                original_draw = renderer._draw_wrapped_lines
+
+                def record_fill(*args, **kwargs):
+                    fills.append(kwargs["fill"])
+                    return original_draw(*args, **kwargs)
+
+                try:
+                    with patch.object(
+                        renderer,
+                        "_draw_wrapped_lines",
+                        side_effect=record_fill,
+                    ):
+                        renderer._fun_fact_panel_image(fact, 420, 300)
+                finally:
+                    renderer.close()
+
+                self.assertEqual(tuple(fills[:3]), expected)
+
+        class CaptureArtist:
+            def set_commands(self, commands):
+                self.commands = commands
+
+        renderer = BarRenderer(
+            config=ChartConfig(width=640, height=360, left_margin=180),
+            fun_fact_config=FunFactConfig(enabled=True, panel_width=180),
+        )
+        renderer._fun_fact_artist = CaptureArtist()
+        colored_pixels = np.asarray([expected], dtype=np.uint8)
+        renderer._fun_fact_panel_image = lambda *_args: colored_pixels.copy()
+        renderer._update_fun_fact_overlay(ActiveFunFact(fact, opacity=0.5))
+        faded = renderer._fun_fact_artist.commands[0][0]
+        renderer.close()
+
+        self.assertTrue(np.array_equal(faded[0, :, :3], colored_pixels[0, :, :3]))
+        self.assertEqual(tuple(faded[0, :, 3]), (102, 76, 51))
+
+    def test_latest_preview_passes_editorial_colors_to_shared_renderer(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_monthly_project(root)
+            project_data = self._monthly_project_data(enabled=True)
+            project_data["fun_facts"].update({
+                "editorial_headline_color": "#FF0000",
+                "editorial_body_color": "#00FF00",
+                "editorial_credit_color": "#0000FF",
+            })
+
+            with patch("studio.preview.BarRenderer") as renderer_class:
+                renderer_class.return_value.render.return_value = str(root / "preview.png")
+                render_project_preview(
+                    "project.json",
+                    year=2,
+                    root_dir=root,
+                    project_data=project_data,
+                )
+
+            config = renderer_class.call_args.kwargs["fun_fact_config"]
+            self.assertEqual(config.editorial_headline_color, "#FF0000")
+            self.assertEqual(config.editorial_body_color, "#00FF00")
+            self.assertEqual(config.editorial_credit_color, "#0000FF")
+
+    def test_editorial_background_texture_preserves_color_and_legacy_none(self):
+        background = (32, 64, 96, 245)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            legacy_renderer = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(width=640, height=360),
+                fun_fact_config=FunFactConfig(
+                    editorial_background_texture="none",
+                    editorial_background_texture_intensity=1.0,
+                ),
+            )
+            textured_renderer = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(width=640, height=360),
+                fun_fact_config=FunFactConfig(
+                    editorial_background_texture="paper",
+                    editorial_background_texture_intensity=0.6,
+                ),
+            )
+            try:
+                legacy = np.asarray(
+                    legacy_renderer._fun_fact_background_material(80, 48, background)
+                )
+                textured = np.asarray(
+                    textured_renderer._fun_fact_background_material(80, 48, background)
+                )
+            finally:
+                legacy_renderer.close()
+                textured_renderer.close()
+
+        self.assertTrue(np.all(legacy[:, :, :3] == np.asarray(background[:3])))
+        self.assertTrue(np.all(legacy[:, :, 3] == background[3]))
+        self.assertGreater(float(np.var(textured[:, :, :3])), 0.0)
+        channel_means = textured[:, :, :3].mean(axis=(0, 1))
+        self.assertLess(channel_means[0], channel_means[1])
+        self.assertLess(channel_means[1], channel_means[2])
+        self.assertTrue(np.all(textured[:, :, 3] == background[3]))
+
+    def test_editorial_text_opacity_precedes_parent_fade(self):
+        fact = FunFact(
+            "opacity", "1", "1", "Headline",
+            body="Body", credit="Credit",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            full = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(width=640, height=360),
+                fun_fact_config=FunFactConfig(
+                    enabled=True,
+                    panel_width=260,
+                    editorial_headline_opacity=1.0,
+                    editorial_body_opacity=1.0,
+                    editorial_credit_opacity=1.0,
+                ),
+            )
+            muted = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(width=640, height=360),
+                fun_fact_config=FunFactConfig(
+                    enabled=True,
+                    panel_width=260,
+                    editorial_headline_opacity=0.0,
+                    editorial_body_opacity=0.0,
+                    editorial_credit_opacity=0.0,
+                ),
+            )
+            try:
+                full_image = full._fun_fact_panel_image(fact, 260, 300)
+                muted_image = muted._fun_fact_panel_image(fact, 260, 300)
+            finally:
+                full.close()
+                muted.close()
+        self.assertFalse(np.array_equal(full_image, muted_image))
+
+        class CaptureArtist:
+            def __init__(self):
+                self.commands = ()
+
+            def set_commands(self, commands):
+                self.commands = commands
+
+        renderer = BarRenderer(
+            config=ChartConfig(width=640, height=360, left_margin=180),
+            fun_fact_config=FunFactConfig(enabled=True, panel_width=180),
+        )
+        renderer._fun_fact_artist = CaptureArtist()
+        renderer._fun_fact_panel_image = lambda *_args: np.full(
+            (10, 10, 4), (10, 20, 30, 200), dtype=np.uint8,
+        )
+        renderer._update_fun_fact_overlay(ActiveFunFact(fact, opacity=0.5))
+        faded = renderer._fun_fact_artist.commands[0][0]
+        renderer.close()
+        self.assertTrue(np.all(faded[:, :, 3] == 100))
+
     def test_preview_scene_has_no_overlay_then_scheduled_and_forced_overlay(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -425,6 +724,52 @@ class FunFactSystemTest(unittest.TestCase):
         self.assertIs(cover, repeated)
         self.assertEqual(open_image.call_count, 1)
         self.assertEqual(oriented_size, (40, 80))
+
+    def test_horizontal_editorial_card_places_image_on_selected_side(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "photo.png"
+            Image.new("RGB", (120, 80), "red").save(image_path)
+            fact = FunFact(
+                "horizontal",
+                "1",
+                "1",
+                "Horizontal headline",
+                body="Short editorial body.",
+                image_path=str(image_path),
+            )
+            images = {}
+            for position in ("left", "right"):
+                renderer = BarRenderer(
+                    output_dir=temp_dir,
+                    config=ChartConfig(width=800, height=450),
+                    fun_fact_config=FunFactConfig(
+                        enabled=True,
+                        layout="editorial_floating",
+                        editorial_orientation="horizontal",
+                        editorial_image_position=position,
+                        editorial_image_area_ratio=0.4,
+                        editorial_image_fit="cover",
+                    ),
+                )
+                try:
+                    images[position] = renderer._fun_fact_panel_image(
+                        fact,
+                        600,
+                        240,
+                    )
+                finally:
+                    renderer.close()
+
+        centroids = {}
+        for position, image in images.items():
+            red_pixels = (
+                (image[:, :, 0] > 180)
+                & (image[:, :, 1] < 80)
+                & (image[:, :, 2] < 80)
+            )
+            centroids[position] = red_pixels.nonzero()[1].mean()
+        self.assertLess(centroids["left"], 300)
+        self.assertGreater(centroids["right"], 300)
 
     def test_monthly_smoke_preview_renders_overlay_png(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -84,7 +84,7 @@ class ProjectStudioBundleEndToEndTest(unittest.TestCase):
                 self.assertTrue(imported_assets.is_dir())
                 selector = self._project_selector(app)
                 self.assertIn(
-                    "Production / e2e_production / e2e_production",
+                    "e2e_production — Production",
                     selector.options,
                 )
                 self.assertEqual(selector.value, project_option)

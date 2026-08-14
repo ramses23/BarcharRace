@@ -74,6 +74,7 @@ class TextLayoutEditorTest(unittest.TestCase):
         self.assertIn('["center", "Center X"]', javascript)
         self.assertIn('["reset", "Reset preset"]', javascript)
         self.assertIn('setStateValue("positions"', javascript)
+        self.assertIn("ResizeObserver", javascript)
         self.assertNotIn("postMessage", javascript)
 
 

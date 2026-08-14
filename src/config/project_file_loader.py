@@ -340,7 +340,7 @@ def _convert_chart_value(key, value):
         return value
 
     bar_enum_options = {
-        "bar_appearance_mode": ("simple", "advanced"),
+        "bar_appearance_mode": ("simple", "advanced", "unified"),
         "bar_fill_type": ("solid", "gradient", "texture"),
         "bar_gradient_direction": ("horizontal", "vertical", "diagonal"),
         "bar_texture_preset": (
@@ -476,6 +476,13 @@ def _convert_chart_value(key, value):
         "bar_track_opacity",
         "bar_logo_background_opacity",
         "bar_secondary_logo_background_opacity",
+        "title_text_opacity",
+        "subtitle_text_opacity",
+        "label_text_opacity",
+        "value_text_opacity",
+        "time_label_opacity",
+        "source_text_opacity",
+        "rank_label_text_opacity",
     ):
         if (
             isinstance(value, bool)
@@ -790,9 +797,10 @@ def _convert_fun_fact_value(key, value):
             )
         return value.strip()
     if key == "layout":
-        if value not in ("right_panel", "editorial_right"):
+        if value not in ("right_panel", "editorial_right", "editorial_floating"):
             raise ProjectFileError(
-                "Fun facts field 'layout' must be 'right_panel' or 'editorial_right'."
+                "Fun facts field 'layout' must be 'right_panel', "
+                "'editorial_right', or 'editorial_floating'."
             )
         return value
     if key == "panel_width":
@@ -823,14 +831,48 @@ def _convert_fun_fact_value(key, value):
         if value not in ("transparent", "solid", "card"):
             raise ProjectFileError("Invalid editorial background mode.")
         return value
+    if key == "editorial_background_texture":
+        if value not in ("none", "grain", "paper", "dots", "diagonal"):
+            raise ProjectFileError("Invalid editorial background texture.")
+        return value
     if key == "editorial_image_fit":
         if value not in ("contain", "cover"):
             raise ProjectFileError("Invalid editorial image fit.")
         return value
-    if key == "editorial_background_color":
-        if value is not None and (not isinstance(value, str) or not value.strip()):
-            raise ProjectFileError("Editorial background color must be null or a color.")
+    if key == "editorial_orientation":
+        if value not in ("vertical", "horizontal"):
+            raise ProjectFileError(
+                "Editorial orientation must be 'vertical' or 'horizontal'."
+            )
         return value
+    if key == "editorial_image_position":
+        if value not in ("left", "right"):
+            raise ProjectFileError(
+                "Editorial image position must be 'left' or 'right'."
+            )
+        return value
+    if key in (
+        "editorial_background_color",
+        "editorial_headline_color",
+        "editorial_body_color",
+        "editorial_credit_color",
+    ):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ProjectFileError(f"Fun facts field '{key}' must be null or a color.")
+        return value.strip() if isinstance(value, str) else None
+    if key in (
+        "editorial_background_texture_intensity",
+        "editorial_headline_opacity",
+        "editorial_body_opacity",
+        "editorial_credit_opacity",
+    ):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= value <= 1
+        ):
+            raise ProjectFileError(f"Fun facts field '{key}' must be from 0 to 1.")
+        return float(value)
     if key == "editorial_image_area_ratio":
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 0.8:
             raise ProjectFileError("Editorial image area ratio must be from 0 to 0.8.")
@@ -838,6 +880,29 @@ def _convert_fun_fact_value(key, value):
     if key in ("editorial_headline_size", "editorial_body_size", "editorial_credit_size", "editorial_text_image_gap", "editorial_top_offset"):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProjectFileError(f"Fun facts field '{key}' must be a non-negative integer.")
+        return value
+    if key in ("editorial_card_x", "editorial_card_y"):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError(
+                f"Fun facts field '{key}' must be null or a non-negative integer."
+            )
+        return value
+    if key in ("editorial_card_width", "editorial_card_height"):
+        if value is None:
+            return None
+        minimum = 240 if key == "editorial_card_width" else 140
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            raise ProjectFileError(
+                f"Fun facts field '{key}' must be null or at least {minimum}."
+            )
+        return value
+    if key == "editorial_collision_gap":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError(
+                "Fun facts field 'editorial_collision_gap' must be >= 0."
+            )
         return value
     if key == "editorial_reposition_time_label":
         if not isinstance(value, bool):
