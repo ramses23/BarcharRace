@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -41,3 +41,12 @@ jobs:
           path: football_player_photos_batch03_png_max130kb.zip
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish run marker
+        run: |
+          printf '%s\n' "$GITHUB_RUN_ID" > .batch03_run_id.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .batch03_run_id.txt
+          git commit -m "chore: record batch 03 workflow run" || exit 0
+          git push origin HEAD:asset-photo-test
