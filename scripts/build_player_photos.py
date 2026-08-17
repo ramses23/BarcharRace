@@ -1,430 +1,313 @@
 from __future__ import annotations
 
-import hashlib
-import json
+import csv
+import io
 import math
-import sys
+import re
+import shutil
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
 
+import cv2
+import numpy as np
+import requests
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-USER_AGENT = (
-    "BarcharRace-photo-builder/1.2 "
-    "(https://github.com/ramses23/BarcharRace; licensed asset preparation)"
-)
+USER_AGENT = "BarcharRace-photo-pack/2.0 (https://github.com/ramses23/BarcharRace; BarChartStudio asset preparation)"
+MAX_BYTES = 130 * 1024
+TARGET = 512
 
-SOURCES: list[dict[str, Any]] = [
-    {
-        "player": "Cristiano Ronaldo",
-        "file": "cristiano_ronaldo.png",
-        "kind": "photo",
-        "wikidata_id": "Q11571",
-        "commons_file": "Cristiano Ronaldo Croatia v Portugal 2 July 2026-075 (cropped).jpg",
-        "author": "Bryan Berlin",
-        "license": "CC BY-SA 4.0",
-        "centering": [0.5, 0.42],
-    },
-    {
-        "player": "Lionel Messi",
-        "file": "lionel_messi.png",
-        "kind": "photo",
-        "wikidata_id": "Q615",
-        "commons_file": "Leo Messi Argentina v Egypt 7 July 2026-1.jpg",
-        "author": "Bryan Berlin",
-        "license": "CC BY-SA 4.0",
-        "centering": [0.5, 0.38],
-    },
-    {
-        "player": "Pelé",
-        "file": "pele.png",
-        "kind": "photo",
-        "wikidata_id": "Q12897",
-        "commons_file": "Pele con brasil (cropped).jpg",
-        "author": "Unknown author",
-        "license": "Public domain",
-        "centering": [0.5, 0.42],
-    },
-    {
-        "player": "Romário",
-        "file": "romario.png",
-        "kind": "photo",
-        "wikidata_id": "Q178649",
-        "commons_file": "Senadores da 57ª Legislatura (52689451805).jpg",
-        "author": "Agência Senado",
-        "license": "CC BY 2.0",
-        "centering": [0.5, 0.36],
-    },
-    {
-        "player": "Ferenc Puskás",
-        "file": "ferenc_puskas.png",
-        "kind": "photo",
-        "wikidata_id": "Q482931",
-        "commons_file": "Ferenc Puskás (cropped).jpg",
-        "author": "Anefo",
-        "license": "CC0",
-        "centering": [0.5, 0.44],
-    },
-    {
-        "player": "Josef Bican",
-        "file": "josef_bican.png",
-        "kind": "photo",
-        "wikidata_id": "Q352017",
-        "commons_file": "Josef Bican 1940.jpg",
-        "author": "Unknown author; re-photo by David Sedlecký",
-        "license": "Public domain",
-        "centering": [0.5, 0.38],
-    },
-    {
-        "player": "Robert Lewandowski",
-        "file": "robert_lewandowski.png",
-        "kind": "photo",
-        "wikidata_id": "Q151269",
-        "commons_file": "Robert Lewandowski 2018, JAP-POL (cropped).jpg",
-        "author": "Svetlana Beketova",
-        "license": "CC BY-SA 3.0",
-        "centering": [0.5, 0.38],
-    },
-    {
-        "player": "Jimmy Jones",
-        "file": "jimmy_jones.png",
-        "kind": "photo",
-        "wikidata_id": "Q3179067",
-        "commons_file": "Jimmy jones.jpg",
-        "author": "Tumijo",
-        "license": "CC BY-SA 4.0",
-        "centering": [0.5, 0.43],
-    },
-    {
-        "player": "Gerd Müller",
-        "file": "gerd_muller.png",
-        "kind": "photo",
-        "wikidata_id": "Q152871",
-        "commons_file": "BOMBERGERDMUELLER (headshot).JPG",
-        "author": "Alexander Hauk / Promifotos.de",
-        "license": "CC BY-SA 3.0",
-        "centering": [0.5, 0.42],
-    },
-    {
-        "player": "Joe Bambrick",
-        "file": "joe_bambrick.png",
-        "kind": "placeholder",
-        "wikidata_id": "Q2056445",
-        "note": "No reusable photograph was identified; an approved neutral football emblem is used intentionally.",
-    },
-    {
-        "player": "Abe Lenstra",
-        "file": "abe_lenstra.png",
-        "kind": "photo",
-        "wikidata_id": "Q318173",
-        "commons_file": "Abe Lenstra (Heerenveen) in het Olympisch Stadion in Amsterdam, enige dagen na d, Bestanddeelnr 191-1062.jpg",
-        "author": "Willem van de Poll",
-        "license": "CC0",
-        "centering": [0.5, 0.42],
-    },
-    {
-        "player": "Luis Suárez",
-        "file": "luis_suarez.png",
-        "kind": "photo",
-        "wikidata_id": "Q26517",
-        "commons_file": "U09 Luis Suárez 3470.jpg",
-        "author": "Ailura",
-        "license": "CC BY-SA 3.0 AT",
-        "centering": [0.5, 0.16],
-    },
-    {
-        "player": "Túlio Maravilha",
-        "file": "tulio_maravilha.png",
-        "kind": "photo",
-        "wikidata_id": "Q714354",
-        "commons_file": "Tulio no Itumbiara (cropped).JPG",
-        "author": "Thiago Souza",
-        "license": "CC BY-SA 3.0",
-        "centering": [0.5, 0.16],
-    },
-    {
-        "player": "Eusébio",
-        "file": "eusebio.png",
-        "kind": "photo",
-        "wikidata_id": "Q17163",
-        "commons_file": "Eusebio (1963 version2).jpg",
-        "author": "Harry Pot / Anefo",
-        "license": "CC BY-SA 3.0 NL",
-        "centering": [0.5, 0.38],
-    },
-    {
-        "player": "Zlatan Ibrahimović",
-        "file": "zlatan_ibrahimovic.png",
-        "kind": "photo",
-        "wikidata_id": "Q46896",
-        "commons_file": "Zlatan Ibrahimović-13 (cropped).jpg",
-        "author": "Frankie Fouganthin",
-        "license": "CC BY-SA 3.0",
-        "centering": [0.5, 0.5],
-    },
+PLAYERS: list[dict[str, str]] = [
+    {"player": "Cristiano Ronaldo", "file": "cristiano_ronaldo.png", "wikipedia": "Cristiano Ronaldo"},
+    {"player": "Erling Haaland", "file": "erling_haaland.png", "wikipedia": "Erling Haaland"},
+    {"player": "Gary Lineker", "file": "gary_lineker.png", "wikipedia": "Gary Lineker"},
+    {"player": "Hristo Stoichkov", "file": "hristo_stoichkov.png", "wikipedia": "Hristo Stoichkov"},
+    {"player": "Johan Cruyff", "file": "johan_cruyff.png", "wikipedia": "Johan Cruyff"},
+    {"player": "Jürgen Klinsmann", "file": "j_rgen_klinsmann.png", "wikipedia": "Jürgen Klinsmann"},
+    {"player": "Karim Bagheri", "file": "karim_bagheri.png", "wikipedia": "Karim Bagheri"},
+    {"player": "Landon Donovan", "file": "landon_donovan.png", "wikipedia": "Landon Donovan"},
+    {"player": "Michel Platini", "file": "michel_platini.png", "wikipedia": "Michel Platini"},
+    {"player": "Paulo Wanchope", "file": "paulo_wanchope.png", "wikipedia": "Paulo Wanchope"},
+    {"player": "Roberto Porta", "file": "roberto_porta.png", "wikipedia": "Roberto Porta"},
+    {"player": "Samuel Eto'o", "file": "samuel_eto_o.png", "wikipedia": "Samuel Eto'o"},
+    {"player": "Wayne Rooney", "file": "wayne_rooney.png", "wikipedia": "Wayne Rooney"},
+    {"player": "Andriy Shevchenko", "file": "andriy_shevchenko.png", "wikipedia": "Andriy Shevchenko"},
+    {"player": "Harry Kane", "file": "harry_kane.png", "wikipedia": "Harry Kane"},
+    {"player": "Lionel Messi", "file": "lionel_messi.png", "wikipedia": "Lionel Messi"},
+    {"player": "Robbie Keane", "file": "robbie_keane.png", "wikipedia": "Robbie Keane"},
+    {"player": "Romelu Lukaku", "file": "romelu_lukaku.png", "wikipedia": "Romelu Lukaku"},
+    {"player": "Thierry Henry", "file": "thierry_henry.png", "wikipedia": "Thierry Henry"},
+    {"player": "Zlatan Ibrahimović", "file": "zlatan_ibrahimovi.png", "wikipedia": "Zlatan Ibrahimović"},
 ]
 
-
-def commons_page_url(file_title: str) -> str:
-    encoded = urllib.parse.quote(file_title.replace(" ", "_"), safe="()_,.-")
-    return f"https://commons.wikimedia.org/wiki/File:{encoded}"
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": USER_AGENT})
 
 
-def commons_thumbnail_url(file_title: str) -> str:
-    encoded = urllib.parse.quote(file_title.replace(" ", "_"), safe="()_,.-")
-    return f"https://commons.wikimedia.org/wiki/Special:Redirect/file/{encoded}?width=1200"
-
-
-def retry_delay(exc: Exception, attempt: int) -> float:
-    if isinstance(exc, urllib.error.HTTPError) and exc.code == 429:
-        retry_after = exc.headers.get("Retry-After") if exc.headers else None
-        if retry_after:
-            try:
-                return max(float(retry_after), 20.0)
-            except ValueError:
-                pass
-        return min(30.0 * (attempt + 1), 180.0)
-    return min(4.0 * (2**attempt), 60.0)
-
-
-def download(url: str, destination: Path, attempts: int = 8) -> None:
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-    }
+def get_json(url: str, params: dict[str, Any] | None = None, attempts: int = 5) -> dict[str, Any]:
+    last: Exception | None = None
     for attempt in range(attempts):
-        request = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                content_type = response.headers.get_content_type()
-                if not content_type.startswith("image/"):
-                    raise RuntimeError(f"Unexpected content type {content_type!r} from {url}")
-                destination.write_bytes(response.read())
-            return
+            response = SESSION.get(url, params=params, timeout=60)
+            response.raise_for_status()
+            return response.json()
         except Exception as exc:
-            if attempt == attempts - 1:
-                raise
-            delay = retry_delay(exc, attempt)
-            print(
-                f"Retry {attempt + 1}/{attempts - 1} after {delay:.0f}s: {type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-            time.sleep(delay)
+            last = exc
+            if attempt < attempts - 1:
+                time.sleep(min(2 ** attempt, 12))
+    raise RuntimeError(f"JSON request failed: {url}: {last}")
 
 
-def validate_png(path: Path) -> None:
-    with Image.open(path) as check:
-        check.verify()
-    with Image.open(path) as check:
-        if check.format != "PNG" or check.size != (512, 512):
-            raise RuntimeError(f"Invalid PNG asset: {path}")
-
-
-def convert_square(source: Path, destination: Path, centering: tuple[float, float]) -> None:
-    with Image.open(source) as image:
-        image.load()
-        image = ImageOps.exif_transpose(image).convert("RGB")
-        image = ImageOps.fit(
-            image,
-            (512, 512),
-            method=Image.Resampling.LANCZOS,
-            centering=centering,
-        )
-        image.save(destination, "PNG", optimize=True)
-    validate_png(destination)
-
-
-def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-    ]
-    for candidate in candidates:
+def download_bytes(url: str, attempts: int = 5) -> bytes:
+    last: Exception | None = None
+    for attempt in range(attempts):
         try:
-            return ImageFont.truetype(candidate, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+            response = SESSION.get(url, timeout=120)
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            last = exc
+            if attempt < attempts - 1:
+                time.sleep(min(2 ** attempt, 12))
+    raise RuntimeError(f"Image download failed: {url}: {last}")
 
 
-def centered_text(
-    draw: ImageDraw.ImageDraw,
-    xy: tuple[int, int],
-    text: str,
-    font: ImageFont.ImageFont,
-    fill: str,
-) -> None:
-    box = draw.textbbox((0, 0), text, font=font)
-    width = box[2] - box[0]
-    height = box[3] - box[1]
-    draw.text((xy[0] - width / 2, xy[1] - height / 2), text, font=font, fill=fill)
-
-
-def create_placeholder(destination: Path) -> None:
-    image = Image.new("RGB", (512, 512), "#10253f")
-    draw = ImageDraw.Draw(image)
-
-    draw.rounded_rectangle(
-        (28, 28, 484, 484),
-        radius=70,
-        fill="#173b62",
-        outline="#d8e4ef",
-        width=8,
+def wikipedia_wikidata_id(title: str) -> str | None:
+    data = get_json(
+        "https://en.wikipedia.org/w/api.php",
+        {"action": "query", "format": "json", "redirects": 1, "prop": "pageprops", "titles": title},
     )
-    draw.ellipse((146, 72, 366, 292), fill="#f7f7f2", outline="#0b1726", width=8)
+    page = next(iter(data["query"]["pages"].values()))
+    return page.get("pageprops", {}).get("wikibase_item")
 
-    cx, cy, radius = 256, 182, 38
-    points = []
-    for i in range(5):
-        angle = -math.pi / 2 + i * 2 * math.pi / 5
-        points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
-    draw.polygon(points, fill="#0b1726")
-    for x, y in points:
-        draw.line((cx, cy, x, y), fill="#0b1726", width=7)
 
-    centered_text(draw, (256, 345), "JB", load_font(92, bold=True), "#ffffff")
-    centered_text(draw, (256, 430), "JOE BAMBRICK", load_font(34, bold=True), "#d8e4ef")
-    centered_text(draw, (256, 472), "NO PHOTO AVAILABLE", load_font(20), "#b9c9d7")
+def wikidata_p18(qid: str) -> str | None:
+    data = get_json(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")
+    claims = data["entities"][qid].get("claims", {}).get("P18", [])
+    if not claims:
+        return None
+    try:
+        return claims[0]["mainsnak"]["datavalue"]["value"]
+    except Exception:
+        return None
 
-    image.save(destination, "PNG", optimize=True)
-    validate_png(destination)
+
+def wikipedia_pageimage(title: str) -> tuple[str, str] | None:
+    data = get_json(
+        "https://en.wikipedia.org/w/api.php",
+        {
+            "action": "query",
+            "format": "json",
+            "redirects": 1,
+            "prop": "pageimages",
+            "piprop": "thumbnail|name",
+            "pithumbsize": 1400,
+            "titles": title,
+        },
+    )
+    page = next(iter(data["query"]["pages"].values()))
+    thumb = page.get("thumbnail", {}).get("source")
+    name = page.get("pageimage")
+    return (name, thumb) if name and thumb else None
+
+
+def commons_image_info(file_name: str) -> dict[str, Any]:
+    title = "File:" + file_name
+    data = get_json(
+        "https://commons.wikimedia.org/w/api.php",
+        {
+            "action": "query",
+            "format": "json",
+            "prop": "imageinfo",
+            "iiprop": "url|extmetadata",
+            "iiurlwidth": 1400,
+            "titles": title,
+        },
+    )
+    page = next(iter(data["query"]["pages"].values()))
+    infos = page.get("imageinfo", [])
+    if not infos:
+        raise RuntimeError(f"No Commons imageinfo for {file_name}")
+    info = infos[0]
+    ext = info.get("extmetadata", {})
+    return {
+        "file_name": file_name,
+        "page_url": "https://commons.wikimedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_"), safe=":()_,-."),
+        "image_url": info.get("thumburl") or info.get("url"),
+        "license": ext.get("LicenseShortName", {}).get("value", ""),
+        "artist": ext.get("Artist", {}).get("value", ""),
+    }
+
+
+def resolve_source(player: dict[str, str]) -> dict[str, Any]:
+    title = player["wikipedia"]
+    qid = wikipedia_wikidata_id(title)
+    if qid:
+        p18 = wikidata_p18(qid)
+        if p18:
+            info = commons_image_info(p18)
+            info.update({"wikidata_id": qid, "resolution_method": "Wikidata P18"})
+            return info
+    fallback = wikipedia_pageimage(title)
+    if fallback:
+        file_name, thumb_url = fallback
+        try:
+            info = commons_image_info(file_name)
+        except Exception:
+            info = {
+                "file_name": file_name,
+                "page_url": "https://en.wikipedia.org/wiki/" + urllib.parse.quote(title.replace(" ", "_")),
+                "image_url": thumb_url,
+                "license": "",
+                "artist": "",
+            }
+        info.update({"wikidata_id": qid or "", "resolution_method": "Wikipedia pageimage"})
+        return info
+    raise RuntimeError(f"No image resolved for {title}")
+
+
+def face_crop(image: Image.Image) -> tuple[Image.Image, bool]:
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    rgb = np.array(image)
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    faces = cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(45, 45))
+    w, h = image.size
+    if len(faces):
+        x, y, fw, fh = max(faces, key=lambda f: int(f[2]) * int(f[3]))
+        cx = x + fw / 2
+        cy = y + fh / 2
+        side = min(max(fw * 3.0, fh * 3.2), max(w, h))
+        left = int(cx - side / 2)
+        top = int(cy - side * 0.43)
+        right = left + int(side)
+        bottom = top + int(side)
+        if left < 0:
+            right -= left
+            left = 0
+        if top < 0:
+            bottom -= top
+            top = 0
+        if right > w:
+            left -= right - w
+            right = w
+        if bottom > h:
+            top -= bottom - h
+            bottom = h
+        crop = image.crop((max(0, left), max(0, top), min(w, right), min(h, bottom)))
+        return ImageOps.fit(crop, (TARGET, TARGET), method=Image.Resampling.LANCZOS, centering=(0.5, 0.46)), True
+    return ImageOps.fit(image, (TARGET, TARGET), method=Image.Resampling.LANCZOS, centering=(0.5, 0.34)), False
+
+
+def save_small_png(image: Image.Image, destination: Path) -> tuple[int, int, int]:
+    best: tuple[bytes, int] | None = None
+    for side in (512, 448, 384, 320):
+        resized = image if image.size == (side, side) else image.resize((side, side), Image.Resampling.LANCZOS)
+        for colors in (192, 128, 96, 64):
+            quantized = resized.quantize(colors=colors, method=Image.Quantize.MEDIANCUT)
+            buf = io.BytesIO()
+            quantized.save(buf, "PNG", optimize=True)
+            data = buf.getvalue()
+            if best is None or len(data) < len(best[0]):
+                best = (data, side)
+            if len(data) <= MAX_BYTES:
+                destination.write_bytes(data)
+                return side, side, len(data)
+    assert best is not None
+    destination.write_bytes(best[0])
+    return best[1], best[1], len(best[0])
+
+
+def clean_html(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value or "")).strip()
+
+
+def make_preview(rows: list[dict[str, Any]], root: Path) -> None:
+    cols, card, label_h, pad = 5, 180, 36, 12
+    nrows = math.ceil(len(rows) / cols)
+    preview = Image.new("RGB", (pad + cols * (card + pad), pad + nrows * (card + label_h + pad)), "#f2f2f2")
+    draw = ImageDraw.Draw(preview)
+    font = ImageFont.load_default()
+    for idx, row in enumerate(rows):
+        r, c = divmod(idx, cols)
+        x, y = pad + c * (card + pad), pad + r * (card + label_h + pad)
+        with Image.open(root / row["filename"]) as im:
+            tile = ImageOps.fit(im.convert("RGB"), (card, card), method=Image.Resampling.LANCZOS)
+        preview.paste(tile, (x, y))
+        draw.text((x, y + card + 7), row["filename"].removesuffix(".png")[:28], fill="#111111", font=font)
+    preview.save(root / "preview.jpg", "JPEG", quality=90, optimize=True)
 
 
 def main() -> int:
-    root = Path("photos")
-    raw = Path(".photo-downloads")
-    root.mkdir(exist_ok=True)
-    raw.mkdir(exist_ok=True)
-
-    for old_png in root.glob("*.png"):
-        old_png.unlink()
-
-    manifest: list[dict[str, Any]] = []
-    attributions = [
-        "# Player asset attributions",
-        "",
-        "The package contains 14 real photographs and one explicitly approved neutral placeholder for Joe Bambrick. Photographs were transformed only by square cropping and resizing to 512 × 512 pixels.",
-        "",
-        "| Player | Asset type | Source | File URL | Author | License / note |",
-        "|---|---|---|---|---|---|",
-    ]
+    root = Path("photo_pack_batch01")
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir()
+    rows: list[dict[str, Any]] = []
     failures: list[str] = []
 
-    for index, source in enumerate(SOURCES):
-        player = str(source["player"])
-        output_name = str(source["file"])
-        kind = str(source["kind"])
-        destination = root / output_name
-        record: dict[str, Any] = {
-            "player": player,
-            "file": output_name,
-            "status": "failed",
-            "asset_type": kind,
-            "dimensions": None,
-            "sha256": None,
-        }
-
+    for player in PLAYERS:
+        print(f"Resolving {player['player']}...", flush=True)
         try:
-            if kind == "placeholder":
-                create_placeholder(destination)
-                digest = hashlib.sha256(destination.read_bytes()).hexdigest()
-                note = str(source["note"])
-                record.update(
-                    {
-                        "status": "placeholder",
-                        "dimensions": [512, 512],
-                        "sha256": digest,
-                        "wikidata_id": source["wikidata_id"],
-                        "note": note,
-                    }
-                )
-                attributions.append(
-                    f"| {player} | Placeholder | Generated locally | — | BarcharRace asset workflow | {note} |"
-                )
-                print(f"PLACEHOLDER: {player} -> {output_name}")
-            else:
-                commons_file = str(source["commons_file"])
-                source_url = commons_page_url(commons_file)
-                raw_path = raw / f"{output_name}.download"
-                centering_values = source.get("centering", [0.5, 0.5])
-                centering = (float(centering_values[0]), float(centering_values[1]))
-
-                download(commons_thumbnail_url(commons_file), raw_path)
-                convert_square(raw_path, destination, centering)
-                digest = hashlib.sha256(destination.read_bytes()).hexdigest()
-
-                record.update(
-                    {
-                        "status": "ok",
-                        "dimensions": [512, 512],
-                        "sha256": digest,
-                        "wikidata_id": source["wikidata_id"],
-                        "commons_file": commons_file,
-                        "source_url": source_url,
-                        "author": source["author"],
-                        "license": source["license"],
-                        "centering": list(centering),
-                    }
-                )
-                author = str(source["author"]).replace("|", "/")
-                license_name = str(source["license"]).replace("|", "/")
-                attributions.append(
-                    f"| {player} | Photograph | Wikimedia Commons | {source_url} | {author} | {license_name} |"
-                )
-                print(f"OK: {player} -> {output_name}")
-        except Exception as exc:
-            message = f"{player}: {type(exc).__name__}: {exc}"
-            failures.append(message)
-            record["error"] = message
-            attributions.append(
-                f"| {player} | FAILED | — | — | — | {message.replace('|', '/')} |"
+            source = resolve_source(player)
+            raw = download_bytes(source["image_url"])
+            with Image.open(io.BytesIO(raw)) as image:
+                processed, face_found = face_crop(image)
+            destination = root / player["file"]
+            width, height, size_bytes = save_small_png(processed, destination)
+            rows.append(
+                {
+                    "filename": player["file"],
+                    "person_name": player["player"],
+                    "width": width,
+                    "height": height,
+                    "size_bytes": size_bytes,
+                    "size_kb": round(size_bytes / 1024, 2),
+                    "status": "OK" if size_bytes <= MAX_BYTES else "OK_OVER_TARGET",
+                    "face_detected": "yes" if face_found else "no",
+                    "source_file": source.get("file_name", ""),
+                    "source_url": source.get("page_url", ""),
+                    "license": clean_html(source.get("license", "")),
+                    "artist": clean_html(source.get("artist", "")),
+                    "wikidata_id": source.get("wikidata_id", ""),
+                    "resolution_method": source.get("resolution_method", ""),
+                }
             )
-            print(f"FAILED: {message}", file=sys.stderr)
+            print(f"OK {player['file']} {size_bytes / 1024:.1f} KB face={face_found}", flush=True)
+        except Exception as exc:
+            message = f"{player['player']}: {type(exc).__name__}: {exc}"
+            failures.append(message)
+            print("FAILED " + message, flush=True)
 
-        manifest.append(record)
-        if kind == "photo" and index < len(SOURCES) - 1:
-            time.sleep(4)
+    fields = [
+        "filename", "person_name", "width", "height", "size_bytes", "size_kb", "status",
+        "face_detected", "source_file", "source_url", "license", "artist", "wikidata_id", "resolution_method",
+    ]
+    with (root / "manifest.csv").open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    if failures:
+        (root / "DOWNLOAD_FAILURES.txt").write_text("\n".join(failures) + "\n", encoding="utf-8")
+    make_preview(rows, root)
 
-    photo_count = sum(item["status"] == "ok" for item in manifest)
-    placeholder_count = sum(item["status"] == "placeholder" for item in manifest)
-    valid_asset_count = photo_count + placeholder_count
-
-    (root / "ATTRIBUTIONS.md").write_text("\n".join(attributions) + "\n", encoding="utf-8")
-    (root / "manifest.json").write_text(
-        json.dumps(
-            {
-                "expected_assets": len(SOURCES),
-                "valid_assets": valid_asset_count,
-                "photograph_count": photo_count,
-                "placeholder_count": placeholder_count,
-                "failed_assets": len(failures),
-                "items": manifest,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (root / "DOWNLOAD_FAILURES.log").write_text(
-        "\n".join(failures) + ("\n" if failures else "No asset failures.\n"),
-        encoding="utf-8",
-    )
-
-    with zipfile.ZipFile("photos.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    zip_path = Path("football_player_photos_batch01_png_max130kb.zip")
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(root.iterdir()):
-            archive.write(path, arcname=f"photos/{path.name}")
+            archive.write(path, arcname=path.name)
 
-    if failures or valid_asset_count != len(SOURCES):
-        print(f"Artifact created with {len(failures)} failure(s).", file=sys.stderr)
-        return 1
-
-    print("Artifact created successfully with 14 photographs and 1 approved placeholder.")
+    expected = {p["file"] for p in PLAYERS}
+    created = {row["filename"] for row in rows}
+    missing = sorted(expected - created)
+    print(f"Created {len(created)}/{len(expected)} player assets.")
+    if missing:
+        print("Missing: " + ", ".join(missing))
+        return 2
     return 0
 
 
