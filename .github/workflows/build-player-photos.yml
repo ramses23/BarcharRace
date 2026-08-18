@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/build-player-photos.yml"
       - "scripts/build_player_photos_batch04.py"
+      - "scripts/patch_player_photos_batch04.py"
   workflow_dispatch:
 
 permissions:
@@ -42,6 +43,9 @@ jobs:
 
       - name: Download real photos, crop faces, validate, and package
         run: python scripts/build_player_photos_batch04.py
+
+      - name: Apply curated historical correction
+        run: python scripts/patch_player_photos_batch04.py
 
       - name: Upload completed pack
         uses: actions/upload-artifact@v4
