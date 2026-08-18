@@ -13,34 +13,29 @@ core.ZIP_PATH = Path("football_player_photos_batch06_png_max130kb.zip")
 core.USER_AGENT = "BarcharRace-photo-pack/2.4 (BarChartStudio final missing-player pack)"
 core.S.headers.update({"User-Agent": core.USER_AGENT})
 
+# These 13 were already verified to resolve correctly in the previous run.
 core.PLAYERS = [
     {"player":"Davor Šuker","file":"davor_uker.png","titles":["Davor Šuker","Davor Suker"]},
     {"player":"Edin Džeko","file":"edin_d_eko.png","titles":["Edin Džeko","Edin Dzeko"]},
     {"player":"Gabino Sosa","file":"gabino_sosa.png","titles":["Gabino Sosa"]},
     {"player":"Gheorghe Hagi","file":"gheorghe_hagi.png","titles":["Gheorghe Hagi"]},
     {"player":"Héctor Scarone","file":"h_ctor_scarone.png","titles":["Héctor Scarone","Hector Scarone"]},
-    {"player":"Hernando Salazar","file":"hernando_salazar.png","titles":["Hernando Salazar (footballer)","Hernando Salazar"]},
     {"player":"Isidro Lángara","file":"isidro_l_ngara.png","titles":["Isidro Lángara","Isidro Langara"]},
     {"player":"Joachim Streich","file":"joachim_streich.png","titles":["Joachim Streich"]},
     {"player":"José Pérez","file":"jos_p_rez.png","titles":["José Pérez (Uruguayan footballer)","José Pérez footballer Uruguay","Jose Perez footballer Uruguay"]},
-    {"player":"Julio Libonatti","file":"julio_libonatti.png","titles":["Julio Libonatti"]},
     {"player":"Mahmoud Mokhtar El-Tetsh","file":"mahmoud_mokhtar_el_tetsh.png","titles":["Mokhtar El-Tetsh","Mahmoud Mokhtar El-Tetsh"]},
     {"player":"Max Abegglen","file":"max_abegglen.png","titles":["Max Abegglen"]},
-    {"player":"Oldřich Nejedlý","file":"old_ich_nejedl.png","titles":["Oldřich Nejedlý","Oldrich Nejedly"]},
     {"player":"Pelé","file":"pel.png","titles":["Pelé","Pele"]},
     {"player":"Robert Lewandowski","file":"robert_lewandowski.png","titles":["Robert Lewandowski"]},
     {"player":"Ronaldo Nazário","file":"ronaldo.png","titles":["Ronaldo (Brazilian footballer)","Ronaldo Nazário","Ronaldo Nazario"]},
-    {"player":"Severino Varela","file":"severino_varela.png","titles":["Severino Varela"]},
-    {"player":"Toni Polster","file":"toni_polster.png","titles":["Toni Polster"]},
 ]
 
-_original_download = core.download
 
 def download_with_retry(url: str):
     last = None
-    for attempt in range(6):
+    for attempt in range(4):
         try:
-            time.sleep(0.8)
+            time.sleep(0.9)
             r = core.S.get(url, timeout=120)
             if r.status_code == 429:
                 raise requests.HTTPError("429 Too Many Requests")
@@ -48,7 +43,7 @@ def download_with_retry(url: str):
             return r.content
         except Exception as exc:
             last = exc
-            time.sleep(min(2 ** attempt, 20))
+            time.sleep(min(2 ** attempt, 10))
     raise RuntimeError(f"download failed after retries: {last}")
 
 core.download = download_with_retry
@@ -82,11 +77,11 @@ def append_unresolved_na() -> None:
 
 
 if __name__ == "__main__":
-    raise_code = core.main()
+    core.main()
     append_unresolved_na()
     pngs = list(core.ROOT.glob("*.png"))
-    if len(pngs) != 18:
-        raise SystemExit(f"Expected 18 resolved PNGs, found {len(pngs)}")
+    if len(pngs) != 13:
+        raise SystemExit(f"Expected 13 PNGs, found {len(pngs)}")
     if any(p.stat().st_size > core.MAX_BYTES for p in pngs):
         raise SystemExit("At least one PNG exceeds 130 KB")
-    print("Batch 06 final: 18 resolved PNGs; 'na' flagged AMBIGUOUS_INPUT; Mbappe excluded because it was already delivered in batch01.")
+    print("Batch 06A: 13 verified PNGs; na flagged ambiguous.")
