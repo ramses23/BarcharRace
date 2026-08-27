@@ -27,7 +27,7 @@ class ProjectSchemaTest(unittest.TestCase):
         self.assertEqual(migration.original_version, 0)
         self.assertEqual(
             migration.applied_migrations,
-            ("0_to_1", "1_to_2"),
+            ("0_to_1", "1_to_2", "2_to_3"),
         )
         self.assertEqual(
             migration.data["schema_version"],
@@ -62,8 +62,11 @@ class ProjectSchemaTest(unittest.TestCase):
 
         migration = migrate_project_data(project)
 
-        self.assertEqual(migration.applied_migrations, ("1_to_2",))
-        self.assertEqual(migration.data["schema_version"], 2)
+        self.assertEqual(migration.applied_migrations, ("1_to_2", "2_to_3"))
+        self.assertEqual(
+            migration.data["schema_version"],
+            CURRENT_PROJECT_SCHEMA_VERSION,
+        )
         self.assertNotIn("fun_facts", migration.data)
 
     def test_rejects_future_schema(self):

@@ -61,6 +61,7 @@ class BarRenderer(TextCompositorMixin):
         self._text_bar_artist = None
         self._text_foreground_artist = None
         self._fun_fact_artist = None
+        self._short_overlay_artist = None
         self._advanced_track_collection = None
         self._advanced_shadow_collection = None
         self._advanced_glow_collection = None
@@ -79,6 +80,7 @@ class BarRenderer(TextCompositorMixin):
         self._fun_fact_image_cache = OrderedDict()
         self._fun_fact_resized_image_cache = OrderedDict()
         self._fun_fact_panel_cache = OrderedDict()
+        self._short_overlay_cache = OrderedDict()
         self.draw_seconds = 0.0
         self.save_seconds = 0.0
         os.makedirs(self.output_dir, exist_ok=True)
@@ -136,6 +138,7 @@ class BarRenderer(TextCompositorMixin):
             self._text_bar_artist = None
             self._text_foreground_artist = None
             self._fun_fact_artist = None
+            self._short_overlay_artist = None
             self._advanced_track_collection = None
             self._advanced_shadow_collection = None
             self._advanced_glow_collection = None
@@ -155,6 +158,7 @@ class BarRenderer(TextCompositorMixin):
             self._fun_fact_image_cache.clear()
             self._fun_fact_resized_image_cache.clear()
             self._fun_fact_panel_cache.clear()
+            self._short_overlay_cache.clear()
             self._background_motion_cache.clear()
 
     def _initialize_scene_artists(self, ax):
@@ -270,6 +274,9 @@ class BarRenderer(TextCompositorMixin):
         self._fun_fact_artist = ImageCommandsArtist(self.config.height)
         self._fun_fact_artist.set_zorder(6)
         ax.add_artist(self._fun_fact_artist)
+        self._short_overlay_artist = ImageCommandsArtist(self.config.height)
+        self._short_overlay_artist.set_zorder(7)
+        ax.add_artist(self._short_overlay_artist)
         self._scene_artists_initialized = True
 
     def _initialize_background_artist(self, ax):
@@ -385,6 +392,123 @@ class BarRenderer(TextCompositorMixin):
             self._set_bar_artists_visible(artists, False)
 
         self._update_fun_fact_overlay(scene.fun_fact)
+        self._update_short_overlay(scene.short_overlay)
+
+    def _update_short_overlay(self, overlay):
+        if self._short_overlay_artist is None:
+            return
+        if overlay is None or overlay.opacity <= 0:
+            self._short_overlay_artist.set_commands(())
+            return
+
+        image = self._short_overlay_panel_image(overlay)
+        opacity = max(0.0, min(1.0, float(overlay.opacity)))
+        if opacity < 0.999:
+            image = image.copy(order="C")
+            image[:, :, 3] = np.uint8(
+                np.asarray(image[:, :, 3], dtype=np.float32) * opacity
+            )
+        left = max(0, (self.config.width - image.shape[1]) // 2)
+        top = (
+            max(48, self.config.height - image.shape[0] - 96)
+            if overlay.kind == "outro"
+            else 64
+        )
+        self._short_overlay_artist.set_commands(((image, left, top),))
+
+    def _short_overlay_panel_image(self, overlay):
+        width = max(1, min(self.config.width - 96, 960))
+        height = 300 if overlay.kind == "intro" else 260
+        if overlay.kind == "outro":
+            height = 240
+        cache_key = (
+            overlay.kind,
+            overlay.title,
+            overlay.subtitle,
+            width,
+            height,
+            self.config.dpi,
+            self.config.title_font_family,
+        )
+        cached = self._lru_get(self._short_overlay_cache, cache_key)
+        if cached is not None:
+            return cached
+
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        draw.rounded_rectangle(
+            (0, 0, width - 1, height - 1),
+            radius=36,
+            fill=(8, 13, 24, 255),
+            outline=(255, 255, 255, 64),
+            width=2,
+        )
+        max_text_width = width - 96
+        title_size = {"intro": 70, "context": 42, "outro": 40}.get(
+            overlay.kind,
+            42,
+        )
+        title_font = self._fitted_short_font(
+            overlay.title,
+            title_size,
+            max_text_width,
+            weight="bold",
+        )
+        if overlay.kind == "context" and overlay.subtitle:
+            subtitle_font = self._fitted_short_font(
+                overlay.subtitle,
+                29,
+                max_text_width,
+                weight="normal",
+            )
+            draw.text(
+                (width / 2, height * 0.40),
+                overlay.title,
+                font=title_font,
+                anchor="mm",
+                fill=(255, 255, 255, 255),
+            )
+            draw.text(
+                (width / 2, height * 0.70),
+                overlay.subtitle,
+                font=subtitle_font,
+                anchor="mm",
+                fill=(202, 220, 240, 255),
+            )
+        else:
+            draw.text(
+                (width / 2, height / 2),
+                overlay.title,
+                font=title_font,
+                anchor="mm",
+                fill=(255, 255, 255, 255),
+            )
+
+        image = np.array(
+            np.asarray(canvas)[::-1],
+            dtype=np.uint8,
+            copy=True,
+            order="C",
+        )
+        self._lru_put(self._short_overlay_cache, cache_key, image, limit=32)
+        return image
+
+    def _fitted_short_font(self, text, point_size, max_width, *, weight):
+        family = self._font_family(self.config.title_font_family)
+        font_path = self._text_font_path(family, weight)
+        point_size = max(12, int(point_size))
+        while point_size > 12:
+            pixel_size = max(1, int(round(self._font_pixel_size(point_size))))
+            font = self._text_font(font_path, pixel_size)
+            if ImageDraw.Draw(Image.new("L", (1, 1))).textlength(
+                str(text), font=font
+            ) <= max_width:
+                return font
+            point_size -= 2
+        return self._text_font(
+            font_path,
+            max(1, int(round(self._font_pixel_size(point_size)))),
+        )
 
     def _update_background_motion(self, scene):
         if self._background_motion_artist is None:

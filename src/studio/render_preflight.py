@@ -16,6 +16,11 @@ from studio.package_paths import (
     resolve_project_path,
 )
 from studio.project_runtime import resolve_project_output_path
+from studio.short_export import (
+    resolve_export_output_path,
+    resolve_export_periods,
+    short_fun_fact_config,
+)
 from studio.workspace_paths import WorkspacePathError, assert_user_write_path
 from validators.dataset_validator import DatasetValidator
 
@@ -118,9 +123,22 @@ def run_render_preflight(
                 timeline = Timeline(validated, config=preset.dataset_config)
             except ValueError as exc:
                 checks.append(_error("timeline", "Timeline", str(exc)))
-            period_count = int(
-                validated[preset.dataset_config.year_column].nunique()
-            )
+            try:
+                export_periods = resolve_export_periods(
+                    timeline.get_years() if timeline is not None else (),
+                    preset.export_config,
+                )
+            except ValueError as exc:
+                export_periods = ()
+                checks.append(_error("export_range", "Export range", str(exc)))
+            else:
+                if preset.export_config.is_short:
+                    checks.append(_ok(
+                        "export_range",
+                        "Export range",
+                        f"Short uses {len(export_periods):,} selected periods.",
+                    ))
+            period_count = len(export_periods)
             if period_count < 2:
                 checks.append(
                     _error(
@@ -165,6 +183,10 @@ def run_render_preflight(
             ),
             field_name="chart.output_file",
         )
+        output_path = resolve_export_output_path(
+            output_path,
+            preset.export_config,
+        )
         if app_root is not None:
             output_path = assert_user_write_path(
                 output_path,
@@ -185,7 +207,10 @@ def run_render_preflight(
 
 
 def _fun_fact_check(preset, timeline, root_path):
-    config = preset.fun_fact_config
+    config = short_fun_fact_config(
+        preset.fun_fact_config,
+        preset.export_config,
+    )
     if not config.enabled:
         return _ok("fun_facts", "Fun facts", "Disabled.")
     if timeline is None:

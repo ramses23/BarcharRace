@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
+from config.export_config import ExportConfig
 from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
 from config.theme_config import get_theme
@@ -36,6 +37,7 @@ from studio.package_paths import (
 )
 from studio.preview import render_project_preview
 from studio.layout_preview import build_studio_layout_preview
+from studio.short_export import resolve_export_output_path, resolve_export_periods
 from studio.project_bundle import (
     ProjectBundleError,
     build_project_bundle,
@@ -1352,6 +1354,7 @@ def _project_form(
             for key, value in fun_fact_settings.items()
             if not key.startswith("_")
         },
+        export_settings=render_settings["export"],
         time_label_column=data_settings.get("time_label_column"),
         base_project_data=loaded_project_data,
     )
@@ -2557,6 +2560,66 @@ def _render_settings_from_values(
             or paths["project_file"]
         ),
         "preview_settings": _preview_settings_from_state(available_years),
+        "export": _export_settings_from_values(values, available_years),
+    }
+
+
+def _export_settings_from_values(values, available_periods):
+    defaults = ExportConfig()
+    periods = tuple(available_periods)
+    start = values.get("short_from_period")
+    end = values.get("short_to_period")
+    if start not in periods:
+        start = periods[0] if periods else None
+    if end not in periods:
+        end = periods[-1] if periods else None
+    if (
+        start in periods
+        and end in periods
+        and periods.index(start) > periods.index(end)
+    ):
+        end = periods[-1]
+
+    return {
+        "mode": (
+            values.get("mode")
+            if values.get("mode") in ("standard", "short")
+            else defaults.mode
+        ),
+        "short_width": 1080,
+        "short_height": 1920,
+        "short_from_period": start,
+        "short_to_period": end,
+        "short_intro_enabled": bool(values.get(
+            "short_intro_enabled", defaults.short_intro_enabled
+        )),
+        "short_intro_text": str(values.get(
+            "short_intro_text", defaults.short_intro_text
+        )),
+        "short_intro_duration": float(values.get(
+            "short_intro_duration", defaults.short_intro_duration
+        )),
+        "short_context_enabled": bool(values.get(
+            "short_context_enabled", defaults.short_context_enabled
+        )),
+        "short_context_title": str(values.get(
+            "short_context_title", defaults.short_context_title
+        )),
+        "short_context_subtitle": str(values.get(
+            "short_context_subtitle", defaults.short_context_subtitle
+        )),
+        "short_outro_enabled": bool(values.get(
+            "short_outro_enabled", defaults.short_outro_enabled
+        )),
+        "short_outro_text": str(values.get(
+            "short_outro_text", defaults.short_outro_text
+        )),
+        "short_outro_duration": float(values.get(
+            "short_outro_duration", defaults.short_outro_duration
+        )),
+        "short_include_fun_facts": bool(values.get(
+            "short_include_fun_facts", defaults.short_include_fun_facts
+        )),
     }
 
 
@@ -3611,6 +3674,26 @@ def _animation_output_section(
         "Set motion timing, review playback duration, and choose output files.",
         icon="movie_filter",
     )
+    st.markdown("##### Export format")
+    export_settings = _export_settings_from_values(values, available_years)
+    export_mode = st.selectbox(
+        "Format",
+        options=("standard", "short"),
+        index=1 if export_settings["mode"] == "short" else 0,
+        format_func=lambda mode: {
+            "standard": "Standard 16:9",
+            "short": "Short 9:16",
+        }[mode],
+        key=_widget_key("export_mode"),
+    )
+    export_settings["mode"] = export_mode
+
+    if export_mode == "short":
+        export_settings = _short_export_controls(
+            export_settings,
+            available_years=available_years,
+        )
+
     st.markdown("##### Motion and duration")
     fps_column, steps_column, motion_column = st.columns(3)
 
@@ -3647,12 +3730,22 @@ def _animation_output_section(
         )
 
     with st.container(border=True):
-        _show_video_duration_estimate(
-            period_count=len(available_years),
+        selected_periods = resolve_export_periods(
+            available_years,
+            ExportConfig(**export_settings),
+        )
+        estimate = _show_video_duration_estimate(
+            period_count=len(selected_periods),
             fps=int(fps),
             steps_per_transition=int(steps),
             motion_mode=motion_mode,
+            short_mode=export_mode == "short",
         )
+        if export_mode == "short":
+            st.caption(
+                f"Short runtime: {estimate.duration_seconds:.1f} seconds. "
+                "Choose a range near 25-35 seconds when practical."
+            )
 
     with st.expander("Encoding", icon=":material/tune:"):
         output_mode_column, compression_column = st.columns(2)
@@ -3695,6 +3788,12 @@ def _animation_output_section(
                 value=values["output_file"] or paths["output_file"],
                 key=_widget_key("output_file"),
             )
+            if export_mode == "short":
+                effective_output = resolve_export_output_path(
+                    output_file,
+                    ExportConfig(**export_settings),
+                )
+                st.caption(f"Short render output: `{effective_output}`")
 
         with project_column:
             project_file = st.text_input(
@@ -3732,7 +3831,127 @@ def _animation_output_section(
         "frames_dir": frames_dir,
         "project_file": project_file,
         "preview_settings": preview_settings,
+        "export": export_settings,
     }
+
+
+def _short_export_controls(
+    settings,
+    *,
+    available_years,
+):
+    st.caption("Resolution: 1080 x 1920 · native vertical canvas")
+    periods = tuple(available_years)
+    if len(periods) < 2:
+        st.warning("Short export requires at least two timeline periods.")
+        return settings
+
+    st.markdown("##### Timeline range")
+    from_options = periods[:-1]
+    configured_start = settings["short_from_period"]
+    if configured_start not in from_options:
+        configured_start = from_options[0]
+    range_columns = st.columns(2)
+    with range_columns[0]:
+        start = st.selectbox(
+            "From",
+            options=from_options,
+            index=from_options.index(configured_start),
+            key=_widget_key("short_from_period"),
+        )
+    to_options = periods[periods.index(start) + 1 :]
+    configured_end = settings["short_to_period"]
+    if configured_end not in to_options:
+        configured_end = to_options[-1]
+    with range_columns[1]:
+        end = st.selectbox(
+            "To",
+            options=to_options,
+            index=to_options.index(configured_end),
+            key=_widget_key(f"short_to_period_{start}"),
+        )
+    settings["short_from_period"] = start
+    settings["short_to_period"] = end
+
+    with st.expander(
+        "Short text overlays",
+        expanded=True,
+        icon=":material/subtitles:",
+    ):
+        settings["short_intro_enabled"] = st.toggle(
+            "Enable short intro hook",
+            value=settings["short_intro_enabled"],
+            key=_widget_key("short_intro_enabled"),
+        )
+        intro_columns = st.columns((2, 1))
+        with intro_columns[0]:
+            settings["short_intro_text"] = st.text_input(
+                "Intro text",
+                value=settings["short_intro_text"],
+                disabled=not settings["short_intro_enabled"],
+                key=_widget_key("short_intro_text"),
+            )
+        with intro_columns[1]:
+            settings["short_intro_duration"] = float(st.number_input(
+                "Intro duration (seconds)",
+                min_value=0.0,
+                max_value=60.0,
+                value=settings["short_intro_duration"],
+                step=0.5,
+                disabled=not settings["short_intro_enabled"],
+                key=_widget_key("short_intro_duration"),
+            ))
+
+        settings["short_context_enabled"] = st.toggle(
+            "Enable short context text",
+            value=settings["short_context_enabled"],
+            key=_widget_key("short_context_enabled"),
+        )
+        settings["short_context_title"] = st.text_input(
+            "Context title",
+            value=settings["short_context_title"],
+            disabled=not settings["short_context_enabled"],
+            key=_widget_key("short_context_title"),
+        )
+        settings["short_context_subtitle"] = st.text_input(
+            "Context subtitle",
+            value=settings["short_context_subtitle"],
+            disabled=not settings["short_context_enabled"],
+            key=_widget_key("short_context_subtitle"),
+        )
+
+        settings["short_outro_enabled"] = st.toggle(
+            "Enable short outro CTA",
+            value=settings["short_outro_enabled"],
+            key=_widget_key("short_outro_enabled"),
+        )
+        outro_columns = st.columns((2, 1))
+        with outro_columns[0]:
+            settings["short_outro_text"] = st.text_input(
+                "Outro text",
+                value=settings["short_outro_text"],
+                disabled=not settings["short_outro_enabled"],
+                key=_widget_key("short_outro_text"),
+            )
+        with outro_columns[1]:
+            settings["short_outro_duration"] = float(st.number_input(
+                "Outro duration (seconds)",
+                min_value=0.0,
+                max_value=60.0,
+                value=settings["short_outro_duration"],
+                step=0.5,
+                disabled=not settings["short_outro_enabled"],
+                key=_widget_key("short_outro_duration"),
+            ))
+
+        settings["short_include_fun_facts"] = st.toggle(
+            "Include Fun Facts in Short",
+            value=settings["short_include_fun_facts"],
+            key=_widget_key("short_include_fun_facts"),
+            help="Off by default to keep the vertical composition uncluttered.",
+        )
+
+    return settings
 
 
 def _project_values_for_csv(values, csv_path, loaded_project_data):
@@ -4561,6 +4780,7 @@ def _show_video_duration_estimate(
     fps,
     steps_per_transition,
     motion_mode,
+    short_mode=False,
 ):
     estimate = estimate_video_duration(
         period_count=period_count,
@@ -4568,10 +4788,13 @@ def _show_video_duration_estimate(
         fps=fps,
         continuous_motion=motion_mode == "continuous",
     )
-    st.metric(
-        "Estimated video duration",
-        format_video_duration(estimate.duration_seconds),
-    )
+    if short_mode:
+        st.metric("Estimated duration", f"{estimate.duration_seconds:.1f} s")
+    else:
+        st.metric(
+            "Estimated video duration",
+            format_video_duration(estimate.duration_seconds),
+        )
 
     if estimate.transition_count == 0:
         st.caption("At least two time periods are required to create a video.")

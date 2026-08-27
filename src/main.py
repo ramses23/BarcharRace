@@ -31,6 +31,7 @@ def run(
     data_source_config=None,
     dataset_config=None,
     fun_fact_config=None,
+    export_config=None,
     project_root=None,
 ):
     return RenderJob(
@@ -38,6 +39,7 @@ def run(
         data_source_config=data_source_config,
         dataset_config=dataset_config,
         fun_fact_config=fun_fact_config,
+        export_config=export_config,
         project_root=project_root,
     ).run()
 
@@ -69,6 +71,7 @@ def run_project_preset(preset, *, project_root=None):
         data_source_config=preset.data_source_config,
         dataset_config=preset.dataset_config,
         fun_fact_config=preset.fun_fact_config,
+        export_config=getattr(preset, "export_config", None),
         project_root=project_root,
     )
 

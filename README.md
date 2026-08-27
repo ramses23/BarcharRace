@@ -378,9 +378,9 @@ example and brief format.
 External project files are JSON documents. They let you create new videos
 without editing Python source files.
 
-The current project schema is version `2` and new files include
-`"schema_version": 2`. Existing unversioned files are schema `0`: they are
-migrated in memory when opened and written back as version 2 on the next save.
+The current project schema is version `3` and new files include
+`"schema_version": 3`. Existing unversioned files are schema `0`: they are
+migrated in memory when opened and written back as version 3 on the next save.
 The v0 migration moves historical `chart.animation` and `chart.selection`
 objects to their current top-level sections and normalizes legacy
 `inside`/`outside` logo positions. Files declaring a newer unsupported schema
@@ -586,7 +586,7 @@ Example:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
@@ -642,6 +642,23 @@ Example:
     "easing": "ease_out_cubic",
     "enter_exit": true,
     "value_smoothing": true
+  },
+  "export": {
+    "mode": "standard",
+    "short_width": 1080,
+    "short_height": 1920,
+    "short_from_period": null,
+    "short_to_period": null,
+    "short_intro_enabled": true,
+    "short_intro_text": "WATCH CHINA CLIMB",
+    "short_intro_duration": 2.0,
+    "short_context_enabled": true,
+    "short_context_title": "World’s Largest Economies",
+    "short_context_subtitle": "2001 → 2005",
+    "short_outro_enabled": true,
+    "short_outro_text": "Watch the full ranking →",
+    "short_outro_duration": 2.0,
+    "short_include_fun_facts": false
   },
   "selection": {
     "top_n": 3,
@@ -1689,6 +1706,21 @@ video_crf
 video_bitrate
 ffmpeg_preset
 ```
+
+Project Studio also provides two project-level export modes. `Standard 16:9`
+keeps the existing canvas and full timeline unchanged. `Short 9:16` creates a
+native 1080x1920 render profile before layout, scene construction, and frame
+rendering; it does not crop a horizontal video. Its inclusive `From`/`To`
+periods select a temporary render-only timeline slice. The project dataset and
+the original canvas dimensions remain intact.
+
+Short runtime is estimated from the selected transition count, the existing
+`steps_per_transition`, motion mode, and FPS. Selecting a range never changes
+those timing controls. Optional intro, context, and outro text is composed into
+the rendered scene, with configurable intro/outro seconds. Fun Facts default to
+off for Shorts to protect the narrow mobile layout, but can be included from
+the Export panel. Manual Latest preview and final video rendering resolve the
+same export profile.
 
 The default export uses:
 

@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from studio.package_paths import ProjectPathError, resolve_project_path
+from studio.short_export import resolve_export_output_path
 from studio.workspace_paths import assert_user_write_path
 
 
@@ -37,6 +38,10 @@ def resolve_project_preset_paths(
         chart.output_file,
         output_root=output_root,
         field_name="chart.output_file",
+    )
+    output_file = resolve_export_output_path(
+        output_file,
+        getattr(preset, "export_config", None),
     )
     frames_dir = resolve_project_output_path(
         chart.frames_dir,

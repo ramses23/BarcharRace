@@ -6,6 +6,7 @@ from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from config.layout_config import apply_layout_preset, get_layout_preset
 from config.project_preset import ProjectPreset, get_preset
@@ -30,6 +31,7 @@ PROJECT_FILE_SECTIONS = {
     "data_source",
     "dataset",
     "fun_facts",
+    "export",
 }
 
 
@@ -97,6 +99,12 @@ def _project_preset_from_data(data, project_path):
         "fun_facts",
         _convert_fun_fact_value,
     )
+    export_config = _build_config(
+        ExportConfig(),
+        data.get("export", {}),
+        "export",
+        _convert_export_value,
+    )
 
     return ProjectPreset(
         name=project_name,
@@ -109,6 +117,7 @@ def _project_preset_from_data(data, project_path):
         ),
         dataset_config=dataset_config,
         fun_fact_config=fun_fact_config,
+        export_config=export_config,
     )
 
 
@@ -678,6 +687,69 @@ def _convert_chart_value(key, value):
             )
 
         return tuple(value)
+
+    return value
+
+
+def _convert_export_value(key, value):
+    if key == "mode":
+        if value not in ("standard", "short"):
+            raise ProjectFileError(
+                "Export field 'mode' must be 'standard' or 'short'."
+            )
+        return value
+
+    if key in ("short_width", "short_height"):
+        expected = 1080 if key == "short_width" else 1920
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value != expected
+        ):
+            raise ProjectFileError(
+                f"Export field '{key}' must be {expected}."
+            )
+        return value
+
+    if key in ("short_from_period", "short_to_period"):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ProjectFileError(
+                f"Export field '{key}' must be null or an integer period."
+            )
+        return value
+
+    if key in (
+        "short_intro_enabled",
+        "short_context_enabled",
+        "short_outro_enabled",
+        "short_include_fun_facts",
+    ):
+        if not isinstance(value, bool):
+            raise ProjectFileError(f"Export field '{key}' must be boolean.")
+        return value
+
+    if key in ("short_intro_duration", "short_outro_duration"):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= value <= 60
+        ):
+            raise ProjectFileError(
+                f"Export field '{key}' must be from 0 to 60 seconds."
+            )
+        return float(value)
+
+    if key in (
+        "short_intro_text",
+        "short_context_title",
+        "short_context_subtitle",
+        "short_outro_text",
+    ):
+        if not isinstance(value, str):
+            raise ProjectFileError(f"Export field '{key}' must be a string.")
+        return value
 
     return value
 

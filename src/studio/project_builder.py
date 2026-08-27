@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.chart_config import ChartConfig
+from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from config.layout_config import get_layout_preset
 from config.project_schema import (
@@ -19,6 +20,7 @@ from studio.project_storage import atomic_write_json
 
 _DEFAULT_CHART_CONFIG = ChartConfig()
 _DEFAULT_FUN_FACT_CONFIG = FunFactConfig()
+_DEFAULT_EXPORT_CONFIG = ExportConfig()
 BAR_STYLE_FIELDS = tuple(
     field.name
     for field in fields(ChartConfig)
@@ -266,6 +268,7 @@ def build_project_data(
     aggregate_other=False,
     category_styles=None,
     fun_facts=None,
+    export_settings=None,
     time_label_column=None,
     base_project_data=None,
 ):
@@ -487,6 +490,15 @@ def build_project_data(
         else:
             project_data.pop("fun_facts", None)
 
+    if export_settings is not None:
+        project_data["export"] = {
+            field.name: export_settings.get(
+                field.name,
+                getattr(_DEFAULT_EXPORT_CONFIG, field.name),
+            )
+            for field in fields(ExportConfig)
+        }
+
     return project_data
 
 
@@ -521,6 +533,7 @@ def project_form_values(project_data=None):
     selection = _section(project_data, "selection")
     animation = _section(project_data, "animation")
     fun_facts = _section(project_data, "fun_facts")
+    export = _section(project_data, "export")
 
     title = chart.get("title", "Electricity by Source")
     project_name = project_data.get("name") or project_name_from_title(title)
@@ -659,6 +672,13 @@ def project_form_values(project_data=None):
         "fun_facts_panel_padding": fun_facts.get("panel_padding", 28),
         "fun_facts_fade_in": fun_facts.get("fade_in", 0.20),
         "fun_facts_fade_out": fun_facts.get("fade_out", 0.20),
+        **{
+            field.name: export.get(
+                field.name,
+                getattr(_DEFAULT_EXPORT_CONFIG, field.name),
+            )
+            for field in fields(ExportConfig)
+        },
         **{
             f"fun_facts_{field}": fun_facts.get(field, getattr(_DEFAULT_FUN_FACT_CONFIG, field))
             for field in (

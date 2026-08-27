@@ -789,6 +789,67 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(restored_duration, initial_duration)
 
+    def test_short_export_controls_persist_range_text_and_resolution(self):
+        app_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "ui"
+            / "project_studio.py"
+        )
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Export")
+
+        export_format = next(
+            control for control in app.selectbox if control.label == "Format"
+        )
+        export_format.set_value("short")
+        app.run()
+
+        self.assertFalse(app.exception)
+        configured_output = next(
+            control.value
+            for control in app.text_input
+            if control.label == "Output MP4"
+        )
+        self.assertTrue(any(
+            "_short.mp4" in caption.value
+            for caption in app.caption
+            if "Short render output:" in caption.value
+        ))
+        control_labels = {
+            control.label for control in app.selectbox
+        } | {
+            control.label for control in app.text_input
+        }
+        self.assertTrue({
+            "From", "To", "Intro text", "Context title",
+            "Context subtitle", "Outro text",
+        }.issubset(control_labels))
+        self.assertIn(
+            "Estimated duration",
+            {metric.label for metric in app.metric},
+        )
+        self.assertIn(
+            "Include Fun Facts in Short",
+            {toggle.label for toggle in app.toggle},
+        )
+
+        context_title = next(
+            control for control in app.text_input if control.label == "Context title"
+        )
+        context_title.set_value("World's Largest Economies")
+        app.run()
+        project_data = json.loads(app.json[0].value)
+
+        self.assertEqual(project_data["export"]["mode"], "short")
+        self.assertEqual(project_data["export"]["short_width"], 1080)
+        self.assertEqual(project_data["export"]["short_height"], 1920)
+        self.assertEqual(project_data["chart"]["output_file"], configured_output)
+        self.assertEqual(
+            project_data["export"]["short_context_title"],
+            "World's Largest Economies",
+        )
+
     def test_value_format_rerun_keeps_only_bars_section_mounted(self):
         app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()

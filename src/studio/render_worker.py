@@ -16,6 +16,7 @@ from pipeline.render_job import RenderJob
 from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_runtime import resolve_project_preset_paths
 from studio.project_storage import atomic_write_json
+from studio.short_export import resolve_export_output_path
 from studio.workspace_paths import load_workspace_settings
 from utils.cpu_limiter import CpuLimitConfig
 
@@ -52,6 +53,10 @@ def run_worker(
         final_output = Path(preset.chart_config.output_file)
     else:
         final_output = _resolve_path(preset.chart_config.output_file, root_path)
+    final_output = resolve_export_output_path(
+        final_output,
+        getattr(preset, "export_config", None),
+    )
     final_output.parent.mkdir(parents=True, exist_ok=True)
     temporary_output = final_output.with_name(
         f".{final_output.stem}.{job_id}.partial{final_output.suffix}"
@@ -88,9 +93,11 @@ def run_worker(
             data_source_config=preset.data_source_config,
             dataset_config=preset.dataset_config,
             fun_fact_config=getattr(preset, "fun_fact_config", None),
+            export_config=getattr(preset, "export_config", None),
             project_root=root_path,
             progress_callback=callback,
             cpu_limit_config=cpu_limit_config,
+            output_file_is_effective=True,
         ).run()
         os.replace(temporary_output, final_output)
         result = replace(result, output_file=str(final_output))

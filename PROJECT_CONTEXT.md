@@ -94,9 +94,9 @@ The project is a usable MVP:
   texture at configurable intensity without replacing the base color;
   transparent cards ignore texture.
   None of the layouts changes frame count or FPS.
-- External project files use `schema_version`; version 2 is current.
+- External project files use `schema_version`; version 3 is current.
   Unversioned/version-0 and version-1 data are migrated in memory before
-  validation and saved back as version 2. The v0 migration moves legacy `chart.animation` and
+  validation and saved back as version 3. The v0 migration moves legacy `chart.animation` and
   `chart.selection` sections to the top level and normalizes legacy logo
   positions. Future versions fail explicitly rather than silently falling back.
 - Project-specific source labels through `DataSourceConfig.source_label_override`.
@@ -335,6 +335,14 @@ The project is a usable MVP:
   frame count live from the dataset periods, steps per transition, motion mode,
   and FPS. The estimate is playback length, not render completion time, and
   shares its frame-count formula with `RenderJob`.
+- The top-level version-3 `export` section supports `standard` and `short`
+  modes. Standard preserves the configured canvas and full timeline. Short
+  derives a native 1080x1920 `ChartConfig` before `LayoutEngine`, limits only
+  the render's local period list through inclusive From/To overrides, and uses
+  the existing FPS/steps/motion timing to estimate duration. Preview and final
+  render share the profile. Scene-level intro, context, and outro overlays use
+  frame time, while Fun Facts can be excluded from Shorts without changing
+  their project configuration.
 - PNG frame rendering with Matplotlib.
 - Matplotlib axes are forced to fill the full figure so layout coordinates map
   directly to the output frame.
@@ -1049,6 +1057,14 @@ in verified, published checkpoints:
     the active features, while legacy `simple`/`advanced` JSON remains loadable
     and unchanged until the user edits its bar style. Loader, layout, renderer,
     CCv2 state, documentation, and pixel-exact regressions share this contract.
+
+22. **Native Short export 9:16 - implemented.** The Export editor persists a
+    standard/Short mode, real-period From/To range, duration estimate, compact
+    intro/context/outro controls, and a Fun Facts inclusion switch. Short mode
+    creates a real 1080x1920 canvas before layout, slices only the render-local
+    timeline, and sends timed overlay state through `Scene` to the shared
+    preview/final renderer. Existing projects migrate to schema v3 and retain
+    standard behavior by default.
 
 Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active
