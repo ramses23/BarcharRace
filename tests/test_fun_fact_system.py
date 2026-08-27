@@ -388,10 +388,13 @@ class FunFactSystemTest(unittest.TestCase):
                 project_root=root,
             )
 
-            self.assertEqual(Path(collection.source_path), root / "fun_facts" / "facts.json")
             self.assertEqual(
-                Path(collection.facts[0].image_path),
-                root / "fun_facts" / "images" / "photo.jpg",
+                Path(collection.source_path).resolve(),
+                (root / "fun_facts" / "facts.json").resolve(),
+            )
+            self.assertEqual(
+                Path(collection.facts[0].image_path).resolve(),
+                (root / "fun_facts" / "images" / "photo.jpg").resolve(),
             )
 
     def test_rejects_invalid_json_and_missing_image_with_fact_context(self):

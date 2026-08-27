@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -178,14 +179,21 @@ class RenderWorkerTest(unittest.TestCase):
                 )
 
             short_output = root / "output" / "race_short.mp4"
-            status = status_path.read_text(encoding="utf-8")
+            status = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(return_code, 0)
             self.assertEqual(standard_output.read_bytes(), b"standard-video")
             self.assertEqual(short_output.read_bytes(), b"short-video")
             self.assertFalse(
                 (root / "output" / ".race_short.job789.partial.mp4").exists()
             )
-            self.assertIn(str(short_output).replace("\\", "\\\\"), status)
+            self.assertEqual(
+                Path(status["output_file"]).resolve(),
+                short_output.resolve(),
+            )
+            self.assertEqual(
+                Path(status["result"]["output_file"]).resolve(),
+                short_output.resolve(),
+            )
 
 
 if __name__ == "__main__":
