@@ -1,4 +1,4 @@
-name: Build curated player photo pack
+name: Build cartoon logo pack
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - asset-photo-test
     paths:
       - ".github/workflows/build-player-photos.yml"
-      - "scripts/build_player_photos_batch06_final.py"
+      - "scripts/build_cartoon_logo_pack.py"
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  build-photos:
+  build-logos:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -25,11 +25,11 @@ jobs:
 
       - name: Publish run marker
         run: |
-          printf '%s\n' "$GITHUB_RUN_ID" > .batch06final_run_id.txt
+          printf '%s\n' "$GITHUB_RUN_ID" > .cartoon_logo_run_id.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .batch06final_run_id.txt
-          git commit -m "chore: record completed final photo-pack run" || true
+          git add .cartoon_logo_run_id.txt
+          git commit -m "chore: record cartoon-logo workflow run" || true
           git push origin HEAD:asset-photo-test || true
 
       - name: Set up Python
@@ -38,15 +38,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install image tooling
-        run: python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4 opencv-python-headless==4.12.0.88
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4
 
-      - name: Download final missing real photos, crop faces, validate, and package
-        run: python scripts/build_player_photos_batch06_final.py
+      - name: Download and normalize cartoon logos
+        run: python scripts/build_cartoon_logo_pack.py
 
       - name: Upload completed pack
         uses: actions/upload-artifact@v4
         with:
-          name: football-player-photos-batch06-final
-          path: football_player_photos_batch06_final_png_max130kb.zip
+          name: cartoon-logo-pack
+          path: cartoon_logos_png_max130kb.zip
           if-no-files-found: error
           retention-days: 7
