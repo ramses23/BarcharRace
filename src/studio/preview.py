@@ -12,6 +12,13 @@ from studio.package_paths import DEFAULT_PROJECT_ROOT, resolve_project_path
 from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.fun_fact_loader import load_fun_fact_scheduler
 from studio.project_runtime import resolve_project_preset_paths
+from studio.short_export import (
+    apply_export_profile,
+    estimate_export_duration,
+    resolve_export_periods,
+    short_fun_fact_config,
+    short_overlay_for_frame,
+)
 from studio.workspace_paths import assert_user_write_path
 from validators.dataset_validator import DatasetValidator
 
@@ -55,19 +62,30 @@ def render_project_preview(
     dataframe = DataSourceLoader(data_source_config).load()
     dataframe = DatasetValidator(config=dataset_config).validate(dataframe)
     timeline = Timeline(dataframe, config=dataset_config)
-    years = timeline.get_years()
+    years = resolve_export_periods(
+        timeline.get_years(),
+        preset.export_config,
+    )
 
     if not years:
         raise ValueError("Preview requires at least one time period.")
 
-    fun_fact_scheduler = load_fun_fact_scheduler(
+    fun_fact_config = short_fun_fact_config(
         preset.fun_fact_config,
+        preset.export_config,
+    )
+    fun_fact_scheduler = load_fun_fact_scheduler(
+        fun_fact_config,
         timeline,
         project_root=root_path,
     )
-    chart_config = apply_fun_fact_layout(chart_config, preset.fun_fact_config)
+    chart_config = apply_export_profile(chart_config, preset.export_config)
+    chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
     selector = BarSelector(config=chart_config.selection)
-    layout = LayoutEngine(config=chart_config)
+    layout = LayoutEngine(
+        config=chart_config,
+        fun_fact_config=preset.fun_fact_config,
+    )
     preview_mode = _preview_mode(preview_mode, years)
 
     if preview_mode == "transition":
@@ -97,6 +115,10 @@ def render_project_preview(
             if fun_fact_scheduler is not None
             else None
         )
+        frame_index = (
+            years.index(year_a) * chart_config.steps_per_transition
+            + round(progress * chart_config.steps_per_transition)
+        )
     else:
         selected_year = _selected_year(year, years)
         sprites = _sprites_for_year(timeline, selector, layout, selected_year)
@@ -107,11 +129,17 @@ def render_project_preview(
             if fun_fact_scheduler is not None
             else None
         )
+        frame_index = years.index(selected_year) * chart_config.steps_per_transition
 
     if force_fun_fact_id is not None:
         if fun_fact_scheduler is None:
-            raise ValueError("Cannot force a preview when fun facts are disabled.")
-        active_fact = fun_fact_scheduler.force(force_fun_fact_id)
+            if not (
+                preset.export_config.is_short
+                and not preset.export_config.short_include_fun_facts
+            ):
+                raise ValueError("Cannot force a preview when fun facts are disabled.")
+        else:
+            active_fact = fun_fact_scheduler.force(force_fun_fact_id)
 
     scene = Scene(
         title=chart_config.title,
@@ -120,6 +148,18 @@ def render_project_preview(
         source_label=source_label,
         bars=sprites,
         fun_fact=active_fact,
+        frame_index=frame_index,
+    )
+    duration = estimate_export_duration(
+        timeline.get_years(),
+        chart_config,
+        preset.export_config,
+    )
+    scene.short_overlay = short_overlay_for_frame(
+        preset.export_config,
+        frame_index=min(frame_index, max(0, duration.frame_count - 1)),
+        total_frames=duration.frame_count,
+        fps=chart_config.fps,
     )
 
     output_path = resolve_project_path(
@@ -137,7 +177,7 @@ def render_project_preview(
     renderer = BarRenderer(
         output_dir=str(output_path),
         config=chart_config,
-        fun_fact_config=preset.fun_fact_config,
+        fun_fact_config=fun_fact_config,
     )
 
     try:

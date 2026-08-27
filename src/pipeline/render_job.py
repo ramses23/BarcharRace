@@ -1,9 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
 
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
+from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
@@ -16,6 +17,13 @@ from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
 from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.fun_fact_loader import load_fun_fact_scheduler
+from studio.short_export import (
+    apply_export_profile,
+    resolve_export_output_path,
+    resolve_export_periods,
+    short_fun_fact_config,
+    short_overlay_for_frame,
+)
 from studio.package_paths import DEFAULT_PROJECT_ROOT
 from utils.frame_cleaner import clean_frame_directory
 from validators.dataset_validator import DatasetValidator
@@ -72,19 +80,23 @@ class RenderJob:
         data_source_config=None,
         dataset_config=None,
         fun_fact_config=None,
+        export_config=None,
         project_root=None,
         progress_callback=None,
         cpu_limit_config=None,
         cpu_limiter=None,
+        output_file_is_effective=False,
     ):
         self.config = config or ChartConfig()
         self.data_source_config = data_source_config or DataSourceConfig()
         self.dataset_config = dataset_config or DatasetConfig()
         self.fun_fact_config = fun_fact_config or FunFactConfig()
+        self.export_config = export_config or ExportConfig()
         self.project_root = project_root or DEFAULT_PROJECT_ROOT
         self.progress_callback = progress_callback
         self.cpu_limit_config = cpu_limit_config or CpuLimitConfig(enabled=False, percent=100)
         self.cpu_limiter = cpu_limiter or SoftCpuLimiter(self.cpu_limit_config)
+        self.output_file_is_effective = bool(output_file_is_effective)
 
     def run(self):
         if self.config.frame_output_mode not in ("png_sequence", "ffmpeg_stream"):
@@ -113,24 +125,43 @@ class RenderJob:
             "build_timeline",
             lambda: Timeline(dataframe, config=self.dataset_config),
         )
-        years = timeline.get_years()
+        years = resolve_export_periods(
+            timeline.get_years(),
+            self.export_config,
+        )
 
         if len(years) < 2:
             raise ValueError("RenderJob requires at least two time periods.")
 
-        fun_fact_scheduler = load_fun_fact_scheduler(
+        fun_fact_config = short_fun_fact_config(
             self.fun_fact_config,
+            self.export_config,
+        )
+        fun_fact_scheduler = load_fun_fact_scheduler(
+            fun_fact_config,
             timeline,
             project_root=self.project_root,
         )
-        chart_config = apply_fun_fact_layout(self.config, self.fun_fact_config)
+        chart_config = apply_export_profile(self.config, self.export_config)
+        if not self.output_file_is_effective:
+            chart_config = replace(
+                chart_config,
+                output_file=str(resolve_export_output_path(
+                    chart_config.output_file,
+                    self.export_config,
+                )),
+            )
+        chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
         selector = BarSelector(config=chart_config.selection)
-        layout = LayoutEngine(config=chart_config)
+        layout = LayoutEngine(
+            config=chart_config,
+            fun_fact_config=fun_fact_config,
+        )
         motion = MotionEngine(animation_config=chart_config.animation)
         renderer = BarRenderer(
             output_dir=chart_config.frames_dir,
             config=chart_config,
-            fun_fact_config=self.fun_fact_config,
+            fun_fact_config=fun_fact_config,
         )
         exporter = VideoExporter(config=chart_config, threads=self.cpu_limiter.ffmpeg_threads)
         stream_mode = chart_config.frame_output_mode == "ffmpeg_stream"
@@ -232,6 +263,13 @@ class RenderJob:
                         timeline=timeline,
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
+                    scene.frame_index = frame_id
+                    scene.short_overlay = short_overlay_for_frame(
+                        self.export_config,
+                        frame_index=frame_id,
+                        total_frames=total_frame_count,
+                        fps=chart_config.fps,
+                    )
 
                     if stream_mode:
                         stream_process.stdin.write(renderer.render_rgba(scene))
@@ -278,7 +316,7 @@ class RenderJob:
             frames_rendered=frame_id,
             transitions_rendered=transitions_rendered,
             removed_frames=removed_frames,
-            output_file=self.config.output_file,
+            output_file=chart_config.output_file,
             profile=profile,
             cpu_limit_percent=(self.cpu_limit_config.percent if self.cpu_limit_config.enabled else 100),
             ffmpeg_threads=self.cpu_limiter.ffmpeg_threads,

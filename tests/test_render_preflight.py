@@ -11,6 +11,26 @@ from studio.render_preflight import run_render_preflight
 
 
 class RenderPreflightTest(unittest.TestCase):
+    def test_short_output_check_uses_effective_filename(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project_path = self._write_project(root)
+            project = json.loads(project_path.read_text(encoding="utf-8"))
+            project["export"] = {"mode": "short"}
+            project_path.write_text(json.dumps(project), encoding="utf-8")
+
+            result = run_render_preflight(
+                project_path,
+                root_dir=root,
+                ffmpeg_path="ffmpeg",
+            )
+
+        output_check = next(
+            check for check in result.checks if check.key == "output"
+        )
+        self.assertEqual(output_check.level, "ok")
+        self.assertTrue(output_check.message.endswith("video_short.mp4"))
+
     def test_accepts_valid_csv_project(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

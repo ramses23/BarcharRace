@@ -14,21 +14,30 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
+from config.export_config import ExportConfig
 from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
 from config.theme_config import get_theme
 from config.typography_config import get_typography_preset
 from config.value_format_config import list_value_formats
 from core.fun_fact_scheduler import FunFactScheduleError, FunFactScheduler
+from core.scene_geometry import build_scene_geometry
 from core.timeline import Timeline
-from studio.fun_fact_layout import DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO
+from studio.fun_fact_layout import (
+    DEFAULT_FLOATING_CARD_HEIGHT_RATIO,
+    DEFAULT_FLOATING_CARD_WIDTH_RATIO,
+    DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO,
+)
 from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
 from studio.package_paths import (
     ProjectPathError,
     resolve_project_path as resolve_portable_project_path,
 )
 from studio.preview import render_project_preview
+from studio.layout_preview import build_studio_layout_preview
+from studio.short_export import resolve_export_output_path, resolve_export_periods
 from studio.project_bundle import (
     ProjectBundleError,
     build_project_bundle,
@@ -44,6 +53,11 @@ from ui.category_editor import (
 )
 from ui.dataset_cache import load_csv_dataset
 from ui.bar_style_editor import bar_style_editor
+from ui.editorial_layout_editor import (
+    editorial_layout_component_state,
+    editorial_layout_editor,
+    reconcile_editorial_geometry,
+)
 from ui.font_picker import font_family_picker
 from ui.floating_preview import floating_preview_controller
 from ui.render_workflow import (
@@ -60,7 +74,10 @@ from ui.studio_shell import (
     show_studio_header,
     show_welcome_header,
 )
-from ui.text_layout_editor import text_layout_editor
+from ui.text_layout_editor import (
+    text_layout_editor,
+    text_layout_editor_positions,
+)
 from studio.project_builder import (
     BAR_STYLE_FIELDS,
     apply_category_logo_matches,
@@ -670,14 +687,16 @@ def _workspace_panel(layout):
             preference_enabled = True
             preference_percent = 95
         st.divider()
-        st.caption("Render performance (application preference)")
-        cpu_enabled = st.toggle(
+        performance_panel = st.container(border=True)
+        performance_panel.markdown("**Render performance**")
+        performance_panel.caption("Application-level preference for every render job.")
+        cpu_enabled = performance_panel.toggle(
             "Use a soft CPU ceiling",
             value=preference_enabled,
             help="Cooperatively yields between frames and limits FFmpeg threads.",
             key="render_cpu_limit_enabled",
         )
-        cpu_percent = st.slider(
+        cpu_percent = performance_panel.slider(
             "CPU ceiling",
             min_value=50,
             max_value=100,
@@ -687,7 +706,7 @@ def _workspace_panel(layout):
             help="100% disables limiting.",
             key="render_cpu_limit_percent",
         )
-        save_performance = st.button(
+        save_performance = performance_panel.button(
             "Save render preference",
             icon=":material/save:",
             key="save_render_cpu_preference",
@@ -741,15 +760,33 @@ def _project_source_panel(layout):
     st.caption("My projects and productions")
     st.subheader(":material/folder_open: Project library")
     _pending_project_action_panel()
-    project_files = _project_files(layout)
+    project_locations = discover_project_locations(layout)
+    project_files = tuple(
+        _project_option_value(location, layout)
+        for location in project_locations
+    )
+    project_labels = _project_display_labels(project_locations, layout)
     project_options = ("", *project_files)
     current_project = st.session_state.get(LOADED_PROJECT_IDENTIFIER_STATE, "")
     selected_project = st.selectbox(
         "Open project",
         project_options,
         index=_option_index(project_options, current_project),
-        format_func=lambda path: _project_option_label(path, layout),
+        format_func=lambda path: project_labels.get(path, "New project"),
     )
+    if selected_project:
+        try:
+            selected_location = find_project_location(selected_project, layout)
+        except WorkspacePathError:
+            selected_location = None
+        if selected_location is not None:
+            with st.container(border=True):
+                st.caption("Selected project")
+                st.markdown(f"**{selected_location.absolute_path.stem}**")
+                st.caption("Location")
+                st.markdown(selected_location.kind.title())
+                st.caption("Path")
+                st.code(selected_project, language=None)
     background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
     render_active = bool(
         background_render is not None and background_render.is_running()
@@ -796,7 +833,7 @@ def _project_source_panel(layout):
 
 def _portable_bundle_import_panel(*, render_active):
     with st.expander(
-        "Importar paquete de producción",
+        "Import production package",
         icon=":material/unarchive:",
         expanded=False,
         type="compact",
@@ -1244,6 +1281,9 @@ def _project_form(
         background_color_override=canvas_settings["background"]["color"],
         background_image_path=canvas_settings["background"]["image_path"],
         background_image_fit=canvas_settings["background"]["image_fit"],
+        background_motion=canvas_settings["background"]["motion"],
+        background_motion_speed=canvas_settings["background"]["motion_speed"],
+        background_motion_intensity=canvas_settings["background"]["motion_intensity"],
         typography_preset=typography_preset,
         value_format=bars_settings["value_format"],
         fps=render_settings["fps"],
@@ -1253,6 +1293,9 @@ def _project_form(
         bar_vertical_layout_mode=canvas_settings["bar_vertical_layout_mode"],
         bar_vertical_top_padding=canvas_settings["bar_vertical_top_padding"],
         bar_vertical_bottom_padding=canvas_settings["bar_vertical_bottom_padding"],
+        bar_gap=bars_settings["bar_gap"],
+        bar_color_source=bars_settings["bar_color_source"],
+        primary_logo_min_size=bars_settings["primary_logo_min_size"],
         png_compress_level=render_settings["png_compress_level"],
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
@@ -1265,12 +1308,19 @@ def _project_form(
         source_font_family=canvas_settings["source_font_family"],
         rank_label_font_family=canvas_settings["rank_label_font_family"],
         title_text_color=canvas_settings["title_text_color"],
+        title_text_opacity=canvas_settings["title_text_opacity"],
         subtitle_text_color=canvas_settings["subtitle_text_color"],
-        label_text_color=canvas_settings["label_text_color"],
-        value_text_color=canvas_settings["value_text_color"],
+        subtitle_text_opacity=canvas_settings["subtitle_text_opacity"],
+        label_text_color=bars_settings["label_text_color"],
+        label_text_opacity=bars_settings["label_text_opacity"],
+        value_text_color=bars_settings["value_text_color"],
+        value_text_opacity=bars_settings["value_text_opacity"],
         time_label_text_color=canvas_settings["time_label_text_color"],
+        time_label_opacity=canvas_settings["time_label_opacity"],
         source_text_color=canvas_settings["source_text_color"],
-        rank_label_text_color=canvas_settings["rank_label_text_color"],
+        source_text_opacity=canvas_settings["source_text_opacity"],
+        rank_label_text_color=bars_settings["rank_label_text_color"],
+        rank_label_text_opacity=bars_settings["rank_label_text_opacity"],
         title_font_size=canvas_settings["title_font_size"],
         subtitle_font_size=canvas_settings["subtitle_font_size"],
         label_font_size=canvas_settings["label_font_size"],
@@ -1278,6 +1328,7 @@ def _project_form(
         time_label_font_size=canvas_settings["time_label_font_size"],
         source_font_size=canvas_settings["source_font_size"],
         rank_label_font_size=canvas_settings["rank_label_font_size"],
+        text_styles=canvas_settings["text_styles"],
         title_enabled=canvas_settings["title_enabled"],
         subtitle_enabled=canvas_settings["subtitle_enabled"],
         time_label_enabled=canvas_settings["time_label_enabled"],
@@ -1298,10 +1349,30 @@ def _project_form(
         rank_label_gap=canvas_settings["rank_label_gap"],
         aggregate_other=bars_settings["aggregate_other"],
         category_styles=bars_settings["category_styles"],
-        fun_facts=fun_fact_settings,
+        fun_facts={
+            key: value
+            for key, value in fun_fact_settings.items()
+            if not key.startswith("_")
+        },
+        export_settings=render_settings["export"],
         time_label_column=data_settings.get("time_label_column"),
         base_project_data=loaded_project_data,
     )
+
+    if active_section == "Canvas":
+        _mount_text_layout_editor(
+            project_data=project_data,
+            dataset=dataset,
+            preview_settings=render_settings["preview_settings"],
+            canvas_settings=canvas_settings,
+        )
+    if active_section == "Fun facts":
+        _mount_editorial_layout_editor(
+            project_data=project_data,
+            dataset=dataset,
+            preview_settings=render_settings["preview_settings"],
+            fun_fact_settings=fun_fact_settings,
+        )
 
     return (
         project_data,
@@ -1714,6 +1785,9 @@ def _canvas_settings_from_values(
             ),
             "image_path": values.get("background_image_path"),
             "image_fit": background_fit,
+            "motion": values.get("background_motion", "off"),
+            "motion_speed": float(values.get("background_motion_speed", 1.0)),
+            "motion_intensity": float(values.get("background_motion_intensity", 0.35)),
         },
         "title_font_family": values.get("title_font_family"),
         "subtitle_font_family": values.get("subtitle_font_family"),
@@ -1722,34 +1796,71 @@ def _canvas_settings_from_values(
         "time_label_font_family": values.get("time_label_font_family"),
         "source_font_family": values.get("source_font_family"),
         "rank_label_font_family": values.get("rank_label_font_family"),
+        "text_styles": {
+            field: values.get(field, getattr(ChartConfig(), field))
+            for field in (
+                "title_font_weight", "title_font_style",
+                "subtitle_font_weight", "subtitle_font_style",
+                "time_label_font_weight", "time_label_font_style",
+                "source_font_weight", "source_font_style",
+                "label_font_weight", "label_font_style",
+                "value_font_weight", "value_font_style",
+                "rank_label_font_weight", "rank_label_font_style",
+            )
+        },
         "title_text_color": _color_or_default(
             values.get("title_text_color"),
             theme_settings.text_color,
+        ),
+        "title_text_opacity": _opacity_or_default(
+            values.get("title_text_opacity"), 1.0,
         ),
         "subtitle_text_color": _color_or_default(
             values.get("subtitle_text_color"),
             theme_settings.muted_text_color,
         ),
+        "subtitle_text_opacity": _opacity_or_default(
+            values.get("subtitle_text_opacity"), 1.0,
+        ),
         "label_text_color": _color_or_default(
             values.get("label_text_color"),
             theme_settings.text_color,
+        ),
+        "label_text_opacity": _opacity_or_default(
+            values.get("label_text_opacity"), 1.0,
         ),
         "value_text_color": _color_or_default(
             values.get("value_text_color"),
             theme_settings.muted_text_color,
         ),
+        "value_text_opacity": _opacity_or_default(
+            values.get("value_text_opacity"), 1.0,
+        ),
         "time_label_text_color": _color_or_default(
             values.get("time_label_text_color"),
             theme_settings.muted_text_color,
+        ),
+        "time_label_opacity": _opacity_or_default(
+            values.get("time_label_opacity"),
+            0.22,
         ),
         "source_text_color": _color_or_default(
             values.get("source_text_color"),
             theme_settings.muted_text_color,
         ),
+        "source_text_opacity": _opacity_or_default(
+            values.get("source_text_opacity"), 1.0,
+        ),
         "rank_label_text_color": _color_or_default(
             values.get("rank_label_text_color"),
             theme_settings.muted_text_color,
         ),
+        "rank_label_text_opacity": _opacity_or_default(
+            values.get("rank_label_text_opacity"), 1.0,
+        ),
+        "bar_gap": max(0, int(values.get("bar_gap", 18))),
+        "bar_color_source": values.get("bar_color_source", "manual"),
+        "primary_logo_min_size": max(0, int(values.get("primary_logo_min_size", 0))),
         "title_font_size": _positive_int_or_default(
             values.get("title_font_size"),
             typography_settings.title_font_size,
@@ -1858,6 +1969,23 @@ def _bars_settings_from_values(values):
         "value_format": value_format,
         "top_n": _positive_int_or_default(values.get("top_n"), 8),
         "aggregate_other": bool(values.get("aggregate_other", False)),
+        "label_text_color": values.get("label_text_color"),
+        "label_text_opacity": _opacity_or_default(
+            values.get("label_text_opacity"), 1.0,
+        ),
+        "value_text_color": values.get("value_text_color"),
+        "value_text_opacity": _opacity_or_default(
+            values.get("value_text_opacity"), 1.0,
+        ),
+        "rank_label_text_color": values.get("rank_label_text_color"),
+        "rank_label_text_opacity": _opacity_or_default(
+            values.get("rank_label_text_opacity"), 1.0,
+        ),
+        "bar_gap": max(0, int(values.get("bar_gap", 18))),
+        "bar_color_source": values.get("bar_color_source", "manual"),
+        "primary_logo_min_size": max(
+            0, int(values.get("primary_logo_min_size", 0))
+        ),
         "bar_style": _bar_style_settings(values),
         "category_styles": _clean_category_style_mapping(
             values.get("categories", {})
@@ -1868,6 +1996,8 @@ def _bars_settings_from_values(values):
 def _fun_fact_settings_from_values(values, *, layout_preset):
     layout = get_layout_preset(layout_preset)
     default_width = round(layout.width * DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO)
+    default_card_width = round(layout.width * DEFAULT_FLOATING_CARD_WIDTH_RATIO)
+    default_card_height = round(layout.height * DEFAULT_FLOATING_CARD_HEIGHT_RATIO)
     return {
         "enabled": bool(values.get("fun_facts_enabled", False)),
         "source": values.get("fun_facts_source"),
@@ -1894,14 +2024,43 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         "fade_out": float(values.get("fun_facts_fade_out", 0.20)),
         "editorial_background_mode": values.get("fun_facts_editorial_background_mode", "card"),
         "editorial_background_color": values.get("fun_facts_editorial_background_color"),
+        "editorial_background_texture": values.get("fun_facts_editorial_background_texture", "none"),
+        "editorial_background_texture_intensity": _opacity_or_default(
+            values.get("fun_facts_editorial_background_texture_intensity"), 0.25,
+        ),
         "editorial_headline_size": int(values.get("fun_facts_editorial_headline_size", 28)),
+        "editorial_headline_font_weight": values.get("fun_facts_editorial_headline_font_weight", "bold"),
+        "editorial_headline_font_style": values.get("fun_facts_editorial_headline_font_style", "normal"),
+        "editorial_headline_color": values.get("fun_facts_editorial_headline_color"),
+        "editorial_headline_opacity": _opacity_or_default(
+            values.get("fun_facts_editorial_headline_opacity"), 1.0,
+        ),
         "editorial_body_size": int(values.get("fun_facts_editorial_body_size", 18)),
+        "editorial_body_font_weight": values.get("fun_facts_editorial_body_font_weight", "normal"),
+        "editorial_body_font_style": values.get("fun_facts_editorial_body_font_style", "normal"),
+        "editorial_body_color": values.get("fun_facts_editorial_body_color"),
+        "editorial_body_opacity": _opacity_or_default(
+            values.get("fun_facts_editorial_body_opacity"), 1.0,
+        ),
         "editorial_credit_size": int(values.get("fun_facts_editorial_credit_size", 12)),
+        "editorial_credit_font_weight": values.get("fun_facts_editorial_credit_font_weight", "normal"),
+        "editorial_credit_font_style": values.get("fun_facts_editorial_credit_font_style", "normal"),
+        "editorial_credit_color": values.get("fun_facts_editorial_credit_color"),
+        "editorial_credit_opacity": _opacity_or_default(
+            values.get("fun_facts_editorial_credit_opacity"), 1.0,
+        ),
         "editorial_image_area_ratio": float(values.get("fun_facts_editorial_image_area_ratio", 0.42)),
         "editorial_image_fit": values.get("fun_facts_editorial_image_fit", "contain"),
         "editorial_text_image_gap": int(values.get("fun_facts_editorial_text_image_gap", 18)),
         "editorial_top_offset": int(values.get("fun_facts_editorial_top_offset", 0)),
         "editorial_reposition_time_label": bool(values.get("fun_facts_editorial_reposition_time_label", True)),
+        "editorial_orientation": values.get("fun_facts_editorial_orientation", "vertical"),
+        "editorial_card_x": _int_in_range_or_default(values.get("fun_facts_editorial_card_x"), round(layout.width * 0.50), 0, layout.width),
+        "editorial_card_y": _int_in_range_or_default(values.get("fun_facts_editorial_card_y"), round(layout.height * 0.54), 0, layout.height),
+        "editorial_card_width": _int_in_range_or_default(values.get("fun_facts_editorial_card_width"), default_card_width, 240, layout.width),
+        "editorial_card_height": _int_in_range_or_default(values.get("fun_facts_editorial_card_height"), default_card_height, 140, layout.height),
+        "editorial_image_position": values.get("fun_facts_editorial_image_position", "right"),
+        "editorial_collision_gap": _int_in_range_or_default(values.get("fun_facts_editorial_collision_gap"), 24, 0, layout.width),
     }
 
 
@@ -1911,7 +2070,44 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "Schedule reusable editorial cards against visible timeline labels.",
         icon="lightbulb",
     )
+    canvas_layout = get_layout_preset(layout_preset)
     settings = _fun_fact_settings_from_values(values, layout_preset=layout_preset)
+    editorial_editor_key = _widget_key("fun_facts_editorial_layout_editor")
+    editorial_event_key = f"{editorial_editor_key}_consumed_event"
+    current_rect = {
+        "x": settings["editorial_card_x"],
+        "y": settings["editorial_card_y"],
+        "width": settings["editorial_card_width"],
+        "height": settings["editorial_card_height"],
+    }
+    editorial_state = editorial_layout_component_state(
+        key=editorial_editor_key,
+        rect=current_rect,
+        canvas_width=canvas_layout.width,
+        canvas_height=canvas_layout.height,
+    )
+    rect, consumed_event_id, accepted_editor_event = reconcile_editorial_geometry(
+        current_rect=current_rect,
+        component_state=editorial_state,
+        consumed_event_id=st.session_state.get(editorial_event_key),
+        canvas_width=canvas_layout.width,
+        canvas_height=canvas_layout.height,
+    )
+    if consumed_event_id is not None:
+        st.session_state[editorial_event_key] = consumed_event_id
+    if settings["layout"] == "editorial_floating" and accepted_editor_event:
+        settings.update({
+            "editorial_card_x": rect["x"],
+            "editorial_card_y": rect["y"],
+            "editorial_card_width": rect["width"],
+            "editorial_card_height": rect["height"],
+        })
+        for field in ("x", "y", "width", "height"):
+            st.session_state.pop(
+                _widget_key(f"fun_facts_editorial_card_{field}"),
+                None,
+            )
+    st.markdown("##### Source and scheduling")
     enabled = st.toggle(
         "Enable fun facts",
         value=settings["enabled"],
@@ -1924,12 +2120,13 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         help="Path relative to the project root.",
         key=_widget_key("fun_facts_source"),
     ).strip()
+    st.markdown("##### Card layout and transitions")
     layout_column, width_column = st.columns(2)
     with layout_column:
         layout = st.selectbox(
             "Layout",
-            ("right_panel", "editorial_right"),
-            index=_option_index(("right_panel", "editorial_right"), settings["layout"]),
+            ("right_panel", "editorial_right", "editorial_floating"),
+            index=_option_index(("right_panel", "editorial_right", "editorial_floating"), settings["layout"]),
             key=_widget_key("fun_facts_layout"),
         )
     with width_column:
@@ -1938,6 +2135,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             min_value=160,
             value=int(settings["panel_width"]),
             step=8,
+            disabled=layout == "editorial_floating",
             key=_widget_key("fun_facts_panel_width"),
         )
     margin_column, padding_column = st.columns(2)
@@ -1947,6 +2145,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             min_value=0,
             value=int(settings["panel_margin"]),
             step=4,
+            disabled=layout == "editorial_floating",
             key=_widget_key("fun_facts_panel_margin"),
         )
     with padding_column:
@@ -1980,19 +2179,224 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         st.error("Fade in plus fade out must be 1.0 or less.")
 
     editorial = {key: settings[key] for key in settings if key.startswith("editorial_")}
-    if layout == "editorial_right":
+    editorial_editor_slot = None
+    if layout in ("editorial_right", "editorial_floating"):
         with st.expander("Editorial layout", expanded=True, icon=":material/article:"):
-            editorial["editorial_background_mode"] = st.selectbox("Background", ("transparent", "solid", "card"), index=_option_index(("transparent", "solid", "card"), settings["editorial_background_mode"]), key=_widget_key("fun_facts_editorial_background_mode"))
-            editorial["editorial_background_color"] = st.color_picker("Background color", value=settings["editorial_background_color"] or "#111827", key=_widget_key("fun_facts_editorial_background_color"))
-            size_a, size_b, size_c = st.columns(3)
-            editorial["editorial_headline_size"] = size_a.number_input("Headline size", min_value=8, max_value=160, value=settings["editorial_headline_size"], key=_widget_key("fun_facts_editorial_headline_size"))
-            editorial["editorial_body_size"] = size_b.number_input("Body size", min_value=8, max_value=120, value=settings["editorial_body_size"], key=_widget_key("fun_facts_editorial_body_size"))
-            editorial["editorial_credit_size"] = size_c.number_input("Credit size", min_value=6, max_value=80, value=settings["editorial_credit_size"], key=_widget_key("fun_facts_editorial_credit_size"))
+            if layout == "editorial_floating":
+                st.markdown("**Card composition**")
+                orientation_column, image_side_column = st.columns(2)
+                editorial["editorial_orientation"] = orientation_column.selectbox(
+                    "Card orientation",
+                    ("vertical", "horizontal"),
+                    index=_option_index(("vertical", "horizontal"), settings["editorial_orientation"]),
+                    key=_widget_key("fun_facts_editorial_orientation"),
+                )
+                editorial["editorial_image_position"] = image_side_column.selectbox(
+                    "Image position",
+                    ("right", "left"),
+                    index=_option_index(("right", "left"), settings["editorial_image_position"]),
+                    disabled=editorial["editorial_orientation"] != "horizontal",
+                    key=_widget_key("fun_facts_editorial_image_position"),
+                )
+                st.markdown("**Position and size**")
+                card_width_column, card_height_column = st.columns(2)
+                editorial["editorial_card_width"] = card_width_column.number_input(
+                    "Card width",
+                    min_value=240,
+                    max_value=canvas_layout.width,
+                    value=settings["editorial_card_width"],
+                    step=8,
+                    key=_widget_key("fun_facts_editorial_card_width"),
+                )
+                editorial["editorial_card_height"] = card_height_column.number_input(
+                    "Card height",
+                    min_value=140,
+                    max_value=canvas_layout.height,
+                    value=settings["editorial_card_height"],
+                    step=8,
+                    key=_widget_key("fun_facts_editorial_card_height"),
+                )
+                max_card_x = max(
+                    0,
+                    canvas_layout.width - int(editorial["editorial_card_width"]),
+                )
+                max_card_y = max(
+                    0,
+                    canvas_layout.height - int(editorial["editorial_card_height"]),
+                )
+                card_x_key = _widget_key("fun_facts_editorial_card_x")
+                card_y_key = _widget_key("fun_facts_editorial_card_y")
+                _drop_widget_value_outside_range(card_x_key, 0, max_card_x)
+                _drop_widget_value_outside_range(card_y_key, 0, max_card_y)
+                position_x, position_y = st.columns(2)
+                editorial["editorial_card_x"] = position_x.number_input(
+                    "Card X",
+                    min_value=0,
+                    max_value=max_card_x,
+                    value=_int_in_range_or_default(
+                        settings["editorial_card_x"],
+                        0,
+                        0,
+                        max_card_x,
+                    ),
+                    step=8,
+                    key=card_x_key,
+                )
+                editorial["editorial_card_y"] = position_y.number_input(
+                    "Card Y",
+                    min_value=0,
+                    max_value=max_card_y,
+                    value=_int_in_range_or_default(
+                        settings["editorial_card_y"],
+                        0,
+                        0,
+                        max_card_y,
+                    ),
+                    step=8,
+                    key=card_y_key,
+                )
+                editorial["editorial_collision_gap"] = st.number_input(
+                    "Bar/card safety gap",
+                    min_value=0,
+                    max_value=canvas_layout.width,
+                    value=settings["editorial_collision_gap"],
+                    step=4,
+                    help="Only rows that cross the card height reserve this horizontal gap.",
+                    key=_widget_key("fun_facts_editorial_collision_gap"),
+                )
+                st.caption(
+                    "Drag or resize the card below; the numeric fields update "
+                    "after the gesture ends. All values are final-canvas pixels."
+                )
+                editorial_editor_slot = st.empty()
+            st.markdown("**Card background**")
+            background_mode_column, background_color_column = st.columns(2)
+            editorial["editorial_background_mode"] = background_mode_column.selectbox(
+                "Background mode", ("transparent", "solid", "card"),
+                index=_option_index(("transparent", "solid", "card"), settings["editorial_background_mode"]),
+                key=_widget_key("fun_facts_editorial_background_mode"),
+            )
+            editorial["editorial_background_color"] = background_color_column.color_picker(
+                "Background color", value=settings["editorial_background_color"] or "#111827",
+                key=_widget_key("fun_facts_editorial_background_color"),
+                disabled=editorial["editorial_background_mode"] == "transparent",
+            )
+            texture_column, texture_intensity_column = st.columns(2)
+            texture_options = ("none", "grain", "paper", "dots", "diagonal")
+            editorial["editorial_background_texture"] = texture_column.selectbox(
+                "Background texture", texture_options,
+                index=_option_index(texture_options, settings["editorial_background_texture"]),
+                key=_widget_key("fun_facts_editorial_background_texture"),
+                disabled=editorial["editorial_background_mode"] == "transparent",
+                format_func=lambda value: value.replace("_", " ").title(),
+            )
+            editorial["editorial_background_texture_intensity"] = _opacity_percent_slider(
+                "Texture intensity",
+                settings["editorial_background_texture_intensity"],
+                0.25,
+                _widget_key("fun_facts_editorial_background_texture_intensity"),
+                disabled=(
+                    editorial["editorial_background_mode"] == "transparent"
+                    or editorial["editorial_background_texture"] == "none"
+                ),
+            )
+
+            st.markdown("**Editorial text**")
+            theme_settings = _resolved_theme(values)[1]
+            headline_column, body_column, credit_column = st.columns(3)
+            with headline_column:
+                editorial["editorial_headline_color"] = st.color_picker(
+                    "Headline color",
+                    value=_color_or_default(settings["editorial_headline_color"], theme_settings.text_color),
+                    key=_widget_key("fun_facts_editorial_headline_color"),
+                )
+                editorial["editorial_headline_opacity"] = _opacity_percent_slider(
+                    "Headline opacity", settings["editorial_headline_opacity"], 1.0,
+                    _widget_key("fun_facts_editorial_headline_opacity"),
+                )
+                editorial["editorial_headline_size"] = st.number_input(
+                    "Headline size", min_value=8, max_value=160,
+                    value=settings["editorial_headline_size"],
+                    key=_widget_key("fun_facts_editorial_headline_size"),
+                )
+                editorial["editorial_headline_font_weight"] = (
+                    "bold" if st.toggle(
+                        "Headline bold",
+                        value=settings["editorial_headline_font_weight"] == "bold",
+                        key=_widget_key("fun_facts_editorial_headline_bold"),
+                    ) else "normal"
+                )
+                editorial["editorial_headline_font_style"] = (
+                    "italic" if st.toggle(
+                        "Headline italic",
+                        value=settings["editorial_headline_font_style"] == "italic",
+                        key=_widget_key("fun_facts_editorial_headline_italic"),
+                    ) else "normal"
+                )
+            with body_column:
+                editorial["editorial_body_color"] = st.color_picker(
+                    "Body color",
+                    value=_color_or_default(settings["editorial_body_color"], theme_settings.muted_text_color),
+                    key=_widget_key("fun_facts_editorial_body_color"),
+                )
+                editorial["editorial_body_opacity"] = _opacity_percent_slider(
+                    "Body opacity", settings["editorial_body_opacity"], 1.0,
+                    _widget_key("fun_facts_editorial_body_opacity"),
+                )
+                editorial["editorial_body_size"] = st.number_input(
+                    "Body size", min_value=8, max_value=120,
+                    value=settings["editorial_body_size"],
+                    key=_widget_key("fun_facts_editorial_body_size"),
+                )
+                editorial["editorial_body_font_weight"] = (
+                    "bold" if st.toggle(
+                        "Body bold",
+                        value=settings["editorial_body_font_weight"] == "bold",
+                        key=_widget_key("fun_facts_editorial_body_bold"),
+                    ) else "normal"
+                )
+                editorial["editorial_body_font_style"] = (
+                    "italic" if st.toggle(
+                        "Body italic",
+                        value=settings["editorial_body_font_style"] == "italic",
+                        key=_widget_key("fun_facts_editorial_body_italic"),
+                    ) else "normal"
+                )
+            with credit_column:
+                editorial["editorial_credit_color"] = st.color_picker(
+                    "Credit color",
+                    value=_color_or_default(settings["editorial_credit_color"], theme_settings.muted_text_color),
+                    key=_widget_key("fun_facts_editorial_credit_color"),
+                )
+                editorial["editorial_credit_opacity"] = _opacity_percent_slider(
+                    "Credit opacity", settings["editorial_credit_opacity"], 1.0,
+                    _widget_key("fun_facts_editorial_credit_opacity"),
+                )
+                editorial["editorial_credit_size"] = st.number_input(
+                    "Credit size", min_value=6, max_value=80,
+                    value=settings["editorial_credit_size"],
+                    key=_widget_key("fun_facts_editorial_credit_size"),
+                )
+                editorial["editorial_credit_font_weight"] = (
+                    "bold" if st.toggle(
+                        "Credit bold",
+                        value=settings["editorial_credit_font_weight"] == "bold",
+                        key=_widget_key("fun_facts_editorial_credit_bold"),
+                    ) else "normal"
+                )
+                editorial["editorial_credit_font_style"] = (
+                    "italic" if st.toggle(
+                        "Credit italic",
+                        value=settings["editorial_credit_font_style"] == "italic",
+                        key=_widget_key("fun_facts_editorial_credit_italic"),
+                    ) else "normal"
+                )
+            st.markdown("**Image and attribution layout**")
             editorial["editorial_image_area_ratio"] = st.slider("Image area", 0.0, 0.8, settings["editorial_image_area_ratio"], 0.05, key=_widget_key("fun_facts_editorial_image_area_ratio"))
             editorial["editorial_image_fit"] = st.selectbox("Image fit", ("contain", "cover"), index=_option_index(("contain", "cover"), settings["editorial_image_fit"]), key=_widget_key("fun_facts_editorial_image_fit"))
             editorial["editorial_text_image_gap"] = st.number_input("Text/image gap", min_value=0, max_value=200, value=settings["editorial_text_image_gap"], key=_widget_key("fun_facts_editorial_text_image_gap"))
-            editorial["editorial_top_offset"] = st.number_input("Top offset", min_value=0, max_value=500, value=settings["editorial_top_offset"], key=_widget_key("fun_facts_editorial_top_offset"))
-            editorial["editorial_reposition_time_label"] = st.toggle("Place date at top of editorial column", value=settings["editorial_reposition_time_label"], key=_widget_key("fun_facts_editorial_reposition_time_label"))
+            editorial["editorial_top_offset"] = st.number_input("Top offset", min_value=0, max_value=500, value=settings["editorial_top_offset"], disabled=layout == "editorial_floating", key=_widget_key("fun_facts_editorial_top_offset"))
+            editorial["editorial_reposition_time_label"] = st.toggle("Place date with editorial layout", value=settings["editorial_reposition_time_label"], key=_widget_key("fun_facts_editorial_reposition_time_label"))
 
     result = {
         "enabled": enabled,
@@ -2005,6 +2409,17 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "fade_out": float(fade_out),
         **editorial,
     }
+    if editorial_editor_slot is not None:
+        result["_editorial_layout_editor"] = {
+            "slot": editorial_editor_slot,
+            "key": editorial_editor_key,
+            "rect": {
+                "x": int(editorial["editorial_card_x"]),
+                "y": int(editorial["editorial_card_y"]),
+                "width": int(editorial["editorial_card_width"]),
+                "height": int(editorial["editorial_card_height"]),
+            },
+        }
     if not source:
         st.info("Choose a version-1 fun fact JSON file to validate and preview it.")
         return result
@@ -2059,8 +2474,12 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         if current_year is not None
         else None
     )
+    st.markdown("##### Preview controls")
+    st.caption(
+        "This uses the same selected preview frame shown in Latest preview and Export."
+    )
     selected_label = st.selectbox(
-        "Preview period",
+        "Fun Fact preview period",
         period_labels,
         index=_option_index(period_labels, current_label),
         key=_widget_key("fun_facts_preview_period"),
@@ -2141,6 +2560,66 @@ def _render_settings_from_values(
             or paths["project_file"]
         ),
         "preview_settings": _preview_settings_from_state(available_years),
+        "export": _export_settings_from_values(values, available_years),
+    }
+
+
+def _export_settings_from_values(values, available_periods):
+    defaults = ExportConfig()
+    periods = tuple(available_periods)
+    start = values.get("short_from_period")
+    end = values.get("short_to_period")
+    if start not in periods:
+        start = periods[0] if periods else None
+    if end not in periods:
+        end = periods[-1] if periods else None
+    if (
+        start in periods
+        and end in periods
+        and periods.index(start) > periods.index(end)
+    ):
+        end = periods[-1]
+
+    return {
+        "mode": (
+            values.get("mode")
+            if values.get("mode") in ("standard", "short")
+            else defaults.mode
+        ),
+        "short_width": 1080,
+        "short_height": 1920,
+        "short_from_period": start,
+        "short_to_period": end,
+        "short_intro_enabled": bool(values.get(
+            "short_intro_enabled", defaults.short_intro_enabled
+        )),
+        "short_intro_text": str(values.get(
+            "short_intro_text", defaults.short_intro_text
+        )),
+        "short_intro_duration": float(values.get(
+            "short_intro_duration", defaults.short_intro_duration
+        )),
+        "short_context_enabled": bool(values.get(
+            "short_context_enabled", defaults.short_context_enabled
+        )),
+        "short_context_title": str(values.get(
+            "short_context_title", defaults.short_context_title
+        )),
+        "short_context_subtitle": str(values.get(
+            "short_context_subtitle", defaults.short_context_subtitle
+        )),
+        "short_outro_enabled": bool(values.get(
+            "short_outro_enabled", defaults.short_outro_enabled
+        )),
+        "short_outro_text": str(values.get(
+            "short_outro_text", defaults.short_outro_text
+        )),
+        "short_outro_duration": float(values.get(
+            "short_outro_duration", defaults.short_outro_duration
+        )),
+        "short_include_fun_facts": bool(values.get(
+            "short_include_fun_facts", defaults.short_include_fun_facts
+        )),
     }
 
 
@@ -2190,6 +2669,7 @@ def _data_content_section(csv_path, inspection, values, dataset):
         "Name the project, map the CSV columns, and define source text.",
         icon="database",
     )
+    st.markdown("##### Project identity")
     title_column, name_column_widget = st.columns((2, 1))
 
     with title_column:
@@ -2257,6 +2737,7 @@ def _data_content_section(csv_path, inspection, values, dataset):
             key=_widget_key("value_column"),
         )
 
+    st.markdown("##### Source and timeline")
     source_label = st.text_input(
         "Source text",
         value=values["source_label"],
@@ -2303,6 +2784,7 @@ def _canvas_text_section(
         "Configure the canvas, background, typography, and text placement.",
         icon="dashboard_customize",
     )
+    st.markdown("##### Canvas and background")
     layout_column, visible_column = st.columns(2)
     layouts = list_layout_presets()
 
@@ -2333,7 +2815,12 @@ def _canvas_text_section(
         )
 
     layout_settings = get_layout_preset(layout_preset)
-    with st.expander("Vertical bar area", expanded=True, icon=":material/height:"):
+    background = _background_panel(values, theme_settings.background_color)
+    with st.expander("Available content area", expanded=True, icon=":material/height:"):
+        st.caption(
+            "Visible bar slots and Top N work together: Top N selects data; "
+            "this canvas limit determines how many selected rows can be shown."
+        )
         vertical_mode = st.selectbox(
             "Vertical layout",
             ("manual", "fill_available"),
@@ -2365,7 +2852,7 @@ def _canvas_text_section(
     max_left_margin = max(0, layout_settings.width - right_margin - 1)
 
     with st.expander(
-        "Category label area",
+        "Category and bar geometry",
         expanded=True,
         icon=":material/format_align_left:",
     ):
@@ -2486,8 +2973,7 @@ def _canvas_text_section(
             key=_widget_key("use_full_category_area"),
         )
 
-    background = _background_panel(values, theme_settings.background_color)
-
+    st.markdown("##### Typography and text")
     with st.expander(
         "Text visibility",
         expanded=True,
@@ -2588,6 +3074,35 @@ def _canvas_text_section(
                 _widget_key("source_font_family"),
             )
 
+    text_styles = {}
+    with st.expander("Bold and italic", icon=":material/format_bold:"):
+        st.caption("Bold and italic are independent and use installed font variants when available.")
+        style_columns = st.columns(4)
+        style_specs = (
+            ("Title", "title", 0),
+            ("Subtitle", "subtitle", 0),
+            ("Date", "time_label", 1),
+            ("Source", "source", 1),
+            ("Category", "label", 2),
+            ("Value", "value", 2),
+            ("Ranking", "rank_label", 3),
+        )
+        for label, prefix, column_index in style_specs:
+            with style_columns[column_index]:
+                st.markdown(f"**{label}**")
+                bold = st.toggle(
+                    f"{label} bold",
+                    value=values.get(f"{prefix}_font_weight", "normal") == "bold",
+                    key=_widget_key(f"{prefix}_font_bold"),
+                )
+                italic = st.toggle(
+                    f"{label} italic",
+                    value=values.get(f"{prefix}_font_style", "normal") == "italic",
+                    key=_widget_key(f"{prefix}_font_italic"),
+                )
+                text_styles[f"{prefix}_font_weight"] = "bold" if bold else "normal"
+                text_styles[f"{prefix}_font_style"] = "italic" if italic else "normal"
+
     with st.expander("Text sizes", icon=":material/format_size:"):
         st.caption("Sizes use points and update the placement editor.")
         size_column_a, size_column_b, size_column_c, size_column_d = st.columns(4)
@@ -2642,156 +3157,138 @@ def _canvas_text_section(
                 _widget_key("rank_label_font_size"),
             )
 
-    with st.expander("Text colors", icon=":material/palette:"):
-        st.caption("Each text element can override the colors inherited from the project.")
-        color_column_a, color_column_b, color_column_c, color_column_d = st.columns(4)
+    label_text_color = values["label_text_color"]
+    value_text_color = values["value_text_color"]
+    rank_label_text_color = values["rank_label_text_color"]
+    label_text_opacity = _opacity_or_default(values.get("label_text_opacity"), 1.0)
+    value_text_opacity = _opacity_or_default(values.get("value_text_opacity"), 1.0)
+    rank_label_text_opacity = _opacity_or_default(values.get("rank_label_text_opacity"), 1.0)
 
-        with color_column_a:
+    with st.expander("Text colors and opacity", icon=":material/palette:"):
+        st.caption("Color and base opacity for canvas text. Bar text is configured in Bars.")
+        title_column, subtitle_column, date_column, source_column = st.columns(4)
+
+        with title_column:
             title_text_color = st.color_picker(
                 "Title color",
-                value=_color_or_default(
-                    values["title_text_color"],
-                    theme_settings.text_color,
-                ),
+                value=_color_or_default(values["title_text_color"], theme_settings.text_color),
                 key=_widget_key("title_text_color"),
             )
+            title_text_opacity = _opacity_percent_slider(
+                "Title opacity", values.get("title_text_opacity"), 1.0,
+                _widget_key("title_text_opacity"),
+            )
+
+        with subtitle_column:
             subtitle_text_color = st.color_picker(
                 "Subtitle color",
-                value=_color_or_default(
-                    values["subtitle_text_color"],
-                    theme_settings.muted_text_color,
-                ),
+                value=_color_or_default(values["subtitle_text_color"], theme_settings.muted_text_color),
                 key=_widget_key("subtitle_text_color"),
             )
-
-        with color_column_b:
-            label_text_color = st.color_picker(
-                "Category color",
-                value=_color_or_default(
-                    values["label_text_color"],
-                    theme_settings.text_color,
-                ),
-                key=_widget_key("label_text_color"),
-            )
-            value_text_color = st.color_picker(
-                "Value color",
-                value=_color_or_default(
-                    values["value_text_color"],
-                    theme_settings.muted_text_color,
-                ),
-                key=_widget_key("value_text_color"),
+            subtitle_text_opacity = _opacity_percent_slider(
+                "Subtitle opacity", values.get("subtitle_text_opacity"), 1.0,
+                _widget_key("subtitle_text_opacity"),
             )
 
-        with color_column_c:
+        with date_column:
             time_label_text_color = st.color_picker(
                 "Date color",
-                value=_color_or_default(
-                    values["time_label_text_color"],
-                    theme_settings.muted_text_color,
-                ),
+                value=_color_or_default(values["time_label_text_color"], theme_settings.muted_text_color),
                 key=_widget_key("time_label_text_color"),
             )
+            time_label_opacity = _opacity_percent_slider(
+                "Date opacity", values.get("time_label_opacity"), 0.22,
+                _widget_key("time_label_opacity"),
+            )
+
+        with source_column:
             source_text_color = st.color_picker(
                 "Source color",
-                value=_color_or_default(
-                    values["source_text_color"],
-                    theme_settings.muted_text_color,
-                ),
+                value=_color_or_default(values["source_text_color"], theme_settings.muted_text_color),
                 key=_widget_key("source_text_color"),
             )
-
-        with color_column_d:
-            rank_label_text_color = st.color_picker(
-                "Ranking color",
-                value=_color_or_default(
-                    values["rank_label_text_color"],
-                    theme_settings.muted_text_color,
-                ),
-                key=_widget_key("rank_label_text_color"),
+            source_text_opacity = _opacity_percent_slider(
+                "Source opacity", values.get("source_text_opacity"), 1.0,
+                _widget_key("source_text_opacity"),
             )
 
+    editor_positions = {
+        "title": {
+            "x": values["title_x"] if values["title_x"] is not None else layout_settings.left_margin,
+            "y": values["title_y"] if values["title_y"] is not None else layout_settings.title_y,
+        },
+        "subtitle": {
+            "x": values["subtitle_x"] if values["subtitle_x"] is not None else layout_settings.left_margin,
+            "y": values["subtitle_y"] if values["subtitle_y"] is not None else layout_settings.subtitle_y,
+        },
+        "date": {
+            "x": values["time_label_x"] if values["time_label_x"] is not None else layout_settings.time_label_x,
+            "y": values["time_label_y"] if values["time_label_y"] is not None else layout_settings.time_label_y,
+        },
+        "source": {
+            "x": values["source_x"] if values["source_x"] is not None else layout_settings.source_x,
+            "y": values["source_y"] if values["source_y"] is not None else layout_settings.source_y,
+        },
+    }
+    editor_key = _widget_key("text_layout_editor")
+    position_values = text_layout_editor_positions(
+        key=editor_key,
+        positions=editor_positions,
+    )
+    editor_elements = {
+        "title": {
+            "label": "Title",
+            "text": title or "Title",
+            "font_family": title_font_family,
+            "font_size": int(title_font_size),
+            "font_weight": text_styles["title_font_weight"],
+            "font_style": text_styles["title_font_style"],
+            "color": title_text_color,
+            "opacity": title_text_opacity if title_enabled else 0.0,
+        },
+        "subtitle": {
+            "label": "Subtitle",
+            "text": "Period A -> Period B",
+            "font_family": subtitle_font_family,
+            "font_size": int(subtitle_font_size),
+            "font_weight": text_styles["subtitle_font_weight"],
+            "font_style": text_styles["subtitle_font_style"],
+            "color": subtitle_text_color,
+            "opacity": subtitle_text_opacity if subtitle_enabled else 0.0,
+        },
+        "date": {
+            "label": "Date",
+            "text": "2024",
+            "font_family": time_label_font_family,
+            "font_size": int(time_label_font_size),
+            "font_weight": text_styles["time_label_font_weight"],
+            "font_style": text_styles["time_label_font_style"],
+            "color": time_label_text_color,
+            "opacity": time_label_opacity if time_label_enabled else 0.0,
+        },
+        "source": {
+            "label": "Source",
+            "text": source_label or "Source",
+            "font_family": source_font_family,
+            "font_size": int(source_font_size),
+            "font_weight": text_styles["source_font_weight"],
+            "font_style": text_styles["source_font_style"],
+            "color": source_text_color,
+            "opacity": source_text_opacity if source_label_enabled else 0.0,
+        },
+    }
+    preset_positions = {
+        "title": {"x": layout_settings.left_margin, "y": layout_settings.title_y},
+        "subtitle": {"x": layout_settings.left_margin, "y": layout_settings.subtitle_y},
+        "date": {"x": layout_settings.time_label_x, "y": layout_settings.time_label_y},
+        "source": {"x": layout_settings.source_x, "y": layout_settings.source_y},
+    }
     with st.expander("Text placement", icon=":material/open_with:"):
-        position_values = text_layout_editor(
-            canvas_width=layout_settings.width,
-            canvas_height=layout_settings.height,
-            dpi=values["dpi"],
-            positions={
-                "title": {
-                    "x": values["title_x"] if values["title_x"] is not None else layout_settings.left_margin,
-                    "y": values["title_y"] if values["title_y"] is not None else layout_settings.title_y,
-                },
-                "subtitle": {
-                    "x": values["subtitle_x"] if values["subtitle_x"] is not None else layout_settings.left_margin,
-                    "y": values["subtitle_y"] if values["subtitle_y"] is not None else layout_settings.subtitle_y,
-                },
-                "date": {
-                    "x": values["time_label_x"] if values["time_label_x"] is not None else layout_settings.time_label_x,
-                    "y": values["time_label_y"] if values["time_label_y"] is not None else layout_settings.time_label_y,
-                },
-                "source": {
-                    "x": values["source_x"] if values["source_x"] is not None else layout_settings.source_x,
-                    "y": values["source_y"] if values["source_y"] is not None else layout_settings.source_y,
-                },
-            },
-            preset_positions={
-                "title": {"x": layout_settings.left_margin, "y": layout_settings.title_y},
-                "subtitle": {"x": layout_settings.left_margin, "y": layout_settings.subtitle_y},
-                "date": {"x": layout_settings.time_label_x, "y": layout_settings.time_label_y},
-                "source": {"x": layout_settings.source_x, "y": layout_settings.source_y},
-            },
-            elements={
-                "title": {
-                    "label": "Title",
-                    "text": title or "Title",
-                    "font_family": title_font_family,
-                    "font_size": int(title_font_size),
-                    "font_weight": typography_settings.title_font_weight,
-                    "color": title_text_color,
-                    "opacity": 1.0 if title_enabled else 0.0,
-                },
-                "subtitle": {
-                    "label": "Subtitle",
-                    "text": "Period A -> Period B",
-                    "font_family": subtitle_font_family,
-                    "font_size": int(subtitle_font_size),
-                    "font_weight": typography_settings.subtitle_font_weight,
-                    "color": subtitle_text_color,
-                    "opacity": 1.0 if subtitle_enabled else 0.0,
-                },
-                "date": {
-                    "label": "Date",
-                    "text": "2024",
-                    "font_family": time_label_font_family,
-                    "font_size": int(time_label_font_size),
-                    "font_weight": typography_settings.time_label_font_weight,
-                    "color": time_label_text_color,
-                    "opacity": 0.22 if time_label_enabled else 0.0,
-                },
-                "source": {
-                    "label": "Source",
-                    "text": source_label or "Source",
-                    "font_family": source_font_family,
-                    "font_size": int(source_font_size),
-                    "font_weight": typography_settings.source_font_weight,
-                    "color": source_text_color,
-                    "opacity": 1.0 if source_label_enabled else 0.0,
-                },
-            },
-            theme={
-                "background_color": background["color"],
-                "font_family": theme_settings.font_family,
-                "bar_color": theme_settings.bar_palette[0],
-            },
-            layout={
-                "left_margin": int(left_margin),
-                "right_margin": right_margin,
-                "top_margin": layout_settings.top_margin,
-                "bottom_margin": layout_settings.bottom_margin,
-                "bar_height": layout_settings.bar_height,
-                "bar_count": int(max_visible),
-            },
-            key=_widget_key("text_layout_editor"),
+        st.caption(
+            "Geometry is computed in Python from the selected preview frame. "
+            "Coordinates remain final-canvas pixels."
         )
+        editor_slot = st.empty()
 
     return {
         "layout_preset": layout_preset,
@@ -2810,13 +3307,21 @@ def _canvas_text_section(
         "time_label_font_family": time_label_font_family,
         "source_font_family": source_font_family,
         "rank_label_font_family": rank_label_font_family,
+        "text_styles": text_styles,
         "title_text_color": title_text_color,
+        "title_text_opacity": title_text_opacity,
         "subtitle_text_color": subtitle_text_color,
+        "subtitle_text_opacity": subtitle_text_opacity,
         "label_text_color": label_text_color,
+        "label_text_opacity": label_text_opacity,
         "value_text_color": value_text_color,
+        "value_text_opacity": value_text_opacity,
         "time_label_text_color": time_label_text_color,
+        "time_label_opacity": time_label_opacity,
         "source_text_color": source_text_color,
+        "source_text_opacity": source_text_opacity,
         "rank_label_text_color": rank_label_text_color,
+        "rank_label_text_opacity": rank_label_text_opacity,
         "title_font_size": int(title_font_size),
         "subtitle_font_size": int(subtitle_font_size),
         "label_font_size": int(label_font_size),
@@ -2839,7 +3344,157 @@ def _canvas_text_section(
         "time_label_y": int(position_values["date"]["y"]),
         "source_x": int(position_values["source"]["x"]),
         "source_y": int(position_values["source"]["y"]),
+        "_text_layout_editor": {
+            "slot": editor_slot,
+            "key": editor_key,
+            "positions": position_values,
+            "preset_positions": preset_positions,
+            "elements": editor_elements,
+            "theme": {
+                "background_color": background["color"],
+                "font_family": theme_settings.font_family,
+            },
+            "dpi": int(values["dpi"]),
+        },
     }
+
+
+def _mount_text_layout_editor(
+    *,
+    project_data,
+    dataset,
+    preview_settings,
+    canvas_settings,
+):
+    editor = canvas_settings.get("_text_layout_editor")
+    if not isinstance(editor, dict) or editor.get("slot") is None:
+        return
+
+    elements = copy.deepcopy(editor["elements"])
+    geometry = {}
+    preview = None
+    error = None
+    try:
+        preview = build_studio_layout_preview(
+            project_data,
+            dataset,
+            preview_settings,
+        )
+        geometry = build_scene_geometry(
+            preview.chart_config,
+            preview.fun_fact_config,
+            preview.scene,
+        )
+        elements["title"]["text"] = preview.scene.title or "Title"
+        elements["subtitle"]["text"] = preview.scene.subtitle or "Subtitle"
+        elements["date"]["text"] = preview.scene.time_label or "Date"
+        elements["source"]["text"] = preview.scene.source_label or "Source"
+        effective_date = geometry.get("effective_positions", {}).get("date")
+        raw_date = {
+            "x": int(preview.raw_chart_config.time_label_x),
+            "y": int(preview.raw_chart_config.time_label_y),
+        }
+        elements["date"]["managed"] = bool(
+            effective_date
+            and effective_date != raw_date
+        )
+    except (OSError, ValueError, ProjectFileError) as exc:
+        error = str(exc)
+
+    with editor["slot"].container():
+        if error:
+            st.warning(
+                f"The selected frame geometry is unavailable: {error}",
+                icon=":material/warning:",
+            )
+        text_layout_editor(
+            canvas_width=(
+                preview.chart_config.width
+                if preview is not None
+                else get_layout_preset(canvas_settings["layout_preset"]).width
+            ),
+            canvas_height=(
+                preview.chart_config.height
+                if preview is not None
+                else get_layout_preset(canvas_settings["layout_preset"]).height
+            ),
+            dpi=(
+                preview.chart_config.dpi
+                if preview is not None
+                else editor["dpi"]
+            ),
+            positions=editor["positions"],
+            preset_positions=editor["preset_positions"],
+            elements=elements,
+            theme=editor["theme"],
+            geometry=geometry,
+            key=editor["key"],
+        )
+
+
+def _mount_editorial_layout_editor(
+    *,
+    project_data,
+    dataset,
+    preview_settings,
+    fun_fact_settings,
+):
+    editor = fun_fact_settings.get("_editorial_layout_editor")
+    if not isinstance(editor, dict) or editor.get("slot") is None:
+        return
+    preview = None
+    geometry = {}
+    error = None
+    try:
+        preview = build_studio_layout_preview(
+            project_data,
+            dataset,
+            preview_settings,
+        )
+        geometry = build_scene_geometry(
+            preview.chart_config,
+            preview.fun_fact_config,
+            preview.scene,
+        )
+    except (OSError, ValueError, ProjectFileError) as exc:
+        error = str(exc)
+
+    layout = get_layout_preset(project_data["chart"]["layout_preset"])
+    canvas_width = preview.chart_config.width if preview else layout.width
+    canvas_height = preview.chart_config.height if preview else layout.height
+    background_color = (
+        preview.chart_config.background_color
+        if preview is not None
+        else project_data["chart"].get("background_color_override", "#111827")
+    )
+    with editor["slot"].container():
+        if error:
+            st.warning(
+                f"The selected frame geometry is unavailable: {error}",
+                icon=":material/warning:",
+            )
+        editorial_layout_editor(
+            canvas_width=canvas_width,
+            canvas_height=canvas_height,
+            rect=editor["rect"],
+            overlay=geometry,
+            theme={
+                "background_color": background_color,
+                "card_background_mode": project_data.get("fun_facts", {}).get(
+                    "editorial_background_mode", "card"
+                ),
+                "card_background_color": project_data.get("fun_facts", {}).get(
+                    "editorial_background_color"
+                ) or "#111827",
+                "card_background_texture": project_data.get("fun_facts", {}).get(
+                    "editorial_background_texture", "none"
+                ),
+                "card_background_texture_intensity": project_data.get("fun_facts", {}).get(
+                    "editorial_background_texture_intensity", 0.25
+                ),
+            },
+            key=editor["key"],
+        )
 
 
 def _bars_categories_section(
@@ -2856,7 +3511,13 @@ def _bars_categories_section(
         "Control ranking, number formatting, materials, icons, and categories.",
         icon="bar_chart",
     )
-    format_column, ranking_column, aggregate_column = st.columns(3)
+    selection_panel = st.container(border=True)
+    selection_panel.markdown("**Selection and visible rows**")
+    selection_panel.caption(
+        "Top N chooses categories from the data. Canvas > Available content "
+        "area controls the separate visible-row limit."
+    )
+    format_column, ranking_column, aggregate_column = selection_panel.columns(3)
     value_formats = list_value_formats()
 
     with format_column:
@@ -2885,9 +3546,86 @@ def _bars_categories_section(
             key=_widget_key("aggregate_other"),
         )
 
+    geometry_panel = st.container(border=True)
+    geometry_panel.markdown("**Geometry, color source, and primary logo**")
+    geometry_column, color_source_column, logo_min_column = geometry_panel.columns(3)
+    with geometry_column:
+        bar_gap = st.number_input(
+            "Bar spacing",
+            min_value=0,
+            max_value=500,
+            value=min(500, max(0, int(values.get("bar_gap", 18)))),
+            step=1,
+            help="Final-canvas pixels between adjacent rows. LayoutEngine applies it to all row content.",
+            key=_widget_key("bar_gap"),
+        )
+    with color_source_column:
+        bar_color_source = st.segmented_control(
+            "Bar color source",
+            options=("manual", "primary_logo"),
+            default=(
+                values.get("bar_color_source", "manual")
+                if values.get("bar_color_source", "manual") in ("manual", "primary_logo")
+                else "manual"
+            ),
+            format_func=lambda value: {
+                "manual": "Manual",
+                "primary_logo": "Primary logo",
+            }[value],
+            key=_widget_key("bar_color_source"),
+        ) or "manual"
+        st.caption("Manual category colors remain stored when logo color is active.")
+    with logo_min_column:
+        primary_logo_min_size = st.number_input(
+            "Minimum primary logo size",
+            min_value=0,
+            max_value=500,
+            value=min(500, max(0, int(values.get("primary_logo_min_size", 0)))),
+            step=1,
+            help="0 preserves legacy sizing; positive values may extend beyond a short bar.",
+            key=_widget_key("primary_logo_min_size"),
+        )
+
+    text_panel = st.container(border=True)
+    text_panel.markdown("**Bar text colors and opacity**")
+    text_panel.caption(
+        "Base opacity is multiplied by each bar's animation opacity."
+    )
+    category_column, value_column, rank_column = text_panel.columns(3)
+    with category_column:
+        label_text_color = st.color_picker(
+            "Category color",
+            value=_color_or_default(values.get("label_text_color"), theme_settings.text_color),
+            key=_widget_key("label_text_color"),
+        )
+        label_text_opacity = _opacity_percent_slider(
+            "Category opacity", values.get("label_text_opacity"), 1.0,
+            _widget_key("label_text_opacity"),
+        )
+    with value_column:
+        value_text_color = st.color_picker(
+            "Value color",
+            value=_color_or_default(values.get("value_text_color"), theme_settings.muted_text_color),
+            key=_widget_key("value_text_color"),
+        )
+        value_text_opacity = _opacity_percent_slider(
+            "Value opacity", values.get("value_text_opacity"), 1.0,
+            _widget_key("value_text_opacity"),
+        )
+    with rank_column:
+        rank_label_text_color = st.color_picker(
+            "Ranking color",
+            value=_color_or_default(values.get("rank_label_text_color"), theme_settings.muted_text_color),
+            key=_widget_key("rank_label_text_color"),
+        )
+        rank_label_text_opacity = _opacity_percent_slider(
+            "Ranking opacity", values.get("rank_label_text_opacity"), 1.0,
+            _widget_key("rank_label_text_opacity"),
+        )
+
     with st.expander("Bar appearance", icon=":material/texture:"):
         st.caption(
-            "Shape, material, icon placement, label alignment, borders, and effects."
+            "Bar material, category labels, values, ranking, logos, borders, and effects."
         )
         bar_style = bar_style_editor(
             settings=_bar_style_settings(values),
@@ -2908,6 +3646,15 @@ def _bars_categories_section(
         "value_format": value_format,
         "top_n": int(top_n),
         "aggregate_other": aggregate_other,
+        "label_text_color": label_text_color,
+        "label_text_opacity": label_text_opacity,
+        "value_text_color": value_text_color,
+        "value_text_opacity": value_text_opacity,
+        "rank_label_text_color": rank_label_text_color,
+        "rank_label_text_opacity": rank_label_text_opacity,
+        "bar_gap": int(bar_gap),
+        "bar_color_source": bar_color_source,
+        "primary_logo_min_size": int(primary_logo_min_size),
         "bar_style": bar_style,
         "category_styles": category_styles,
     }
@@ -2927,6 +3674,27 @@ def _animation_output_section(
         "Set motion timing, review playback duration, and choose output files.",
         icon="movie_filter",
     )
+    st.markdown("##### Export format")
+    export_settings = _export_settings_from_values(values, available_years)
+    export_mode = st.selectbox(
+        "Format",
+        options=("standard", "short"),
+        index=1 if export_settings["mode"] == "short" else 0,
+        format_func=lambda mode: {
+            "standard": "Standard 16:9",
+            "short": "Short 9:16",
+        }[mode],
+        key=_widget_key("export_mode"),
+    )
+    export_settings["mode"] = export_mode
+
+    if export_mode == "short":
+        export_settings = _short_export_controls(
+            export_settings,
+            available_years=available_years,
+        )
+
+    st.markdown("##### Motion and duration")
     fps_column, steps_column, motion_column = st.columns(3)
 
     with fps_column:
@@ -2962,14 +3730,24 @@ def _animation_output_section(
         )
 
     with st.container(border=True):
-        _show_video_duration_estimate(
-            period_count=len(available_years),
+        selected_periods = resolve_export_periods(
+            available_years,
+            ExportConfig(**export_settings),
+        )
+        estimate = _show_video_duration_estimate(
+            period_count=len(selected_periods),
             fps=int(fps),
             steps_per_transition=int(steps),
             motion_mode=motion_mode,
+            short_mode=export_mode == "short",
         )
+        if export_mode == "short":
+            st.caption(
+                f"Short runtime: {estimate.duration_seconds:.1f} seconds. "
+                "Choose a range near 25-35 seconds when practical."
+            )
 
-    with st.expander("Export settings", icon=":material/tune:"):
+    with st.expander("Encoding", icon=":material/tune:"):
         output_mode_column, compression_column = st.columns(2)
 
         with output_mode_column:
@@ -3010,6 +3788,12 @@ def _animation_output_section(
                 value=values["output_file"] or paths["output_file"],
                 key=_widget_key("output_file"),
             )
+            if export_mode == "short":
+                effective_output = resolve_export_output_path(
+                    output_file,
+                    ExportConfig(**export_settings),
+                )
+                st.caption(f"Short render output: `{effective_output}`")
 
         with project_column:
             project_file = st.text_input(
@@ -3047,7 +3831,127 @@ def _animation_output_section(
         "frames_dir": frames_dir,
         "project_file": project_file,
         "preview_settings": preview_settings,
+        "export": export_settings,
     }
+
+
+def _short_export_controls(
+    settings,
+    *,
+    available_years,
+):
+    st.caption("Resolution: 1080 x 1920 · native vertical canvas")
+    periods = tuple(available_years)
+    if len(periods) < 2:
+        st.warning("Short export requires at least two timeline periods.")
+        return settings
+
+    st.markdown("##### Timeline range")
+    from_options = periods[:-1]
+    configured_start = settings["short_from_period"]
+    if configured_start not in from_options:
+        configured_start = from_options[0]
+    range_columns = st.columns(2)
+    with range_columns[0]:
+        start = st.selectbox(
+            "From",
+            options=from_options,
+            index=from_options.index(configured_start),
+            key=_widget_key("short_from_period"),
+        )
+    to_options = periods[periods.index(start) + 1 :]
+    configured_end = settings["short_to_period"]
+    if configured_end not in to_options:
+        configured_end = to_options[-1]
+    with range_columns[1]:
+        end = st.selectbox(
+            "To",
+            options=to_options,
+            index=to_options.index(configured_end),
+            key=_widget_key(f"short_to_period_{start}"),
+        )
+    settings["short_from_period"] = start
+    settings["short_to_period"] = end
+
+    with st.expander(
+        "Short text overlays",
+        expanded=True,
+        icon=":material/subtitles:",
+    ):
+        settings["short_intro_enabled"] = st.toggle(
+            "Enable short intro hook",
+            value=settings["short_intro_enabled"],
+            key=_widget_key("short_intro_enabled"),
+        )
+        intro_columns = st.columns((2, 1))
+        with intro_columns[0]:
+            settings["short_intro_text"] = st.text_input(
+                "Intro text",
+                value=settings["short_intro_text"],
+                disabled=not settings["short_intro_enabled"],
+                key=_widget_key("short_intro_text"),
+            )
+        with intro_columns[1]:
+            settings["short_intro_duration"] = float(st.number_input(
+                "Intro duration (seconds)",
+                min_value=0.0,
+                max_value=60.0,
+                value=settings["short_intro_duration"],
+                step=0.5,
+                disabled=not settings["short_intro_enabled"],
+                key=_widget_key("short_intro_duration"),
+            ))
+
+        settings["short_context_enabled"] = st.toggle(
+            "Enable short context text",
+            value=settings["short_context_enabled"],
+            key=_widget_key("short_context_enabled"),
+        )
+        settings["short_context_title"] = st.text_input(
+            "Context title",
+            value=settings["short_context_title"],
+            disabled=not settings["short_context_enabled"],
+            key=_widget_key("short_context_title"),
+        )
+        settings["short_context_subtitle"] = st.text_input(
+            "Context subtitle",
+            value=settings["short_context_subtitle"],
+            disabled=not settings["short_context_enabled"],
+            key=_widget_key("short_context_subtitle"),
+        )
+
+        settings["short_outro_enabled"] = st.toggle(
+            "Enable short outro CTA",
+            value=settings["short_outro_enabled"],
+            key=_widget_key("short_outro_enabled"),
+        )
+        outro_columns = st.columns((2, 1))
+        with outro_columns[0]:
+            settings["short_outro_text"] = st.text_input(
+                "Outro text",
+                value=settings["short_outro_text"],
+                disabled=not settings["short_outro_enabled"],
+                key=_widget_key("short_outro_text"),
+            )
+        with outro_columns[1]:
+            settings["short_outro_duration"] = float(st.number_input(
+                "Outro duration (seconds)",
+                min_value=0.0,
+                max_value=60.0,
+                value=settings["short_outro_duration"],
+                step=0.5,
+                disabled=not settings["short_outro_enabled"],
+                key=_widget_key("short_outro_duration"),
+            ))
+
+        settings["short_include_fun_facts"] = st.toggle(
+            "Include Fun Facts in Short",
+            value=settings["short_include_fun_facts"],
+            key=_widget_key("short_include_fun_facts"),
+            help="Off by default to keep the vertical composition uncluttered.",
+        )
+
+    return settings
 
 
 def _project_values_for_csv(values, csv_path, loaded_project_data):
@@ -3830,11 +4734,43 @@ def _background_panel(values, theme_background_color):
         elif current_image_path:
             st.caption("The selected image is preserved for switching back to Image mode.")
 
+        st.markdown("**Background motion**")
+        motion = st.segmented_control(
+            "Motion",
+            options=("off", "forward_motion"),
+            default=(
+                values.get("background_motion", "off")
+                if values.get("background_motion", "off") in ("off", "forward_motion")
+                else "off"
+            ),
+            format_func=lambda value: {
+                "off": "Off",
+                "forward_motion": "Forward motion",
+            }[value],
+            key=_widget_key("background_motion"),
+        ) or "off"
+        motion_columns = st.columns(2)
+        motion_speed = motion_columns[0].slider(
+            "Motion speed", 0.0, 4.0,
+            min(4.0, max(0.0, float(values.get("background_motion_speed", 1.0)))), 0.1,
+            disabled=motion == "off",
+            key=_widget_key("background_motion_speed"),
+        )
+        motion_intensity = motion_columns[1].slider(
+            "Motion intensity", 0.0, 1.0,
+            min(1.0, max(0.0, float(values.get("background_motion_intensity", 0.35)))), 0.05,
+            disabled=motion == "off",
+            key=_widget_key("background_motion_intensity"),
+        )
+
     return {
         "mode": mode,
         "color": color,
         "image_path": current_image_path or None,
         "image_fit": image_fit,
+        "motion": motion,
+        "motion_speed": float(motion_speed),
+        "motion_intensity": float(motion_intensity),
     }
 
 
@@ -3844,6 +4780,7 @@ def _show_video_duration_estimate(
     fps,
     steps_per_transition,
     motion_mode,
+    short_mode=False,
 ):
     estimate = estimate_video_duration(
         period_count=period_count,
@@ -3851,10 +4788,13 @@ def _show_video_duration_estimate(
         fps=fps,
         continuous_motion=motion_mode == "continuous",
     )
-    st.metric(
-        "Estimated video duration",
-        format_video_duration(estimate.duration_seconds),
-    )
+    if short_mode:
+        st.metric("Estimated duration", f"{estimate.duration_seconds:.1f} s")
+    else:
+        st.metric(
+            "Estimated video duration",
+            format_video_duration(estimate.duration_seconds),
+        )
 
     if estimate.transition_count == 0:
         st.caption("At least two time periods are required to create a video.")
@@ -3880,8 +4820,12 @@ def _bar_style_settings(values):
 
 
 def _custom_texture_upload(bar_style):
+    texture_active = (
+        bar_style["bar_texture_enabled"]
+        or bar_style["bar_fill_type"] == "texture"
+    )
     if (
-        bar_style["bar_appearance_mode"] != "advanced"
+        not texture_active
         or bar_style["bar_texture_preset"] != "custom_image"
     ):
         st.session_state.pop(CUSTOM_TEXTURE_PATH_STATE, None)
@@ -4073,6 +5017,46 @@ def _project_option_label(value, layout):
         return find_project_location(value, layout).label
     except WorkspacePathError:
         return str(value)
+
+
+def _project_display_labels(locations, layout):
+    """Return deterministic, name-first labels without changing option values."""
+    locations = tuple(locations)
+    stem_counts = {}
+    for location in locations:
+        key = location.absolute_path.stem.casefold()
+        stem_counts[key] = stem_counts.get(key, 0) + 1
+
+    labels = {}
+    label_counts = {}
+    for location in locations:
+        value = _project_option_value(location, layout)
+        name = location.absolute_path.stem
+        kind = location.kind.title()
+        if stem_counts[name.casefold()] > 1:
+            context = _project_label_context(location, layout)
+            label = f"{name} — {kind} / {context}"
+        else:
+            label = f"{name} — {kind}"
+        labels[value] = label
+        key = label.casefold()
+        label_counts[key] = label_counts.get(key, 0) + 1
+
+    for value, label in tuple(labels.items()):
+        if label_counts[label.casefold()] > 1:
+            labels[value] = f"{label} · {value}"
+    return labels
+
+
+def _project_label_context(location, layout):
+    if location.kind in {"production", "scratch"}:
+        return location.project_root.name
+    try:
+        relative = location.absolute_path.relative_to(layout.app_root)
+    except ValueError:
+        relative = Path(location.relative_path)
+    parent = relative.parent.as_posix()
+    return parent if parent not in {"", "."} else location.kind
 
 
 def _active_project_root(
@@ -4397,6 +5381,41 @@ def _color_or_default(value, default):
         return value.upper()
 
     return default
+
+
+def _opacity_or_default(value, default):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+    return min(1.0, max(0.0, value))
+
+
+def _opacity_percent_slider(label, value, default, key, *, disabled=False):
+    percent = st.slider(
+        label,
+        min_value=0,
+        max_value=100,
+        value=round(_opacity_or_default(value, default) * 100),
+        format="%d%%",
+        key=key,
+        disabled=disabled,
+        help="Base text opacity. Animation and fade opacity are multiplied afterward.",
+    )
+    return percent / 100.0
+
+
+def _drop_widget_value_outside_range(key, minimum, maximum):
+    if key not in st.session_state:
+        return
+    try:
+        value = float(st.session_state[key])
+    except (TypeError, ValueError):
+        st.session_state.pop(key, None)
+        return
+    if value < minimum or value > maximum:
+        st.session_state.pop(key, None)
 
 
 def _int_in_range_or_default(value, default, minimum, maximum):

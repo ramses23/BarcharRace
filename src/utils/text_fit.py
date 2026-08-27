@@ -1,4 +1,6 @@
-from PIL import Image, ImageDraw
+from functools import lru_cache
+
+from PIL import Image, ImageDraw, ImageFont
 
 
 def estimate_text_width(text, font_size, average_char_width=0.56):
@@ -19,6 +21,22 @@ def measure_text_width(text, font):
         font=font,
     )
     return float(right - left)
+
+
+@lru_cache(maxsize=64)
+def measurement_font(
+    font_size, dpi, font_family, font_weight="normal", font_style="normal"
+):
+    from matplotlib import font_manager
+
+    properties = font_manager.FontProperties(
+        family=font_family,
+        weight=font_weight,
+        style=font_style,
+    )
+    path = font_manager.findfont(properties, fallback_to_default=True)
+    pixel_size = max(1, int(round(float(font_size) * (float(dpi) / 72))))
+    return ImageFont.truetype(path, pixel_size)
 
 
 def fit_text_to_width(

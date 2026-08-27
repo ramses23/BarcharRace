@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.chart_config import ChartConfig
+from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from config.layout_config import get_layout_preset
 from config.project_schema import (
@@ -19,6 +20,7 @@ from studio.project_storage import atomic_write_json
 
 _DEFAULT_CHART_CONFIG = ChartConfig()
 _DEFAULT_FUN_FACT_CONFIG = FunFactConfig()
+_DEFAULT_EXPORT_CONFIG = ExportConfig()
 BAR_STYLE_FIELDS = tuple(
     field.name
     for field in fields(ChartConfig)
@@ -26,6 +28,7 @@ BAR_STYLE_FIELDS = tuple(
     and field.name not in (
         "bar_height", "bar_gap", "bar_vertical_layout_mode",
         "bar_vertical_top_padding", "bar_vertical_bottom_padding",
+        "bar_color_source",
     )
 ) + ("logo_size",)
 
@@ -185,6 +188,9 @@ def build_project_data(
     background_color_override=None,
     background_image_path=None,
     background_image_fit="cover",
+    background_motion="off",
+    background_motion_speed=1.0,
+    background_motion_intensity=0.35,
     typography_preset,
     value_format,
     fps,
@@ -194,6 +200,9 @@ def build_project_data(
     bar_vertical_layout_mode="manual",
     bar_vertical_top_padding=24,
     bar_vertical_bottom_padding=24,
+    bar_gap=None,
+    bar_color_source="manual",
+    primary_logo_min_size=0,
     png_compress_level=1,
     frame_output_mode="ffmpeg_stream",
     bar_shape=None,
@@ -216,12 +225,19 @@ def build_project_data(
     source_font_family=None,
     rank_label_font_family=None,
     title_text_color=None,
+    title_text_opacity=None,
     subtitle_text_color=None,
+    subtitle_text_opacity=None,
     label_text_color=None,
+    label_text_opacity=None,
     value_text_color=None,
+    value_text_opacity=None,
     time_label_text_color=None,
+    time_label_opacity=None,
     source_text_color=None,
+    source_text_opacity=None,
     rank_label_text_color=None,
+    rank_label_text_opacity=None,
     title_font_size=None,
     subtitle_font_size=None,
     label_font_size=None,
@@ -229,6 +245,7 @@ def build_project_data(
     time_label_font_size=None,
     source_font_size=None,
     rank_label_font_size=None,
+    text_styles=None,
     title_enabled=None,
     subtitle_enabled=None,
     time_label_enabled=None,
@@ -251,6 +268,7 @@ def build_project_data(
     aggregate_other=False,
     category_styles=None,
     fun_facts=None,
+    export_settings=None,
     time_label_column=None,
     base_project_data=None,
 ):
@@ -323,6 +341,9 @@ def build_project_data(
             "background_color_override": background_color_override,
             "background_image_path": background_image_path,
             "background_image_fit": background_image_fit,
+            "background_motion": background_motion,
+            "background_motion_speed": background_motion_speed,
+            "background_motion_intensity": background_motion_intensity,
             "value_format": value_format,
             "typography_preset": typography_preset,
             "title_font_family": title_font_family,
@@ -338,6 +359,8 @@ def build_project_data(
             "bar_vertical_layout_mode": bar_vertical_layout_mode,
             "bar_vertical_top_padding": bar_vertical_top_padding,
             "bar_vertical_bottom_padding": bar_vertical_bottom_padding,
+            "bar_color_source": bar_color_source,
+            "primary_logo_min_size": primary_logo_min_size,
             "frame_output_mode": frame_output_mode,
             "png_compress_level": _bounded_int_or_default(
                 png_compress_level,
@@ -362,12 +385,19 @@ def build_project_data(
             "bar_shadow_offset_x": bar_shadow_offset_x,
             "bar_shadow_offset_y": bar_shadow_offset_y,
             "title_text_color": title_text_color,
+            "title_text_opacity": title_text_opacity,
             "subtitle_text_color": subtitle_text_color,
+            "subtitle_text_opacity": subtitle_text_opacity,
             "label_text_color": label_text_color,
+            "label_text_opacity": label_text_opacity,
             "value_text_color": value_text_color,
+            "value_text_opacity": value_text_opacity,
             "time_label_text_color": time_label_text_color,
+            "time_label_opacity": time_label_opacity,
             "source_text_color": source_text_color,
+            "source_text_opacity": source_text_opacity,
             "rank_label_text_color": rank_label_text_color,
+            "rank_label_text_opacity": rank_label_text_opacity,
             "title_font_size": title_font_size,
             "subtitle_font_size": subtitle_font_size,
             "label_font_size": label_font_size,
@@ -403,6 +433,15 @@ def build_project_data(
             for key, value in bar_style.items()
             if key in BAR_STYLE_FIELDS
         })
+    if isinstance(text_styles, dict):
+        chart.update({
+            key: value
+            for key, value in text_styles.items()
+            if key in {field.name for field in fields(ChartConfig)}
+            and (key.endswith("_font_weight") or key.endswith("_font_style"))
+        })
+    if bar_gap is not None:
+        chart["bar_gap"] = int(bar_gap)
     animation = project_data.setdefault("animation", {})
 
     if motion_mode is not None:
@@ -445,15 +484,20 @@ def build_project_data(
             if value is not None
         }
         has_existing = isinstance(project_data.get("fun_facts"), dict)
-        has_configuration = bool(
-            cleaned_fun_facts.get("enabled")
-            or cleaned_fun_facts.get("source")
-            or has_existing
-        )
+        has_configuration = bool(cleaned_fun_facts or has_existing)
         if has_configuration:
             project_data["fun_facts"] = cleaned_fun_facts
         else:
             project_data.pop("fun_facts", None)
+
+    if export_settings is not None:
+        project_data["export"] = {
+            field.name: export_settings.get(
+                field.name,
+                getattr(_DEFAULT_EXPORT_CONFIG, field.name),
+            )
+            for field in fields(ExportConfig)
+        }
 
     return project_data
 
@@ -489,6 +533,7 @@ def project_form_values(project_data=None):
     selection = _section(project_data, "selection")
     animation = _section(project_data, "animation")
     fun_facts = _section(project_data, "fun_facts")
+    export = _section(project_data, "export")
 
     title = chart.get("title", "Electricity by Source")
     project_name = project_data.get("name") or project_name_from_title(title)
@@ -521,6 +566,9 @@ def project_form_values(project_data=None):
         "background_color_override": chart.get("background_color_override"),
         "background_image_path": chart.get("background_image_path"),
         "background_image_fit": chart.get("background_image_fit", "cover"),
+        "background_motion": chart.get("background_motion", "off"),
+        "background_motion_speed": chart.get("background_motion_speed", 1.0),
+        "background_motion_intensity": chart.get("background_motion_intensity", 0.35),
         "typography_preset": chart.get("typography_preset", "editorial"),
         "title_font_family": chart.get("title_font_family"),
         "subtitle_font_family": chart.get("subtitle_font_family"),
@@ -529,13 +577,32 @@ def project_form_values(project_data=None):
         "time_label_font_family": chart.get("time_label_font_family"),
         "source_font_family": chart.get("source_font_family"),
         "rank_label_font_family": chart.get("rank_label_font_family"),
+        **{
+            field: chart.get(field, getattr(_DEFAULT_CHART_CONFIG, field))
+            for field in (
+                "title_font_weight", "title_font_style",
+                "subtitle_font_weight", "subtitle_font_style",
+                "time_label_font_weight", "time_label_font_style",
+                "source_font_weight", "source_font_style",
+                "label_font_weight", "label_font_style",
+                "value_font_weight", "value_font_style",
+                "rank_label_font_weight", "rank_label_font_style",
+            )
+        },
         "title_text_color": chart.get("title_text_color"),
+        "title_text_opacity": chart.get("title_text_opacity", 1.0),
         "subtitle_text_color": chart.get("subtitle_text_color"),
+        "subtitle_text_opacity": chart.get("subtitle_text_opacity", 1.0),
         "label_text_color": chart.get("label_text_color"),
+        "label_text_opacity": chart.get("label_text_opacity", 1.0),
         "value_text_color": chart.get("value_text_color"),
+        "value_text_opacity": chart.get("value_text_opacity", 1.0),
         "time_label_text_color": chart.get("time_label_text_color"),
+        "time_label_opacity": chart.get("time_label_opacity", 0.22),
         "source_text_color": chart.get("source_text_color"),
+        "source_text_opacity": chart.get("source_text_opacity", 1.0),
         "rank_label_text_color": chart.get("rank_label_text_color"),
+        "rank_label_text_opacity": chart.get("rank_label_text_opacity", 1.0),
         "title_font_size": chart.get("title_font_size"),
         "subtitle_font_size": chart.get("subtitle_font_size"),
         "label_font_size": chart.get("label_font_size"),
@@ -582,6 +649,9 @@ def project_form_values(project_data=None):
         "bar_vertical_layout_mode": chart.get("bar_vertical_layout_mode", "manual"),
         "bar_vertical_top_padding": chart.get("bar_vertical_top_padding", 24),
         "bar_vertical_bottom_padding": chart.get("bar_vertical_bottom_padding", 24),
+        "bar_gap": chart.get("bar_gap", layout_settings.bar_gap),
+        "bar_color_source": chart.get("bar_color_source", "manual"),
+        "primary_logo_min_size": chart.get("primary_logo_min_size", 0),
         "png_compress_level": chart.get("png_compress_level", 1),
         "frame_output_mode": chart.get("frame_output_mode", "ffmpeg_stream"),
         **{
@@ -603,13 +673,33 @@ def project_form_values(project_data=None):
         "fun_facts_fade_in": fun_facts.get("fade_in", 0.20),
         "fun_facts_fade_out": fun_facts.get("fade_out", 0.20),
         **{
+            field.name: export.get(
+                field.name,
+                getattr(_DEFAULT_EXPORT_CONFIG, field.name),
+            )
+            for field in fields(ExportConfig)
+        },
+        **{
             f"fun_facts_{field}": fun_facts.get(field, getattr(_DEFAULT_FUN_FACT_CONFIG, field))
             for field in (
                 "editorial_background_mode", "editorial_background_color",
-                "editorial_headline_size", "editorial_body_size", "editorial_credit_size",
+                "editorial_background_texture",
+                "editorial_background_texture_intensity",
+                "editorial_headline_size", "editorial_headline_font_weight",
+                "editorial_headline_font_style", "editorial_body_size",
+                "editorial_body_font_weight", "editorial_body_font_style",
+                "editorial_credit_size", "editorial_credit_font_weight",
+                "editorial_credit_font_style",
+                "editorial_headline_color", "editorial_headline_opacity",
+                "editorial_body_color", "editorial_body_opacity",
+                "editorial_credit_color", "editorial_credit_opacity",
                 "editorial_image_area_ratio", "editorial_image_fit",
                 "editorial_text_image_gap", "editorial_top_offset",
                 "editorial_reposition_time_label",
+                "editorial_orientation", "editorial_card_x",
+                "editorial_card_y", "editorial_card_width",
+                "editorial_card_height", "editorial_image_position",
+                "editorial_collision_gap",
             )
         },
     }

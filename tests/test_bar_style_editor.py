@@ -9,6 +9,7 @@ from ui.bar_style_editor import (
     _custom_texture_data,
     bar_style_editor,
     normalize_bar_style,
+    unified_bar_style,
     visible_bar_style_fields,
 )
 
@@ -70,11 +71,56 @@ class BarStyleEditorTest(unittest.TestCase):
 
         self.assertEqual(result["bar_shape"], "capsule")
         self.assertTrue(result["bar_border_enabled"])
+        self.assertEqual(result["bar_appearance_mode"], "simple")
         self.assertEqual(component.call_args.kwargs["data"]["bar_colors"], [
             "#111111",
             "#222222",
             "#333333",
         ])
+        self.assertEqual(
+            component.call_args.kwargs["data"]["settings"]["bar_appearance_mode"],
+            "unified",
+        )
+
+    def test_maps_legacy_simple_style_to_unified_editor_without_dormant_effects(self):
+        settings = unified_bar_style({
+            "bar_appearance_mode": "simple",
+            "bar_gradient_enabled": False,
+            "bar_texture_enabled": True,
+            "bar_bevel_enabled": True,
+            "bar_outer_glow_enabled": True,
+            "bar_track_enabled": True,
+            "bar_label_position": "inside_right",
+            "bar_value_position": "above",
+            "bar_value_use_theme_color": False,
+        })
+
+        self.assertEqual(settings["bar_appearance_mode"], "unified")
+        self.assertEqual(settings["bar_fill_type"], "solid")
+        self.assertFalse(settings["bar_gradient_enabled"])
+        self.assertTrue(settings["bar_fill_use_category_color"])
+        self.assertFalse(settings["bar_texture_enabled"])
+        self.assertFalse(settings["bar_bevel_enabled"])
+        self.assertFalse(settings["bar_outer_glow_enabled"])
+        self.assertFalse(settings["bar_track_enabled"])
+        self.assertEqual(settings["bar_label_position"], "inside_right")
+        self.assertEqual(settings["bar_value_position"], "auto")
+        self.assertTrue(settings["bar_value_use_theme_color"])
+
+    def test_maps_legacy_advanced_texture_to_unified_controls(self):
+        settings = unified_bar_style({
+            "bar_appearance_mode": "advanced",
+            "bar_fill_type": "texture",
+            "bar_texture_enabled": False,
+            "bar_texture_preset": "carbon",
+            "bar_bevel_enabled": True,
+        })
+
+        self.assertEqual(settings["bar_appearance_mode"], "unified")
+        self.assertEqual(settings["bar_fill_type"], "solid")
+        self.assertTrue(settings["bar_texture_enabled"])
+        self.assertEqual(settings["bar_texture_preset"], "carbon")
+        self.assertTrue(settings["bar_bevel_enabled"])
 
     def test_normalizes_logo_layout_and_migrates_legacy_positions(self):
         settings = normalize_bar_style({
@@ -163,12 +209,14 @@ class BarStyleEditorTest(unittest.TestCase):
             })
         }
 
-        self.assertIn("bar_gradient_enabled", simple_fields)
+        self.assertNotIn("bar_gradient_enabled", simple_fields)
         self.assertIn("bar_label_position", simple_fields)
         self.assertIn("bar_label_alignment", simple_fields)
         self.assertIn("bar_label_offset_x", simple_fields)
         self.assertIn("bar_label_offset_y", simple_fields)
-        self.assertNotIn("bar_fill_type", simple_fields)
+        self.assertIn("bar_fill_type", simple_fields)
+        self.assertIn("bar_gradient_lighten", simple_fields)
+        self.assertIn("bar_value_position", simple_fields)
         self.assertNotIn("bar_border_color", simple_fields)
         self.assertIn("bar_texture_preset", advanced_fields)
         self.assertNotIn("bar_gradient_direction", advanced_fields)
@@ -239,6 +287,9 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertIn("renderFields(state)", javascript)
         self.assertIn("state.settings.logo_size", javascript)
         self.assertIn("state.settings.bar_secondary_logo_size", javascript)
+        self.assertIn("renderActiveSummary(state)", javascript)
+        self.assertIn('bar_appearance_mode = "unified"', javascript)
+        self.assertNotIn('for (const value of ["simple", "advanced"])', javascript)
         self.assertIn('setStateValue("settings"', javascript)
         self.assertIn("export default function (component)", javascript)
         self.assertNotIn("postMessage", javascript)

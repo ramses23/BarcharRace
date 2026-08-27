@@ -110,6 +110,58 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
             "1525011b36259d758147224be791c89cc9ac70e26b312862aa850e7fb715ff66",
         )
 
+    def test_unified_classic_gradient_matches_legacy_simple_signature(self):
+        signature = self._render_signature(
+            ChartConfig(
+                width=320,
+                height=180,
+                dpi=72,
+                left_margin=96,
+                right_margin=28,
+                top_margin=52,
+                bottom_margin=24,
+                title_font_family="DejaVu Sans",
+                subtitle_font_family="DejaVu Sans",
+                label_font_family="DejaVu Sans",
+                value_font_family="DejaVu Sans",
+                rank_label_font_family="DejaVu Sans",
+                time_label_font_family="DejaVu Sans",
+                source_font_family="DejaVu Sans",
+                title_font_size=16,
+                subtitle_font_size=9,
+                label_font_size=9,
+                value_font_size=8,
+                rank_label_font_size=8,
+                time_label_font_size=32,
+                source_font_size=6,
+                title_y=16,
+                subtitle_y=33,
+                time_label_x=300,
+                time_label_y=151,
+                source_x=96,
+                source_y=170,
+                bar_height=22,
+                bar_gap=8,
+                logos_enabled=False,
+                bar_appearance_mode="unified",
+                bar_shape="rounded",
+                bar_fill_type="gradient",
+                bar_gradient_direction="horizontal",
+                bar_gradient_color_count=2,
+                bar_fill_use_category_color=True,
+                bar_edge_darkening=0,
+                bar_border_enabled=True,
+                bar_border_width=1.25,
+                bar_shadow_enabled=True,
+                bar_gradient_enabled=True,
+            )
+        )
+
+        self.assertEqual(
+            signature,
+            "3ccb229f58f622f252539b710e1f225a5ef1e4a051b018044a29ebefb383180f",
+        )
+
     @staticmethod
     def _render_signature(config):
         renderer = BarRenderer(config=config)

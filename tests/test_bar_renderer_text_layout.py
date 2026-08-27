@@ -15,6 +15,68 @@ from utils.text_fit import measure_text_width
 
 
 class BarRendererTextLayoutTest(unittest.TestCase):
+    def test_configured_text_opacity_multiplies_bar_animation_opacity(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=640,
+                height=360,
+                dpi=72,
+                left_margin=180,
+                right_margin=40,
+                title_text_opacity=0.8,
+                subtitle_text_opacity=0.7,
+                source_text_opacity=0.6,
+                time_label_opacity=0.5,
+                label_text_opacity=0.5,
+                value_text_opacity=0.75,
+                rank_label_text_opacity=0.25,
+                logos_enabled=False,
+            )
+        )
+        calls = []
+        original = renderer._text_command
+
+        def recording_text_command(text, *args, **kwargs):
+            calls.append((str(text), kwargs.get("opacity", 1.0)))
+            return original(text, *args, **kwargs)
+
+        renderer._text_command = recording_text_command
+        scene = Scene(
+            title="Title",
+            subtitle="Subtitle",
+            time_label="2024",
+            source_label="Source",
+            bars=[BarSprite(
+                name="Category",
+                value=100,
+                color="#336699",
+                x=180,
+                y=180,
+                width=260,
+                height=40,
+                rank=1,
+                opacity=0.4,
+            )],
+        )
+        try:
+            renderer.render_rgba(scene)
+        finally:
+            renderer.close()
+
+        opacity_by_text = dict(calls)
+        self.assertAlmostEqual(opacity_by_text["Title"], 0.8)
+        self.assertAlmostEqual(opacity_by_text["Subtitle"], 0.7)
+        self.assertAlmostEqual(opacity_by_text["Source"], 0.6)
+        self.assertAlmostEqual(opacity_by_text["2024"], 0.5)
+        self.assertAlmostEqual(opacity_by_text["#1"], 0.1)
+        bar_text_opacities = [
+            opacity for text, opacity in calls if text not in {
+                "Title", "Subtitle", "Source", "2024", "#1",
+            }
+        ]
+        self.assertTrue(any(abs(opacity - 0.2) < 1e-9 for opacity in bar_text_opacities))
+        self.assertTrue(any(abs(opacity - 0.3) < 1e-9 for opacity in bar_text_opacities))
+
     def test_truncates_long_bar_label_to_its_measured_available_width(self):
         renderer = BarRenderer(
             config=ChartConfig(
@@ -259,6 +321,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                 label_text_color="#303132",
                 value_text_color="#404142",
                 time_label_text_color="#505152",
+                time_label_opacity=0.47,
                 source_text_color="#606162",
                 rank_label_text_color="#707172",
                 title_font_size=41,
@@ -337,6 +400,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             self.assertEqual(bar_artists.name_label.get_color(), "#303132")
             self.assertEqual(bar_artists.value_label.get_color(), "#404142")
             self.assertEqual(renderer._time_label_artist.get_color(), "#505152")
+            self.assertEqual(renderer._time_label_artist.get_alpha(), 0.47)
             self.assertEqual(renderer._source_artist.get_color(), "#606162")
             self.assertEqual(bar_artists.rank_label.get_color(), "#707172")
         finally:
@@ -490,6 +554,34 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(layout["x"], 210)
         self.assertEqual(layout["ha"], "left")
         self.assertEqual(layout["color"], renderer.config.muted_text_color)
+
+    def test_explicit_outside_value_never_moves_back_over_the_bar(self):
+        renderer = BarRenderer(
+            config=ChartConfig(
+                width=300,
+                dpi=72,
+                value_font_size=20,
+                value_label_gap=10,
+                value_label_edge_padding=20,
+                bar_appearance_mode="advanced",
+                bar_value_position="outside",
+            )
+        )
+        sprite = BarSprite(
+            name="USA",
+            value=100,
+            color="#123456",
+            x=60,
+            y=0,
+            width=220,
+            height=40,
+        )
+
+        layout = renderer._value_label_layout(sprite, "100")
+
+        self.assertEqual(layout["text"], "")
+        self.assertEqual(layout["x"], sprite.x + sprite.width + 10)
+        self.assertEqual(layout["ha"], "left")
 
     def test_places_value_inside_when_outside_would_overflow(self):
         renderer = BarRenderer(

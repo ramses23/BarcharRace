@@ -1,7 +1,7 @@
 :host { color: var(--st-text-color, #31333f); font-family: var(--st-font, "Segoe UI", sans-serif); }
 * { box-sizing: border-box; }
 .bar-editor { display: grid; gap: .75rem; }
-.bar-editor-header { align-items: end; display: grid; gap: .65rem; grid-template-columns: 1fr 1fr; }
+.bar-editor-header { align-items: end; display: grid; gap: .65rem; grid-template-columns: 1fr; }
 .bar-editor-label { display: block; font-size: .78rem; margin-bottom: .3rem; opacity: .75; text-transform: uppercase; }
 .bar-button-row { display: flex; flex-wrap: wrap; gap: .35rem; }
 .bar-button {
@@ -10,6 +10,8 @@
   border-radius: var(--st-border-radius, .4rem); color: inherit; cursor: pointer; padding: .38rem .65rem;
 }
 .bar-button.active { border-color: var(--st-primary-color, #ff4b4b); box-shadow: 0 0 0 1px var(--st-primary-color, #ff4b4b); }
+.bar-active-summary { display: flex; flex-wrap: wrap; gap: .35rem; }
+.bar-active-chip { background: color-mix(in srgb, var(--st-primary-color, #ff4b4b) 12%, transparent); border: 1px solid color-mix(in srgb, var(--st-primary-color, #ff4b4b) 40%, transparent); border-radius: 999px; font-size: .75rem; padding: .22rem .55rem; text-transform: capitalize; }
 .bar-preview { background: var(--chart-background, #fff); border: 1px solid rgb(127 127 127 / 25%); border-radius: .5rem; display: grid; gap: .55rem; padding: .85rem; }
 .bar-preview-row { align-items: center; display: grid; gap: .55rem; grid-template-columns: 1.7rem 5rem 1fr; min-height: 2rem; }
 .bar-preview-rank { font-size: .8rem; opacity: .65; }

@@ -862,7 +862,7 @@ class ProjectStudioAutoloadTest(unittest.TestCase):
         selector = self._project_selector(app)
         self.assertEqual(selector.value, project_path)
         self.assertIn(
-            f"Legacy / {Path(project_path).stem}",
+            f"{Path(project_path).stem} — Legacy",
             selector.options,
         )
 

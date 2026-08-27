@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "sample_project",
   "base_preset": "csv_sample",
   "chart": {
@@ -59,6 +59,23 @@
   "fun_facts": {
     "enabled": false,
     "layout": "right_panel"
+  },
+  "export": {
+    "mode": "standard",
+    "short_width": 1080,
+    "short_height": 1920,
+    "short_from_period": null,
+    "short_to_period": null,
+    "short_intro_enabled": true,
+    "short_intro_text": "WATCH CHINA CLIMB",
+    "short_intro_duration": 2.0,
+    "short_context_enabled": true,
+    "short_context_title": "World’s Largest Economies",
+    "short_context_subtitle": "2001 → 2005",
+    "short_outro_enabled": true,
+    "short_outro_text": "Watch the full 1970–2026 ranking →",
+    "short_outro_duration": 2.0,
+    "short_include_fun_facts": false
   },
   "dataset": {
     "year_column": "year",

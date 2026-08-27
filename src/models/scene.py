@@ -4,6 +4,14 @@ from models.bar_sprite import BarSprite
 from models.fun_fact import ActiveFunFact
 
 
+@dataclass(frozen=True)
+class ShortOverlay:
+    kind: str
+    title: str
+    subtitle: str = ""
+    opacity: float = 1.0
+
+
 @dataclass
 class Scene:
     """
@@ -16,3 +24,5 @@ class Scene:
     source_label: str = ""
     bars: list[BarSprite] = field(default_factory=list)
     fun_fact: ActiveFunFact | None = None
+    short_overlay: ShortOverlay | None = None
+    frame_index: int = 0
