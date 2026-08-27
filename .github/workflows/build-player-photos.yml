@@ -1,4 +1,4 @@
-name: Build cartoon logo pack final v4
+name: Build remaining 32 cartoon logos
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - asset-photo-test
     paths:
       - ".github/workflows/build-player-photos.yml"
+      - "scripts/build_cartoon_remaining32.py"
       - "scripts/build_cartoon_logo_pack_final_v4.py"
   workflow_dispatch:
 
@@ -18,18 +19,18 @@ env:
 jobs:
   build-logos:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - name: Check out temporary branch
         uses: actions/checkout@v4
 
       - name: Publish run marker
         run: |
-          printf '%s\n' "$GITHUB_RUN_ID" > .cartoon_logo_v4_run_id.txt
+          printf '%s\n' "$GITHUB_RUN_ID" > .cartoon_remaining32_run_id.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .cartoon_logo_v4_run_id.txt
-          git commit -m "chore: record cartoon-logo v4 workflow run" || true
+          git add .cartoon_remaining32_run_id.txt
+          git commit -m "chore: record remaining cartoon-logo workflow run" || true
           git push origin HEAD:asset-photo-test || true
 
       - name: Set up Python
@@ -40,13 +41,13 @@ jobs:
       - name: Install image tooling
         run: python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4
 
-      - name: Build direct-source cartoon logo pack
-        run: python scripts/build_cartoon_logo_pack_final_v4.py
+      - name: Build remaining cartoon logo pack
+        run: python scripts/build_cartoon_remaining32.py
 
       - name: Upload completed pack
         uses: actions/upload-artifact@v4
         with:
-          name: cartoon-logo-pack-final-v4
-          path: cartoon_logos_png_max130kb.zip
+          name: cartoon-remaining32
+          path: cartoon_remaining32_png_max130kb.zip
           if-no-files-found: error
           retention-days: 7
