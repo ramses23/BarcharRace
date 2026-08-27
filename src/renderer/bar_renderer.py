@@ -51,6 +51,8 @@ class BarRenderer(TextCompositorMixin):
         self._time_label_artist = None
         self._source_artist = None
         self._background_image_artist = None
+        self._background_motion_artist = None
+        self._background_motion_cache = OrderedDict()
         self._background_image_cache = None
         self._gradient_artist = None
         self._advanced_composite_artist = None
@@ -125,6 +127,7 @@ class BarRenderer(TextCompositorMixin):
             self._time_label_artist = None
             self._source_artist = None
             self._background_image_artist = None
+            self._background_motion_artist = None
             self._background_image_cache = None
             self._gradient_artist = None
             self._advanced_composite_artist = None
@@ -152,9 +155,13 @@ class BarRenderer(TextCompositorMixin):
             self._fun_fact_image_cache.clear()
             self._fun_fact_resized_image_cache.clear()
             self._fun_fact_panel_cache.clear()
+            self._background_motion_cache.clear()
 
     def _initialize_scene_artists(self, ax):
         self._initialize_background_artist(ax)
+        self._background_motion_artist = ImageCommandsArtist(self.config.height)
+        self._background_motion_artist.set_zorder(-9)
+        ax.add_artist(self._background_motion_artist)
         self._title_artist = ax.text(
             self._title_x(),
             self.config.title_y,
@@ -164,6 +171,7 @@ class BarRenderer(TextCompositorMixin):
             fontsize=self.config.title_font_size,
             fontfamily=self._font_family(self.config.title_font_family),
             fontweight=self.config.title_font_weight,
+            fontstyle=self.config.title_font_style,
             color=self.config.resolved_title_text_color,
             alpha=self.config.title_text_opacity,
             zorder=5,
@@ -177,6 +185,7 @@ class BarRenderer(TextCompositorMixin):
             fontsize=self.config.subtitle_font_size,
             fontfamily=self._font_family(self.config.subtitle_font_family),
             fontweight=self.config.subtitle_font_weight,
+            fontstyle=self.config.subtitle_font_style,
             color=self.config.resolved_subtitle_text_color,
             alpha=self.config.subtitle_text_opacity,
             zorder=5,
@@ -190,6 +199,7 @@ class BarRenderer(TextCompositorMixin):
             fontsize=self.config.time_label_font_size,
             fontfamily=self._font_family(self.config.time_label_font_family),
             fontweight=self.config.time_label_font_weight,
+            fontstyle=self.config.time_label_font_style,
             color=self.config.resolved_time_label_text_color,
             alpha=self.config.time_label_opacity,
             zorder=0,
@@ -203,6 +213,7 @@ class BarRenderer(TextCompositorMixin):
             fontsize=self.config.source_font_size,
             fontfamily=self._font_family(self.config.source_font_family),
             fontweight=self.config.source_font_weight,
+            fontstyle=self.config.source_font_style,
             color=self.config.resolved_source_text_color,
             alpha=self.config.source_text_opacity,
             zorder=5,
@@ -333,6 +344,7 @@ class BarRenderer(TextCompositorMixin):
         return np.asarray(image)
 
     def _update_scene_artists(self, ax, scene):
+        self._update_background_motion(scene)
         self._set_text_artist(
             self._title_artist,
             self._fit_title(scene.title),
@@ -373,6 +385,51 @@ class BarRenderer(TextCompositorMixin):
             self._set_bar_artists_visible(artists, False)
 
         self._update_fun_fact_overlay(scene.fun_fact)
+
+    def _update_background_motion(self, scene):
+        if self._background_motion_artist is None:
+            return
+        if self.config.background_motion != "forward_motion":
+            self._background_motion_artist.set_commands(())
+            return
+        frame_index = max(0, int(getattr(scene, "frame_index", 0)))
+        cache_key = (
+            frame_index,
+            round(float(self.config.background_motion_speed), 4),
+            round(float(self.config.background_motion_intensity), 4),
+        )
+        image = self._lru_get(self._background_motion_cache, cache_key)
+        if image is None:
+            image = self._forward_motion_background(frame_index)
+            self._lru_put(self._background_motion_cache, cache_key, image, limit=8)
+        self._background_motion_artist.set_commands(((image, 0, 0),))
+
+    def _forward_motion_background(self, frame_index):
+        width = max(1, int(self.config.width))
+        height = max(1, int(self.config.height))
+        intensity = min(1.0, max(0.0, float(self.config.background_motion_intensity)))
+        speed = max(0.0, float(self.config.background_motion_speed))
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        horizon = round(height * 0.22)
+        vanishing_x = round(width * 0.58)
+        alpha = max(0, min(150, round(105 * intensity)))
+        line_color = (255, 255, 255, alpha)
+        for bottom_x in np.linspace(-width * 0.35, width * 1.35, 23):
+            draw.line(
+                ((vanishing_x, horizon), (round(float(bottom_x)), height)),
+                fill=line_color,
+                width=max(1, round(1 + intensity * 2)),
+            )
+        phase = ((frame_index / max(1, self.config.fps)) * speed * 0.42) % 1.0
+        for index in range(17):
+            depth = ((index / 17.0) + phase) % 1.0
+            y = horizon + round((height - horizon) * (depth ** 2.15))
+            local_alpha = round(alpha * (0.25 + 0.75 * depth))
+            draw.line((0, y, width, y), fill=(255, 255, 255, local_alpha), width=max(1, round(1 + depth * 2)))
+        return np.array(
+            np.asarray(canvas)[::-1], dtype=np.uint8, copy=True, order="C"
+        )
 
     def _update_fun_fact_overlay(self, active_fact):
         if self._fun_fact_artist is None:
@@ -436,12 +493,18 @@ class BarRenderer(TextCompositorMixin):
             self.fun_fact_config.editorial_background_texture,
             self.fun_fact_config.editorial_background_texture_intensity,
             self.fun_fact_config.editorial_headline_size,
+            self.fun_fact_config.editorial_headline_font_weight,
+            self.fun_fact_config.editorial_headline_font_style,
             self.fun_fact_config.editorial_headline_color,
             self.fun_fact_config.editorial_headline_opacity,
             self.fun_fact_config.editorial_body_size,
+            self.fun_fact_config.editorial_body_font_weight,
+            self.fun_fact_config.editorial_body_font_style,
             self.fun_fact_config.editorial_body_color,
             self.fun_fact_config.editorial_body_opacity,
             self.fun_fact_config.editorial_credit_size,
+            self.fun_fact_config.editorial_credit_font_weight,
+            self.fun_fact_config.editorial_credit_font_style,
             self.fun_fact_config.editorial_credit_color,
             self.fun_fact_config.editorial_credit_opacity,
             self.fun_fact_config.editorial_image_area_ratio,
@@ -493,18 +556,21 @@ class BarRenderer(TextCompositorMixin):
 
         headline_font = self._fun_fact_font(
             self.config.title_font_family,
-            self.config.title_font_weight,
+            self.fun_fact_config.editorial_headline_font_weight,
             (self.fun_fact_config.editorial_headline_size if self.fun_fact_config.layout in ("editorial_right", "editorial_floating") else max(18, round(self.config.title_font_size * 0.78))),
+            self.fun_fact_config.editorial_headline_font_style,
         )
         body_font = self._fun_fact_font(
             self.config.subtitle_font_family,
-            self.config.subtitle_font_weight,
+            self.fun_fact_config.editorial_body_font_weight,
             (self.fun_fact_config.editorial_body_size if self.fun_fact_config.layout in ("editorial_right", "editorial_floating") else max(14, self.config.subtitle_font_size)),
+            self.fun_fact_config.editorial_body_font_style,
         )
         credit_font = self._fun_fact_font(
             self.config.source_font_family,
-            self.config.source_font_weight,
+            self.fun_fact_config.editorial_credit_font_weight,
             (self.fun_fact_config.editorial_credit_size if self.fun_fact_config.layout in ("editorial_right", "editorial_floating") else max(10, self.config.source_font_size)),
+            self.fun_fact_config.editorial_credit_font_style,
         )
         headline_color = self._resolved_fun_fact_text_color(
             background,
@@ -687,18 +753,21 @@ class BarRenderer(TextCompositorMixin):
 
         headline_font = self._fun_fact_font(
             self.config.title_font_family,
-            self.config.title_font_weight,
+            self.fun_fact_config.editorial_headline_font_weight,
             self.fun_fact_config.editorial_headline_size,
+            self.fun_fact_config.editorial_headline_font_style,
         )
         body_font = self._fun_fact_font(
             self.config.subtitle_font_family,
-            self.config.subtitle_font_weight,
+            self.fun_fact_config.editorial_body_font_weight,
             self.fun_fact_config.editorial_body_size,
+            self.fun_fact_config.editorial_body_font_style,
         )
         credit_font = self._fun_fact_font(
             self.config.source_font_family,
-            self.config.source_font_weight,
+            self.fun_fact_config.editorial_credit_font_weight,
             self.fun_fact_config.editorial_credit_size,
+            self.fun_fact_config.editorial_credit_font_style,
         )
         headline_color = self._resolved_fun_fact_text_color(
             background,
@@ -862,8 +931,8 @@ class BarRenderer(TextCompositorMixin):
         )
         return resized
 
-    def _fun_fact_font(self, family, weight, point_size):
-        path = self._text_font_path(self._font_family(family), weight)
+    def _fun_fact_font(self, family, weight, point_size, style="normal"):
+        path = self._text_font_path(self._font_family(family), weight, style)
         pixel_size = max(1, int(round(self._font_pixel_size(point_size))))
         return self._text_font(path, pixel_size)
 
@@ -2604,8 +2673,17 @@ class BarRenderer(TextCompositorMixin):
         if position == "hidden":
             return None
 
+        protected_primary = slot == "primary" and self.config.primary_logo_min_size > 0
+        requested_size = max(1.0, float(style["size"]))
+        if protected_primary:
+            requested_size = max(
+                requested_size,
+                float(self.config.primary_logo_min_size),
+            )
+            requested_size = min(requested_size, float(self.config.height))
+
         if position == "outside_left":
-            size = max(1.0, float(style["size"]))
+            size = requested_size
             right = sprite.x - self.config.logo_gap
             left = right - size
         else:
@@ -2613,12 +2691,16 @@ class BarRenderer(TextCompositorMixin):
             available_width = max(0.0, sprite.width - (padding * 2))
             available_height = max(0.0, sprite.height - (padding * 2))
 
-            if available_width <= 0 or available_height <= 0:
+            if not protected_primary and (available_width <= 0 or available_height <= 0):
                 return None
 
-            size = min(float(style["size"]), available_width, available_height)
+            size = (
+                requested_size
+                if protected_primary
+                else min(requested_size, available_width, available_height)
+            )
 
-            if self.config.bar_shape == "lollipop":
+            if self.config.bar_shape == "lollipop" and not protected_primary:
                 center_x, radius, _ = self._lollipop_geometry(
                     sprite.x,
                     sprite.y,
@@ -2642,7 +2724,25 @@ class BarRenderer(TextCompositorMixin):
                 left = sprite.x + padding
                 right = left + size
 
-        return self._square_layout(left, right, sprite.y, size)
+        if protected_primary:
+            if left < 0:
+                right -= left
+                left = 0.0
+            if right > self.config.width:
+                left -= right - self.config.width
+                right = float(self.config.width)
+            left = max(0.0, left)
+            right = min(float(self.config.width), right)
+            size = max(0.0, right - left)
+            center_y = min(
+                self.config.height - (size / 2),
+                max(size / 2, sprite.y),
+            )
+        else:
+            center_y = sprite.y
+        if size <= 0:
+            return None
+        return self._square_layout(left, right, center_y, size)
 
     def _secondary_badge_layout(self, primary_layout):
         size = min(
@@ -2843,6 +2943,7 @@ class BarRenderer(TextCompositorMixin):
             font_size=self.config.title_font_size,
             font_family=self.config.title_font_family,
             font_weight=self.config.title_font_weight,
+            font_style=self.config.title_font_style,
         )
 
     def _fit_subtitle(self, subtitle):
@@ -2855,6 +2956,7 @@ class BarRenderer(TextCompositorMixin):
             font_size=self.config.subtitle_font_size,
             font_family=self.config.subtitle_font_family,
             font_weight=self.config.subtitle_font_weight,
+            font_style=self.config.subtitle_font_style,
         )
 
     def _title_x(self):
@@ -3020,6 +3122,8 @@ class BarRenderer(TextCompositorMixin):
             font=self._measurement_font(
                 self.config.label_font_size,
                 self.config.label_font_family,
+                self.config.label_font_weight,
+                self.config.label_font_style,
             ),
         )
 
@@ -3086,6 +3190,8 @@ class BarRenderer(TextCompositorMixin):
                     font=self._measurement_font(
                         self.config.label_font_size,
                         self.config.label_font_family,
+                        self.config.label_font_weight,
+                        self.config.label_font_style,
                     ),
                 )
                 if max_width >= self.config.label_font_size
@@ -3113,6 +3219,8 @@ class BarRenderer(TextCompositorMixin):
                     font=self._measurement_font(
                         self.config.label_font_size,
                         self.config.label_font_family,
+                        self.config.label_font_weight,
+                        self.config.label_font_style,
                     ),
                 ),
                 "x": anchor_x + offset_x,
@@ -3138,6 +3246,8 @@ class BarRenderer(TextCompositorMixin):
                     font=self._measurement_font(
                         self.config.label_font_size,
                         self.config.label_font_family,
+                        self.config.label_font_weight,
+                        self.config.label_font_style,
                     ),
                 ),
                 "x": anchor_x + offset_x,
@@ -3204,6 +3314,8 @@ class BarRenderer(TextCompositorMixin):
             font=self._measurement_font(
                 self.config.value_font_size,
                 self.config.value_font_family,
+                self.config.value_font_weight,
+                self.config.value_font_style,
             ),
         )
         text_width = self._value_label_text_width(text)
@@ -3274,6 +3386,8 @@ class BarRenderer(TextCompositorMixin):
                     font=self._measurement_font(
                         self.config.value_font_size,
                         self.config.value_font_family,
+                        self.config.value_font_weight,
+                        self.config.value_font_style,
                     ),
                 )
                 return {
@@ -3353,6 +3467,8 @@ class BarRenderer(TextCompositorMixin):
             self._measurement_font(
                 self.config.value_font_size,
                 self.config.value_font_family,
+                self.config.value_font_weight,
+                self.config.value_font_style,
             ),
         )
 
@@ -3548,6 +3664,7 @@ class BarRenderer(TextCompositorMixin):
             font_size=self.config.source_font_size,
             font_family=self.config.source_font_family,
             font_weight=self.config.source_font_weight,
+            font_style=self.config.source_font_style,
         )
 
     def _available_text_width(self, x, configured_max_width):
@@ -3566,6 +3683,7 @@ class BarRenderer(TextCompositorMixin):
         font_size,
         font_family=None,
         font_weight="normal",
+        font_style="normal",
     ):
         return fit_text_to_width(
             text,
@@ -3574,12 +3692,15 @@ class BarRenderer(TextCompositorMixin):
                 font_size,
                 font_family,
                 font_weight,
+                font_style,
             ),
         )
 
-    def _measurement_font(self, font_size, font_family=None, font_weight="normal"):
+    def _measurement_font(
+        self, font_size, font_family=None, font_weight="normal", font_style="normal"
+    ):
         family = self._font_family(font_family)
-        font_path = self._text_font_path(family, font_weight)
+        font_path = self._text_font_path(family, font_weight, font_style)
         pixel_size = max(1, int(round(self._font_pixel_size(font_size))))
         return self._text_font(font_path, pixel_size)
 

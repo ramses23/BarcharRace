@@ -235,6 +235,7 @@ class RenderJob:
                         timeline=timeline,
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
+                    scene.frame_index = frame_id
 
                     if stream_mode:
                         stream_process.stdin.write(renderer.render_rgba(scene))

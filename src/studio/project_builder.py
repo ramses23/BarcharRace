@@ -26,6 +26,7 @@ BAR_STYLE_FIELDS = tuple(
     and field.name not in (
         "bar_height", "bar_gap", "bar_vertical_layout_mode",
         "bar_vertical_top_padding", "bar_vertical_bottom_padding",
+        "bar_color_source",
     )
 ) + ("logo_size",)
 
@@ -185,6 +186,9 @@ def build_project_data(
     background_color_override=None,
     background_image_path=None,
     background_image_fit="cover",
+    background_motion="off",
+    background_motion_speed=1.0,
+    background_motion_intensity=0.35,
     typography_preset,
     value_format,
     fps,
@@ -194,6 +198,9 @@ def build_project_data(
     bar_vertical_layout_mode="manual",
     bar_vertical_top_padding=24,
     bar_vertical_bottom_padding=24,
+    bar_gap=None,
+    bar_color_source="manual",
+    primary_logo_min_size=0,
     png_compress_level=1,
     frame_output_mode="ffmpeg_stream",
     bar_shape=None,
@@ -236,6 +243,7 @@ def build_project_data(
     time_label_font_size=None,
     source_font_size=None,
     rank_label_font_size=None,
+    text_styles=None,
     title_enabled=None,
     subtitle_enabled=None,
     time_label_enabled=None,
@@ -330,6 +338,9 @@ def build_project_data(
             "background_color_override": background_color_override,
             "background_image_path": background_image_path,
             "background_image_fit": background_image_fit,
+            "background_motion": background_motion,
+            "background_motion_speed": background_motion_speed,
+            "background_motion_intensity": background_motion_intensity,
             "value_format": value_format,
             "typography_preset": typography_preset,
             "title_font_family": title_font_family,
@@ -345,6 +356,8 @@ def build_project_data(
             "bar_vertical_layout_mode": bar_vertical_layout_mode,
             "bar_vertical_top_padding": bar_vertical_top_padding,
             "bar_vertical_bottom_padding": bar_vertical_bottom_padding,
+            "bar_color_source": bar_color_source,
+            "primary_logo_min_size": primary_logo_min_size,
             "frame_output_mode": frame_output_mode,
             "png_compress_level": _bounded_int_or_default(
                 png_compress_level,
@@ -417,6 +430,15 @@ def build_project_data(
             for key, value in bar_style.items()
             if key in BAR_STYLE_FIELDS
         })
+    if isinstance(text_styles, dict):
+        chart.update({
+            key: value
+            for key, value in text_styles.items()
+            if key in {field.name for field in fields(ChartConfig)}
+            and (key.endswith("_font_weight") or key.endswith("_font_style"))
+        })
+    if bar_gap is not None:
+        chart["bar_gap"] = int(bar_gap)
     animation = project_data.setdefault("animation", {})
 
     if motion_mode is not None:
@@ -531,6 +553,9 @@ def project_form_values(project_data=None):
         "background_color_override": chart.get("background_color_override"),
         "background_image_path": chart.get("background_image_path"),
         "background_image_fit": chart.get("background_image_fit", "cover"),
+        "background_motion": chart.get("background_motion", "off"),
+        "background_motion_speed": chart.get("background_motion_speed", 1.0),
+        "background_motion_intensity": chart.get("background_motion_intensity", 0.35),
         "typography_preset": chart.get("typography_preset", "editorial"),
         "title_font_family": chart.get("title_font_family"),
         "subtitle_font_family": chart.get("subtitle_font_family"),
@@ -539,6 +564,18 @@ def project_form_values(project_data=None):
         "time_label_font_family": chart.get("time_label_font_family"),
         "source_font_family": chart.get("source_font_family"),
         "rank_label_font_family": chart.get("rank_label_font_family"),
+        **{
+            field: chart.get(field, getattr(_DEFAULT_CHART_CONFIG, field))
+            for field in (
+                "title_font_weight", "title_font_style",
+                "subtitle_font_weight", "subtitle_font_style",
+                "time_label_font_weight", "time_label_font_style",
+                "source_font_weight", "source_font_style",
+                "label_font_weight", "label_font_style",
+                "value_font_weight", "value_font_style",
+                "rank_label_font_weight", "rank_label_font_style",
+            )
+        },
         "title_text_color": chart.get("title_text_color"),
         "title_text_opacity": chart.get("title_text_opacity", 1.0),
         "subtitle_text_color": chart.get("subtitle_text_color"),
@@ -599,6 +636,9 @@ def project_form_values(project_data=None):
         "bar_vertical_layout_mode": chart.get("bar_vertical_layout_mode", "manual"),
         "bar_vertical_top_padding": chart.get("bar_vertical_top_padding", 24),
         "bar_vertical_bottom_padding": chart.get("bar_vertical_bottom_padding", 24),
+        "bar_gap": chart.get("bar_gap", layout_settings.bar_gap),
+        "bar_color_source": chart.get("bar_color_source", "manual"),
+        "primary_logo_min_size": chart.get("primary_logo_min_size", 0),
         "png_compress_level": chart.get("png_compress_level", 1),
         "frame_output_mode": chart.get("frame_output_mode", "ffmpeg_stream"),
         **{
@@ -625,7 +665,11 @@ def project_form_values(project_data=None):
                 "editorial_background_mode", "editorial_background_color",
                 "editorial_background_texture",
                 "editorial_background_texture_intensity",
-                "editorial_headline_size", "editorial_body_size", "editorial_credit_size",
+                "editorial_headline_size", "editorial_headline_font_weight",
+                "editorial_headline_font_style", "editorial_body_size",
+                "editorial_body_font_weight", "editorial_body_font_style",
+                "editorial_credit_size", "editorial_credit_font_weight",
+                "editorial_credit_font_style",
                 "editorial_headline_color", "editorial_headline_opacity",
                 "editorial_body_color", "editorial_body_opacity",
                 "editorial_credit_color", "editorial_credit_opacity",

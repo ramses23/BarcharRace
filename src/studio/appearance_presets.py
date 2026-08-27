@@ -9,11 +9,12 @@ from config.project_file_loader import (
     ProjectFileError,
     load_project_data as load_project_config,
 )
+from config.layout_config import get_layout_preset
 from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 5
+APPEARANCE_PRESET_SCHEMA_VERSION = 6
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -22,6 +23,9 @@ CANVAS_APPEARANCE_FIELDS = (
     "background_color_override",
     "background_image_path",
     "background_image_fit",
+    "background_motion",
+    "background_motion_speed",
+    "background_motion_intensity",
     "max_visible_bars",
     "title_font_family",
     "subtitle_font_family",
@@ -30,6 +34,20 @@ CANVAS_APPEARANCE_FIELDS = (
     "time_label_font_family",
     "source_font_family",
     "rank_label_font_family",
+    "title_font_weight",
+    "title_font_style",
+    "subtitle_font_weight",
+    "subtitle_font_style",
+    "time_label_font_weight",
+    "time_label_font_style",
+    "source_font_weight",
+    "source_font_style",
+    "label_font_weight",
+    "label_font_style",
+    "value_font_weight",
+    "value_font_style",
+    "rank_label_font_weight",
+    "rank_label_font_style",
     "title_text_color",
     "title_text_opacity",
     "subtitle_text_color",
@@ -72,6 +90,9 @@ CANVAS_APPEARANCE_FIELDS = (
 )
 BAR_APPEARANCE_FIELDS = (
     "value_format",
+    "bar_gap",
+    "bar_color_source",
+    "primary_logo_min_size",
     *BAR_STYLE_FIELDS,
 )
 FUN_FACT_APPEARANCE_FIELDS = (
@@ -86,12 +107,18 @@ FUN_FACT_APPEARANCE_FIELDS = (
     "editorial_background_texture",
     "editorial_background_texture_intensity",
     "editorial_headline_size",
+    "editorial_headline_font_weight",
+    "editorial_headline_font_style",
     "editorial_headline_color",
     "editorial_headline_opacity",
     "editorial_body_size",
+    "editorial_body_font_weight",
+    "editorial_body_font_style",
     "editorial_body_color",
     "editorial_body_opacity",
     "editorial_credit_size",
+    "editorial_credit_font_weight",
+    "editorial_credit_font_style",
     "editorial_credit_color",
     "editorial_credit_opacity",
     "editorial_image_area_ratio",
@@ -117,6 +144,7 @@ _ROOT_FIELDS_BY_VERSION = {
     3: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     4: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     5: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+    6: {"schema_version", "name", "canvas", "bars", "fun_facts"},
 }
 _MAX_NAME_LENGTH = 80
 
@@ -380,15 +408,35 @@ def _validated_preset(data):
         )
     name = _validated_name(data["name"])
     canvas_defaults = None
-    if schema_version <= 4:
+    if schema_version <= 5:
         canvas_defaults = {
+            "background_motion": "off",
+            "background_motion_speed": 1.0,
+            "background_motion_intensity": 0.35,
+            "title_font_weight": "bold",
+            "title_font_style": "normal",
+            "subtitle_font_weight": "normal",
+            "subtitle_font_style": "normal",
+            "time_label_font_weight": "bold",
+            "time_label_font_style": "normal",
+            "source_font_weight": "normal",
+            "source_font_style": "normal",
+            "label_font_weight": "normal",
+            "label_font_style": "normal",
+            "value_font_weight": "normal",
+            "value_font_style": "normal",
+            "rank_label_font_weight": "bold",
+            "rank_label_font_style": "normal",
+        }
+    if schema_version <= 4:
+        canvas_defaults.update({
             "title_text_opacity": 1.0,
             "subtitle_text_opacity": 1.0,
             "label_text_opacity": 1.0,
             "value_text_opacity": 1.0,
             "source_text_opacity": 1.0,
             "rank_label_text_opacity": 1.0,
-        }
+        })
         if schema_version <= 3:
             canvas_defaults["time_label_opacity"] = 0.22
     canvas = _validated_section(
@@ -397,24 +445,35 @@ def _validated_preset(data):
         section_name="canvas",
         missing_defaults=canvas_defaults,
     )
+    bar_defaults = None
+    if schema_version <= 5:
+        bar_defaults = {
+            "bar_gap": _legacy_bar_gap(data["canvas"]),
+            "bar_color_source": "manual",
+            "primary_logo_min_size": 0,
+        }
+        if schema_version == 1:
+            bar_defaults.update({
+                "bar_label_offset_x": 0,
+                "bar_label_offset_y": 0,
+            })
     bars = _validated_section(
         data["bars"],
         expected_fields=BAR_APPEARANCE_FIELDS,
         section_name="bars",
-        missing_defaults=(
-            {
-                "bar_label_offset_x": 0,
-                "bar_label_offset_y": 0,
-            }
-            if schema_version == 1
-            else None
-        ),
+        missing_defaults=bar_defaults,
     )
     fun_facts = None
     if schema_version >= 2:
         fun_fact_defaults = None
-        if schema_version <= 4:
+        if schema_version <= 5:
             fun_fact_defaults = {
+                "editorial_headline_font_weight": "bold",
+                "editorial_headline_font_style": "normal",
+                "editorial_body_font_weight": "normal",
+                "editorial_body_font_style": "normal",
+                "editorial_credit_font_weight": "normal",
+                "editorial_credit_font_style": "normal",
                 "editorial_background_texture": "none",
                 "editorial_background_texture_intensity": 0.25,
                 "editorial_headline_color": None,
@@ -497,6 +556,15 @@ def _validated_section(
         field: copy.deepcopy(values[field])
         for field in expected_fields
     }
+
+
+def _legacy_bar_gap(canvas):
+    try:
+        return get_layout_preset(
+            canvas.get("layout_preset", "youtube_1080p")
+        ).bar_gap
+    except (AttributeError, ValueError):
+        return 18
 
 
 def _validated_name(name):

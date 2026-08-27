@@ -16,3 +16,4 @@ class Scene:
     source_label: str = ""
     bars: list[BarSprite] = field(default_factory=list)
     fun_fact: ActiveFunFact | None = None
+    frame_index: int = 0

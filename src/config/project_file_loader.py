@@ -331,6 +331,20 @@ def _convert_chart_value(key, value):
 
         return value.strip()
 
+    if key.endswith("_font_weight"):
+        if not isinstance(value, str) or not value.strip():
+            raise ProjectFileError(
+                f"Chart field '{key}' must be a non-empty font weight."
+            )
+        return value.strip()
+
+    if key.endswith("_font_style"):
+        if value not in ("normal", "italic"):
+            raise ProjectFileError(
+                f"Chart field '{key}' must be 'normal' or 'italic'."
+            )
+        return value
+
     if key == "bar_shape":
         if value not in ("rectangle", "rounded", "capsule", "lollipop"):
             raise ProjectFileError(
@@ -387,8 +401,10 @@ def _convert_chart_value(key, value):
         ),
         "bar_label_alignment": ("auto", "left", "center", "right"),
         "bar_value_position": ("auto", "outside", "inside", "above"),
+        "bar_color_source": ("manual", "primary_logo"),
         "background_mode": ("color", "image"),
         "background_image_fit": ("cover", "contain", "stretch"),
+        "background_motion": ("off", "forward_motion"),
     }
 
     if key in bar_enum_options:
@@ -483,6 +499,7 @@ def _convert_chart_value(key, value):
         "time_label_opacity",
         "source_text_opacity",
         "rank_label_text_opacity",
+        "background_motion_intensity",
     ):
         if (
             isinstance(value, bool)
@@ -503,6 +520,7 @@ def _convert_chart_value(key, value):
         "bar_secondary_logo_gap",
         "bar_secondary_logo_padding",
         "bar_secondary_logo_border_width",
+        "background_motion_speed",
     ):
         if (
             isinstance(value, bool)
@@ -628,7 +646,13 @@ def _convert_chart_value(key, value):
 
         return value
 
-    if key in ("rank_label_min_x", "rank_label_label_gap", "label_min_x"):
+    if key in (
+        "rank_label_min_x",
+        "rank_label_label_gap",
+        "label_min_x",
+        "bar_gap",
+        "primary_logo_min_size",
+    ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProjectFileError(f"Chart field '{key}' must be >= 0.")
 
@@ -784,6 +808,18 @@ def _convert_dataset_value(key, value):
 
 
 def _convert_fun_fact_value(key, value):
+    if key.endswith("_font_weight"):
+        if value not in ("normal", "bold"):
+            raise ProjectFileError(
+                f"Fun facts field '{key}' must be 'normal' or 'bold'."
+            )
+        return value
+    if key.endswith("_font_style"):
+        if value not in ("normal", "italic"):
+            raise ProjectFileError(
+                f"Fun facts field '{key}' must be 'normal' or 'italic'."
+            )
+        return value
     if key == "enabled":
         if not isinstance(value, bool):
             raise ProjectFileError("Fun facts field 'enabled' must be boolean.")

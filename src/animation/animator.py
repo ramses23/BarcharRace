@@ -40,6 +40,7 @@ class Animator:
                 title=title,
                 time_label=f"{progress:.0%}",
                 bars=sprites,
+                frame_index=i,
             )
             filename = self.config.frame_filename(i)
 

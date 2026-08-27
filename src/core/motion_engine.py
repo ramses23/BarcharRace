@@ -125,12 +125,12 @@ class MotionEngine:
 
     def _continuous_sprite(self, previous, start, end, next_sprite, t):
         value_t = t if not self.animation_config.value_smoothing else None
-        rank = self._continuous_optional(
-            previous.rank,
-            start.rank,
-            end.rank,
-            next_sprite.rank,
-            t,
+        position_t = self.animation_config.easing_function()(t)
+        start_rank, end_rank = self._rank_bounds(start, end)
+        rank = (
+            lerp(start_rank, end_rank, position_t)
+            if start_rank is not None and end_rank is not None
+            else None
         )
 
         return BarSprite(
@@ -150,9 +150,11 @@ class MotionEngine:
             x=self._bounded_catmull_rom(
                 previous.x, start.x, end.x, next_sprite.x, t
             ),
-            y=self._bounded_catmull_rom(
-                previous.y, start.y, end.y, next_sprite.y, t
-            ),
+            # Ranking is a period-to-period contract. Interpolating Y from
+            # neighboring periods with Catmull-Rom can flatten the beginning
+            # or end of a swap and leave two rows visually attached. Use the
+            # configured motion easing directly between the two row centers.
+            y=lerp(start.y, end.y, position_t),
             width=max(0.0, self._bounded_catmull_rom(
                 previous.width,
                 start.width,

@@ -23,6 +23,7 @@ class TextCompositorMixin:
                 font_size=self.config.time_label_font_size,
                 font_family=self.config.time_label_font_family,
                 font_weight=self.config.time_label_font_weight,
+                font_style=self.config.time_label_font_style,
                 color=self.config.resolved_time_label_text_color,
                 opacity=self.config.time_label_opacity,
             )
@@ -71,7 +72,13 @@ class TextCompositorMixin:
                 self.config.source_text_opacity,
             ),
         )
-        for text, x, y, font_size, font_family, font_weight, color, opacity in header_specs:
+        header_styles = (
+            self.config.title_font_style,
+            self.config.subtitle_font_style,
+            self.config.source_font_style,
+        )
+        for spec, font_style in zip(header_specs, header_styles):
+            text, x, y, font_size, font_family, font_weight, color, opacity = spec
             command = self._text_command(
                 text,
                 x,
@@ -81,6 +88,7 @@ class TextCompositorMixin:
                 font_size=font_size,
                 font_family=font_family,
                 font_weight=font_weight,
+                font_style=font_style,
                 color=color,
                 opacity=opacity,
             )
@@ -101,7 +109,8 @@ class TextCompositorMixin:
                     va="center",
                     font_size=self.config.rank_label_font_size,
                     font_family=self.config.rank_label_font_family,
-                    font_weight="bold",
+                    font_weight=self.config.rank_label_font_weight,
+                    font_style=self.config.rank_label_font_style,
                     color=self.config.resolved_rank_label_text_color,
                     opacity=opacity * self.config.rank_label_text_opacity,
                 )
@@ -118,7 +127,8 @@ class TextCompositorMixin:
                     va=name_layout["va"],
                     font_size=self.config.label_font_size,
                     font_family=self.config.label_font_family,
-                    font_weight="normal",
+                    font_weight=self.config.label_font_weight,
+                    font_style=self.config.label_font_style,
                     color=name_layout["color"],
                     opacity=opacity * self.config.label_text_opacity,
                 )
@@ -139,7 +149,8 @@ class TextCompositorMixin:
                     va=value_layout.get("va", "center"),
                     font_size=self.config.value_font_size,
                     font_family=self.config.value_font_family,
-                    font_weight="normal",
+                    font_weight=self.config.value_font_weight,
+                    font_style=self.config.value_font_style,
                     color=value_layout["color"],
                     opacity=opacity * self.config.value_text_opacity,
                     stroke_width=(
@@ -176,6 +187,7 @@ class TextCompositorMixin:
         font_family,
         font_weight,
         color,
+        font_style="normal",
         opacity=1.0,
         stroke_width=0.0,
         stroke_color="#000000",
@@ -193,6 +205,7 @@ class TextCompositorMixin:
             font_size=font_size,
             font_family=font_family,
             font_weight=font_weight,
+            font_style=font_style,
             color=color,
             stroke_width=stroke_width,
             stroke_color=stroke_color,
@@ -230,9 +243,10 @@ class TextCompositorMixin:
         shadow_offset,
         shadow_color,
         shadow_opacity,
+        font_style="normal",
     ):
         family = self._font_family(font_family)
-        font_path = self._text_font_path(family, font_weight)
+        font_path = self._text_font_path(family, font_weight, font_style)
         pixel_size = max(1, int(round(self._font_pixel_size(font_size))))
         stroke_pixels = max(
             0,
@@ -252,6 +266,7 @@ class TextCompositorMixin:
             font_path,
             pixel_size,
             str(font_weight).lower(),
+            str(font_style).lower(),
             ha,
             va,
             color_rgba,
@@ -369,8 +384,8 @@ class TextCompositorMixin:
         )
         return TextSprite(image=image, anchor_x=anchor_x, anchor_y=anchor_y)
 
-    def _text_font_path(self, family, weight):
-        cache_key = (str(family), str(weight).lower())
+    def _text_font_path(self, family, weight, style="normal"):
+        cache_key = (str(family), str(weight).lower(), str(style).lower())
         cached = self._text_font_path_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -378,6 +393,7 @@ class TextCompositorMixin:
         properties = font_manager.FontProperties(
             family=family,
             weight=weight,
+            style=style,
         )
         path = font_manager.findfont(properties, fallback_to_default=True)
         self._text_font_path_cache[cache_key] = path

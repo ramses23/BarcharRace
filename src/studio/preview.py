@@ -100,6 +100,10 @@ def render_project_preview(
             if fun_fact_scheduler is not None
             else None
         )
+        frame_index = (
+            years.index(year_a) * chart_config.steps_per_transition
+            + round(progress * chart_config.steps_per_transition)
+        )
     else:
         selected_year = _selected_year(year, years)
         sprites = _sprites_for_year(timeline, selector, layout, selected_year)
@@ -110,6 +114,7 @@ def render_project_preview(
             if fun_fact_scheduler is not None
             else None
         )
+        frame_index = years.index(selected_year) * chart_config.steps_per_transition
 
     if force_fun_fact_id is not None:
         if fun_fact_scheduler is None:
@@ -123,6 +128,7 @@ def render_project_preview(
         source_label=source_label,
         bars=sprites,
         fun_fact=active_fact,
+        frame_index=frame_index,
     )
 
     output_path = resolve_project_path(

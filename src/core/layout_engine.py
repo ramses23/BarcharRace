@@ -5,6 +5,7 @@ from models.bar_sprite import BarSprite
 from utils.asset_resolver import AssetResolver
 from utils.color_palette import ColorPalette
 from utils.text_fit import measure_text_width, measurement_font
+from utils.logo_color import representative_logo_color
 from utils.value_formatter import format_value
 from studio.fun_fact_layout import editorial_geometry
 
@@ -51,19 +52,24 @@ class LayoutEngine:
 
             y_position = row_centers[i]
             width = self._bar_width(bar.value, max_value, max_bar_width)
+            logo_path = self._resolve_logo(bar)
+            manual_color = bar.color or self.palette.get(bar.name)
+            color = manual_color
+            if self.config.bar_color_source == "primary_logo":
+                color = representative_logo_color(logo_path) or manual_color
 
             sprites.append(
                 BarSprite(
                     name=bar.name,
                     value=bar.value,
-                    color=bar.color or self.palette.get(bar.name),
+                    color=color,
 
                     x=self.config.left_margin,
                     y=y_position,
                     width=width,
                     height=bar_height,
                     rank=i + 1,
-                    logo_path=self._resolve_logo(bar),
+                    logo_path=logo_path,
                     secondary_logo_path=(
                         bar.secondary_logo_path
                         if self.config.logos_enabled
@@ -167,6 +173,8 @@ class LayoutEngine:
             self.config.value_font_size,
             self.config.dpi,
             self.config.value_font_family or self.config.font_family,
+            self.config.value_font_weight,
+            self.config.value_font_style,
         )
         widest_value = max(
             measure_text_width(

@@ -33,6 +33,7 @@ class ChartConfig:
     bar_gradient_direction: str = "horizontal"
     bar_gradient_color_count: int = 3
     bar_fill_use_category_color: bool = True
+    bar_color_source: str = "manual"
     bar_fill_color_start: str = "#315F8A"
     bar_fill_color_center: str = "#7FAED6"
     bar_fill_color_end: str = "#4E79A7"
@@ -134,6 +135,9 @@ class ChartConfig:
     background_color_override: str | None = None
     background_image_path: str | None = None
     background_image_fit: str = "cover"
+    background_motion: str = "off"
+    background_motion_speed: float = 1.0
+    background_motion_intensity: float = 0.35
     typography_preset: str = "studio"
 
     title_enabled: bool = True
@@ -155,6 +159,14 @@ class ChartConfig:
     source_font_family: str | None = None
     label_font_family: str | None = None
     value_font_family: str | None = None
+    title_font_style: str = "normal"
+    subtitle_font_style: str = "normal"
+    time_label_font_style: str = "normal"
+    source_font_style: str = "normal"
+    label_font_weight: str = "normal"
+    label_font_style: str = "normal"
+    value_font_weight: str = "normal"
+    value_font_style: str = "normal"
     title_text_color: str | None = None
     title_text_opacity: float = 1.0
     subtitle_text_color: str | None = None
@@ -190,6 +202,8 @@ class ChartConfig:
     rank_label_prefix: str = "#"
     rank_label_font_size: int = 18
     rank_label_font_family: str | None = None
+    rank_label_font_weight: str = "bold"
+    rank_label_font_style: str = "normal"
     rank_label_gap: int = 320
     rank_label_min_x: int = 96
     rank_label_label_gap: int = 18
@@ -206,6 +220,7 @@ class ChartConfig:
     logos_enabled: bool = True
     logos_dir: str = "logos"
     logo_size: int = 48
+    primary_logo_min_size: int = 0
     logo_gap: int = 16
     logo_label_gap: int = 14
     logo_file_extensions: tuple[str, ...] = (

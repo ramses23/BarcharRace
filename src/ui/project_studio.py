@@ -14,6 +14,7 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
 from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
@@ -1278,6 +1279,9 @@ def _project_form(
         background_color_override=canvas_settings["background"]["color"],
         background_image_path=canvas_settings["background"]["image_path"],
         background_image_fit=canvas_settings["background"]["image_fit"],
+        background_motion=canvas_settings["background"]["motion"],
+        background_motion_speed=canvas_settings["background"]["motion_speed"],
+        background_motion_intensity=canvas_settings["background"]["motion_intensity"],
         typography_preset=typography_preset,
         value_format=bars_settings["value_format"],
         fps=render_settings["fps"],
@@ -1287,6 +1291,9 @@ def _project_form(
         bar_vertical_layout_mode=canvas_settings["bar_vertical_layout_mode"],
         bar_vertical_top_padding=canvas_settings["bar_vertical_top_padding"],
         bar_vertical_bottom_padding=canvas_settings["bar_vertical_bottom_padding"],
+        bar_gap=bars_settings["bar_gap"],
+        bar_color_source=bars_settings["bar_color_source"],
+        primary_logo_min_size=bars_settings["primary_logo_min_size"],
         png_compress_level=render_settings["png_compress_level"],
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
@@ -1319,6 +1326,7 @@ def _project_form(
         time_label_font_size=canvas_settings["time_label_font_size"],
         source_font_size=canvas_settings["source_font_size"],
         rank_label_font_size=canvas_settings["rank_label_font_size"],
+        text_styles=canvas_settings["text_styles"],
         title_enabled=canvas_settings["title_enabled"],
         subtitle_enabled=canvas_settings["subtitle_enabled"],
         time_label_enabled=canvas_settings["time_label_enabled"],
@@ -1774,6 +1782,9 @@ def _canvas_settings_from_values(
             ),
             "image_path": values.get("background_image_path"),
             "image_fit": background_fit,
+            "motion": values.get("background_motion", "off"),
+            "motion_speed": float(values.get("background_motion_speed", 1.0)),
+            "motion_intensity": float(values.get("background_motion_intensity", 0.35)),
         },
         "title_font_family": values.get("title_font_family"),
         "subtitle_font_family": values.get("subtitle_font_family"),
@@ -1782,6 +1793,18 @@ def _canvas_settings_from_values(
         "time_label_font_family": values.get("time_label_font_family"),
         "source_font_family": values.get("source_font_family"),
         "rank_label_font_family": values.get("rank_label_font_family"),
+        "text_styles": {
+            field: values.get(field, getattr(ChartConfig(), field))
+            for field in (
+                "title_font_weight", "title_font_style",
+                "subtitle_font_weight", "subtitle_font_style",
+                "time_label_font_weight", "time_label_font_style",
+                "source_font_weight", "source_font_style",
+                "label_font_weight", "label_font_style",
+                "value_font_weight", "value_font_style",
+                "rank_label_font_weight", "rank_label_font_style",
+            )
+        },
         "title_text_color": _color_or_default(
             values.get("title_text_color"),
             theme_settings.text_color,
@@ -1832,6 +1855,9 @@ def _canvas_settings_from_values(
         "rank_label_text_opacity": _opacity_or_default(
             values.get("rank_label_text_opacity"), 1.0,
         ),
+        "bar_gap": max(0, int(values.get("bar_gap", 18))),
+        "bar_color_source": values.get("bar_color_source", "manual"),
+        "primary_logo_min_size": max(0, int(values.get("primary_logo_min_size", 0))),
         "title_font_size": _positive_int_or_default(
             values.get("title_font_size"),
             typography_settings.title_font_size,
@@ -1952,6 +1978,11 @@ def _bars_settings_from_values(values):
         "rank_label_text_opacity": _opacity_or_default(
             values.get("rank_label_text_opacity"), 1.0,
         ),
+        "bar_gap": max(0, int(values.get("bar_gap", 18))),
+        "bar_color_source": values.get("bar_color_source", "manual"),
+        "primary_logo_min_size": max(
+            0, int(values.get("primary_logo_min_size", 0))
+        ),
         "bar_style": _bar_style_settings(values),
         "category_styles": _clean_category_style_mapping(
             values.get("categories", {})
@@ -1995,16 +2026,22 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
             values.get("fun_facts_editorial_background_texture_intensity"), 0.25,
         ),
         "editorial_headline_size": int(values.get("fun_facts_editorial_headline_size", 28)),
+        "editorial_headline_font_weight": values.get("fun_facts_editorial_headline_font_weight", "bold"),
+        "editorial_headline_font_style": values.get("fun_facts_editorial_headline_font_style", "normal"),
         "editorial_headline_color": values.get("fun_facts_editorial_headline_color"),
         "editorial_headline_opacity": _opacity_or_default(
             values.get("fun_facts_editorial_headline_opacity"), 1.0,
         ),
         "editorial_body_size": int(values.get("fun_facts_editorial_body_size", 18)),
+        "editorial_body_font_weight": values.get("fun_facts_editorial_body_font_weight", "normal"),
+        "editorial_body_font_style": values.get("fun_facts_editorial_body_font_style", "normal"),
         "editorial_body_color": values.get("fun_facts_editorial_body_color"),
         "editorial_body_opacity": _opacity_or_default(
             values.get("fun_facts_editorial_body_opacity"), 1.0,
         ),
         "editorial_credit_size": int(values.get("fun_facts_editorial_credit_size", 12)),
+        "editorial_credit_font_weight": values.get("fun_facts_editorial_credit_font_weight", "normal"),
+        "editorial_credit_font_style": values.get("fun_facts_editorial_credit_font_style", "normal"),
         "editorial_credit_color": values.get("fun_facts_editorial_credit_color"),
         "editorial_credit_opacity": _opacity_or_default(
             values.get("fun_facts_editorial_credit_opacity"), 1.0,
@@ -2279,6 +2316,20 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     value=settings["editorial_headline_size"],
                     key=_widget_key("fun_facts_editorial_headline_size"),
                 )
+                editorial["editorial_headline_font_weight"] = (
+                    "bold" if st.toggle(
+                        "Headline bold",
+                        value=settings["editorial_headline_font_weight"] == "bold",
+                        key=_widget_key("fun_facts_editorial_headline_bold"),
+                    ) else "normal"
+                )
+                editorial["editorial_headline_font_style"] = (
+                    "italic" if st.toggle(
+                        "Headline italic",
+                        value=settings["editorial_headline_font_style"] == "italic",
+                        key=_widget_key("fun_facts_editorial_headline_italic"),
+                    ) else "normal"
+                )
             with body_column:
                 editorial["editorial_body_color"] = st.color_picker(
                     "Body color",
@@ -2294,6 +2345,20 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     value=settings["editorial_body_size"],
                     key=_widget_key("fun_facts_editorial_body_size"),
                 )
+                editorial["editorial_body_font_weight"] = (
+                    "bold" if st.toggle(
+                        "Body bold",
+                        value=settings["editorial_body_font_weight"] == "bold",
+                        key=_widget_key("fun_facts_editorial_body_bold"),
+                    ) else "normal"
+                )
+                editorial["editorial_body_font_style"] = (
+                    "italic" if st.toggle(
+                        "Body italic",
+                        value=settings["editorial_body_font_style"] == "italic",
+                        key=_widget_key("fun_facts_editorial_body_italic"),
+                    ) else "normal"
+                )
             with credit_column:
                 editorial["editorial_credit_color"] = st.color_picker(
                     "Credit color",
@@ -2308,6 +2373,20 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     "Credit size", min_value=6, max_value=80,
                     value=settings["editorial_credit_size"],
                     key=_widget_key("fun_facts_editorial_credit_size"),
+                )
+                editorial["editorial_credit_font_weight"] = (
+                    "bold" if st.toggle(
+                        "Credit bold",
+                        value=settings["editorial_credit_font_weight"] == "bold",
+                        key=_widget_key("fun_facts_editorial_credit_bold"),
+                    ) else "normal"
+                )
+                editorial["editorial_credit_font_style"] = (
+                    "italic" if st.toggle(
+                        "Credit italic",
+                        value=settings["editorial_credit_font_style"] == "italic",
+                        key=_widget_key("fun_facts_editorial_credit_italic"),
+                    ) else "normal"
                 )
             st.markdown("**Image and attribution layout**")
             editorial["editorial_image_area_ratio"] = st.slider("Image area", 0.0, 0.8, settings["editorial_image_area_ratio"], 0.05, key=_widget_key("fun_facts_editorial_image_area_ratio"))
@@ -2932,6 +3011,35 @@ def _canvas_text_section(
                 _widget_key("source_font_family"),
             )
 
+    text_styles = {}
+    with st.expander("Bold and italic", icon=":material/format_bold:"):
+        st.caption("Bold and italic are independent and use installed font variants when available.")
+        style_columns = st.columns(4)
+        style_specs = (
+            ("Title", "title", 0),
+            ("Subtitle", "subtitle", 0),
+            ("Date", "time_label", 1),
+            ("Source", "source", 1),
+            ("Category", "label", 2),
+            ("Value", "value", 2),
+            ("Ranking", "rank_label", 3),
+        )
+        for label, prefix, column_index in style_specs:
+            with style_columns[column_index]:
+                st.markdown(f"**{label}**")
+                bold = st.toggle(
+                    f"{label} bold",
+                    value=values.get(f"{prefix}_font_weight", "normal") == "bold",
+                    key=_widget_key(f"{prefix}_font_bold"),
+                )
+                italic = st.toggle(
+                    f"{label} italic",
+                    value=values.get(f"{prefix}_font_style", "normal") == "italic",
+                    key=_widget_key(f"{prefix}_font_italic"),
+                )
+                text_styles[f"{prefix}_font_weight"] = "bold" if bold else "normal"
+                text_styles[f"{prefix}_font_style"] = "italic" if italic else "normal"
+
     with st.expander("Text sizes", icon=":material/format_size:"):
         st.caption("Sizes use points and update the placement editor.")
         size_column_a, size_column_b, size_column_c, size_column_d = st.columns(4)
@@ -3070,7 +3178,8 @@ def _canvas_text_section(
             "text": title or "Title",
             "font_family": title_font_family,
             "font_size": int(title_font_size),
-            "font_weight": typography_settings.title_font_weight,
+            "font_weight": text_styles["title_font_weight"],
+            "font_style": text_styles["title_font_style"],
             "color": title_text_color,
             "opacity": title_text_opacity if title_enabled else 0.0,
         },
@@ -3079,7 +3188,8 @@ def _canvas_text_section(
             "text": "Period A -> Period B",
             "font_family": subtitle_font_family,
             "font_size": int(subtitle_font_size),
-            "font_weight": typography_settings.subtitle_font_weight,
+            "font_weight": text_styles["subtitle_font_weight"],
+            "font_style": text_styles["subtitle_font_style"],
             "color": subtitle_text_color,
             "opacity": subtitle_text_opacity if subtitle_enabled else 0.0,
         },
@@ -3088,7 +3198,8 @@ def _canvas_text_section(
             "text": "2024",
             "font_family": time_label_font_family,
             "font_size": int(time_label_font_size),
-            "font_weight": typography_settings.time_label_font_weight,
+            "font_weight": text_styles["time_label_font_weight"],
+            "font_style": text_styles["time_label_font_style"],
             "color": time_label_text_color,
             "opacity": time_label_opacity if time_label_enabled else 0.0,
         },
@@ -3097,7 +3208,8 @@ def _canvas_text_section(
             "text": source_label or "Source",
             "font_family": source_font_family,
             "font_size": int(source_font_size),
-            "font_weight": typography_settings.source_font_weight,
+            "font_weight": text_styles["source_font_weight"],
+            "font_style": text_styles["source_font_style"],
             "color": source_text_color,
             "opacity": source_text_opacity if source_label_enabled else 0.0,
         },
@@ -3132,6 +3244,7 @@ def _canvas_text_section(
         "time_label_font_family": time_label_font_family,
         "source_font_family": source_font_family,
         "rank_label_font_family": rank_label_font_family,
+        "text_styles": text_styles,
         "title_text_color": title_text_color,
         "title_text_opacity": title_text_opacity,
         "subtitle_text_color": subtitle_text_color,
@@ -3370,6 +3483,46 @@ def _bars_categories_section(
             key=_widget_key("aggregate_other"),
         )
 
+    geometry_panel = st.container(border=True)
+    geometry_panel.markdown("**Geometry, color source, and primary logo**")
+    geometry_column, color_source_column, logo_min_column = geometry_panel.columns(3)
+    with geometry_column:
+        bar_gap = st.number_input(
+            "Bar spacing",
+            min_value=0,
+            max_value=500,
+            value=min(500, max(0, int(values.get("bar_gap", 18)))),
+            step=1,
+            help="Final-canvas pixels between adjacent rows. LayoutEngine applies it to all row content.",
+            key=_widget_key("bar_gap"),
+        )
+    with color_source_column:
+        bar_color_source = st.segmented_control(
+            "Bar color source",
+            options=("manual", "primary_logo"),
+            default=(
+                values.get("bar_color_source", "manual")
+                if values.get("bar_color_source", "manual") in ("manual", "primary_logo")
+                else "manual"
+            ),
+            format_func=lambda value: {
+                "manual": "Manual",
+                "primary_logo": "Primary logo",
+            }[value],
+            key=_widget_key("bar_color_source"),
+        ) or "manual"
+        st.caption("Manual category colors remain stored when logo color is active.")
+    with logo_min_column:
+        primary_logo_min_size = st.number_input(
+            "Minimum primary logo size",
+            min_value=0,
+            max_value=500,
+            value=min(500, max(0, int(values.get("primary_logo_min_size", 0)))),
+            step=1,
+            help="0 preserves legacy sizing; positive values may extend beyond a short bar.",
+            key=_widget_key("primary_logo_min_size"),
+        )
+
     text_panel = st.container(border=True)
     text_panel.markdown("**Bar text colors and opacity**")
     text_panel.caption(
@@ -3436,6 +3589,9 @@ def _bars_categories_section(
         "value_text_opacity": value_text_opacity,
         "rank_label_text_color": rank_label_text_color,
         "rank_label_text_opacity": rank_label_text_opacity,
+        "bar_gap": int(bar_gap),
+        "bar_color_source": bar_color_source,
+        "primary_logo_min_size": int(primary_logo_min_size),
         "bar_style": bar_style,
         "category_styles": category_styles,
     }
@@ -4359,11 +4515,43 @@ def _background_panel(values, theme_background_color):
         elif current_image_path:
             st.caption("The selected image is preserved for switching back to Image mode.")
 
+        st.markdown("**Background motion**")
+        motion = st.segmented_control(
+            "Motion",
+            options=("off", "forward_motion"),
+            default=(
+                values.get("background_motion", "off")
+                if values.get("background_motion", "off") in ("off", "forward_motion")
+                else "off"
+            ),
+            format_func=lambda value: {
+                "off": "Off",
+                "forward_motion": "Forward motion",
+            }[value],
+            key=_widget_key("background_motion"),
+        ) or "off"
+        motion_columns = st.columns(2)
+        motion_speed = motion_columns[0].slider(
+            "Motion speed", 0.0, 4.0,
+            min(4.0, max(0.0, float(values.get("background_motion_speed", 1.0)))), 0.1,
+            disabled=motion == "off",
+            key=_widget_key("background_motion_speed"),
+        )
+        motion_intensity = motion_columns[1].slider(
+            "Motion intensity", 0.0, 1.0,
+            min(1.0, max(0.0, float(values.get("background_motion_intensity", 0.35)))), 0.05,
+            disabled=motion == "off",
+            key=_widget_key("background_motion_intensity"),
+        )
+
     return {
         "mode": mode,
         "color": color,
         "image_path": current_image_path or None,
         "image_fit": image_fit,
+        "motion": motion,
+        "motion_speed": float(motion_speed),
+        "motion_intensity": float(motion_intensity),
     }
 
 

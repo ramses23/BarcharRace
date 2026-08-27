@@ -100,6 +100,8 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             chart_config.title_font_size,
             chart_config.title_font_family,
             chart_config.dpi,
+            chart_config.title_font_weight,
+            chart_config.title_font_style,
         ),
         "subtitle": _text_rect(
             scene.subtitle,
@@ -108,6 +110,8 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             chart_config.subtitle_font_size,
             chart_config.subtitle_font_family,
             chart_config.dpi,
+            chart_config.subtitle_font_weight,
+            chart_config.subtitle_font_style,
         ),
         "date": _text_rect(
             scene.time_label,
@@ -116,6 +120,8 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             chart_config.time_label_font_size,
             chart_config.time_label_font_family,
             chart_config.dpi,
+            chart_config.time_label_font_weight,
+            chart_config.time_label_font_style,
             anchor="right",
         ),
         "source": _text_rect(
@@ -125,6 +131,8 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             chart_config.source_font_size,
             chart_config.source_font_family,
             chart_config.dpi,
+            chart_config.source_font_weight,
+            chart_config.source_font_style,
         ),
     }
     editorial_rect = None
@@ -186,8 +194,11 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
     }
 
 
-def _text_rect(text, x, y, point_size, family, dpi, *, anchor="left"):
-    font = measurement_font(point_size, dpi, family)
+def _text_rect(
+    text, x, y, point_size, family, dpi, weight="normal", style="normal",
+    *, anchor="left",
+):
+    font = measurement_font(point_size, dpi, family, weight, style)
     width = measure_text_width(str(text or ""), font)
     height = max(1.0, float(point_size) * float(dpi) / 72.0)
     left = float(x) - width if anchor == "right" else float(x)
@@ -216,6 +227,9 @@ def _logo_rects(config, sprites):
                 config.logo_size,
                 config.bar_logo_padding,
                 config.logo_gap,
+                minimum_size=config.primary_logo_min_size,
+                canvas_width=config.width,
+                canvas_height=config.height,
             )
             if primary_rect is not None:
                 primary.append(primary_rect)
@@ -249,24 +263,34 @@ def _logo_rects(config, sprites):
     return tuple(primary), tuple(secondary)
 
 
-def _base_logo_rect(sprite, position, size, padding, gap):
+def _base_logo_rect(
+    sprite, position, size, padding, gap, *, minimum_size=0, canvas_width=None,
+    canvas_height=None,
+):
     position = {"outside": "outside_left", "inside": "inside_left"}.get(
         position,
         position,
     )
     if position == "hidden":
         return None
-    size = max(1.0, float(size))
+    protected = minimum_size > 0
+    size = max(1.0, float(size), float(minimum_size))
     if position == "outside_left":
         right = sprite.x - max(0.0, float(gap))
         left = right - size
     else:
         padding = max(0.0, float(padding))
-        size = min(size, max(0.0, sprite.height - (padding * 2)), max(0.0, sprite.width - (padding * 2)))
+        if not protected:
+            size = min(size, max(0.0, sprite.height - (padding * 2)), max(0.0, sprite.width - (padding * 2)))
         if size <= 0:
             return None
         if position == "inside_right":
             left = sprite.x + sprite.width - padding - size
         else:
             left = sprite.x + padding
+    if protected and canvas_width is not None and canvas_height is not None:
+        size = min(size, float(canvas_width), float(canvas_height))
+        left = min(float(canvas_width) - size, max(0.0, left))
+        top = min(float(canvas_height) - size, max(0.0, sprite.y - (size / 2)))
+        return SceneRect(left, top, size, size)
     return SceneRect(left, sprite.y - (size / 2), size, size)
