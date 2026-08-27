@@ -1,5 +1,7 @@
 from pathlib import Path
-import scripts.build_cartoon_logo_pack_final_v4 as m
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_cartoon_logo_pack_final_v4 as m
 
 WANTED = {
     'regular_show.png','teen_titans_go.png','ed_edd_n_eddy.png','looney_tunes.png',
