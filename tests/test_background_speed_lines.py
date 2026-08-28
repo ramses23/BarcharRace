@@ -38,8 +38,16 @@ def sprite(name, value, *, opacity=1.0):
     )
 
 
+def visible_line_columns(image):
+    return np.flatnonzero(np.max(image[:, :, 3], axis=0) > 0)
+
+
+def circular_phase_delta(start, end):
+    return ((end - start + 0.5) % 1.0) - 0.5
+
+
 class BackgroundSpeedLinesTest(unittest.TestCase):
-    def test_constant_lines_are_deterministic_and_move_by_frame(self):
+    def test_constant_lines_are_deterministic_and_move_left_by_frame(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             renderer = BarRenderer(
                 output_dir=temp_dir,
@@ -50,6 +58,7 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
                     background_motion="horizontal_speed_lines",
                     background_motion_speed=1.0,
                     background_motion_line_spacing=80,
+                    background_motion_line_thickness=1,
                 ),
             )
             try:
@@ -61,6 +70,87 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
 
         self.assertTrue(np.array_equal(first, repeated))
         self.assertFalse(np.array_equal(first, later))
+        first_columns = visible_line_columns(first)
+        later_columns = visible_line_columns(later)
+        self.assertEqual(len(first_columns), len(later_columns))
+        self.assertTrue(np.all(later_columns < first_columns))
+
+    def test_phase_never_reverses_and_acceleration_increases_leftward_speed(self):
+        low_tracker = SpeedLineMotionTracker(
+            fps=30,
+            base_speed=1.0,
+            base_spacing=160,
+            line_thickness=2,
+            response_mode="leader_acceleration",
+            response_strength=1.0,
+            smoothing=1.0,
+        )
+        high_tracker = SpeedLineMotionTracker(
+            fps=30,
+            base_speed=1.0,
+            base_spacing=160,
+            line_thickness=2,
+            response_mode="leader_acceleration",
+            response_strength=1.0,
+            smoothing=1.0,
+        )
+
+        low_states = [low_tracker.next(0.0) for _ in range(8)]
+        high_states = [high_tracker.next(1.0) for _ in range(8)]
+        low_deltas = [
+            circular_phase_delta(previous.phase, current.phase)
+            for previous, current in zip(low_states, low_states[1:])
+        ]
+        high_deltas = [
+            circular_phase_delta(previous.phase, current.phase)
+            for previous, current in zip(high_states, high_states[1:])
+        ]
+
+        self.assertTrue(all(delta < 0.0 for delta in low_deltas))
+        self.assertTrue(all(delta < 0.0 for delta in high_deltas))
+        self.assertLess(high_deltas[0], low_deltas[0])
+        self.assertGreater(
+            high_states[0].effective_speed,
+            low_states[0].effective_speed,
+        )
+        self.assertLess(
+            high_states[0].effective_spacing,
+            low_states[0].effective_spacing,
+        )
+
+    def test_left_edge_wrap_reappears_at_right(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            renderer = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(
+                    width=320,
+                    height=180,
+                    fps=10,
+                    background_motion="horizontal_speed_lines",
+                    background_motion_speed=1.0,
+                    background_motion_line_spacing=80,
+                    background_motion_line_thickness=1,
+                ),
+            )
+            tracker = SpeedLineMotionTracker.from_config(renderer.config)
+            first_phase = tracker.next().phase
+            next_phase = tracker.next().phase
+            try:
+                first = renderer._horizontal_speed_lines_background(
+                    0, phase=first_phase
+                )
+                wrapped = renderer._horizontal_speed_lines_background(
+                    1, phase=next_phase
+                )
+            finally:
+                renderer.close()
+
+        first_columns = visible_line_columns(first)
+        wrapped_columns = visible_line_columns(wrapped)
+        self.assertEqual(first_columns[0], 0)
+        self.assertLess(wrapped_columns[0], first_columns[1])
+        self.assertGreater(wrapped_columns[-1], first_columns[-1])
+        self.assertLessEqual(320 - wrapped_columns[-1], 8)
 
     def test_leader_change_is_scale_independent_and_tie_safe(self):
         low = normalized_leader_change(
@@ -263,7 +353,11 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             self.assertGreater(responses[-1], responses[0])
             self.assertTrue(all(math.isfinite(value) for value in responses))
             self.assertEqual(phases[0], 0.0)
-            self.assertGreater(phases[-1], phases[0])
+            phase_deltas = [
+                circular_phase_delta(previous, current)
+                for previous, current in zip(phases, phases[1:])
+            ]
+            self.assertTrue(all(delta < 0.0 for delta in phase_deltas))
 
     def test_short_preview_receives_line_color_thickness_and_vertical_canvas(self):
         with tempfile.TemporaryDirectory() as temp_dir:

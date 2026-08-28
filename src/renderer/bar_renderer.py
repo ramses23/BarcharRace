@@ -535,7 +535,8 @@ class BarRenderer(TextCompositorMixin):
             phase = getattr(scene, "background_motion_phase", None)
             if phase is None:
                 speed, _ = self._effective_speed_line_motion(response)
-                phase = (frame_index / max(1, self.config.fps)) * speed
+                velocity = -abs(speed)
+                phase = (frame_index / max(1, self.config.fps)) * velocity
             phase = float(phase) % 1.0
             cache_key = (
                 motion_mode,
@@ -604,7 +605,10 @@ class BarRenderer(TextCompositorMixin):
         speed, spacing = self._effective_speed_line_motion(response)
         spacing = max(spacing, width / 92.0)
         if phase is None:
-            phase = (max(0, int(frame_index)) / max(1, self.config.fps)) * speed
+            velocity = -abs(speed)
+            phase = (
+                max(0, int(frame_index)) / max(1, self.config.fps)
+            ) * velocity
         offset = (float(phase) % 1.0) * spacing
         opacity = min(1.0, max(0.0, float(
             self.config.background_motion_intensity

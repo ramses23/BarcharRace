@@ -111,7 +111,8 @@ class SpeedLineMotionTracker:
             effective_spacing=spacing,
             phase=self.phase,
         )
-        self.phase = (self.phase + (speed / self.fps)) % 1.0
+        velocity = -abs(speed)
+        self.phase = (self.phase + (velocity / self.fps)) % 1.0
         return motion
 
 
