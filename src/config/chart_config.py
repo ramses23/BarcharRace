@@ -138,6 +138,11 @@ class ChartConfig:
     background_motion: str = "off"
     background_motion_speed: float = 1.0
     background_motion_intensity: float = 0.35
+    background_motion_line_spacing: float = 160.0
+    background_motion_line_thickness: float = 2.0
+    background_motion_line_color: str = "#FFFFFF"
+    background_motion_response: str = "constant"
+    background_motion_response_strength: float = 1.0
     typography_preset: str = "studio"
 
     title_enabled: bool = True

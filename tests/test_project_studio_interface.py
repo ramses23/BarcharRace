@@ -204,6 +204,63 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         project_data = json.loads(app.json[0].value)
         self.assertEqual(project_data["chart"]["time_label_opacity"], 0.65)
 
+    def test_horizontal_speed_line_controls_persist_in_project_draft(self):
+        app_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "ui"
+            / "project_studio.py"
+        )
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+        motion = next(
+            control
+            for control in app.get("button_group")
+            if control.label == "Motion"
+        )
+        self.assertIn("Forward motion", motion.options)
+        self.assertIn("Horizontal speed lines", motion.options)
+        motion.set_value("horizontal_speed_lines")
+        app.run()
+
+        self.assertFalse(app.exception)
+        self.assertTrue({
+            "Base speed",
+            "Line spacing",
+            "Line opacity",
+            "Line thickness",
+            "Data response strength",
+        }.issubset({control.label for control in app.slider}))
+        self.assertIn(
+            "Line color",
+            {control.label for control in app.color_picker},
+        )
+        response = next(
+            control
+            for control in app.get("button_group")
+            if control.label == "Motion response"
+        )
+        response.set_value("leader_acceleration")
+        next(
+            control for control in app.slider
+            if control.label == "Line thickness"
+        ).set_value(5)
+        next(
+            control for control in app.color_picker
+            if control.label == "Line color"
+        ).set_value("#12AB34")
+        app.run()
+
+        project_data = json.loads(app.json[0].value)
+        chart = project_data["chart"]
+        self.assertEqual(chart["background_motion"], "horizontal_speed_lines")
+        self.assertEqual(
+            chart["background_motion_response"],
+            "leader_acceleration",
+        )
+        self.assertEqual(chart["background_motion_line_thickness"], 5.0)
+        self.assertEqual(chart["background_motion_line_color"], "#12AB34")
+
     def test_appearance_presets_save_apply_and_delete_current_visuals(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"

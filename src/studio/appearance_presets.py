@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 6
+APPEARANCE_PRESET_SCHEMA_VERSION = 7
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -26,6 +26,11 @@ CANVAS_APPEARANCE_FIELDS = (
     "background_motion",
     "background_motion_speed",
     "background_motion_intensity",
+    "background_motion_line_spacing",
+    "background_motion_line_thickness",
+    "background_motion_line_color",
+    "background_motion_response",
+    "background_motion_response_strength",
     "max_visible_bars",
     "title_font_family",
     "subtitle_font_family",
@@ -145,6 +150,7 @@ _ROOT_FIELDS_BY_VERSION = {
     4: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     5: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     6: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+    7: {"schema_version", "name", "canvas", "bars", "fun_facts"},
 }
 _MAX_NAME_LENGTH = 80
 
@@ -407,9 +413,17 @@ def _validated_preset(data):
             "Missing appearance preset fields: " + ", ".join(sorted(missing))
         )
     name = _validated_name(data["name"])
-    canvas_defaults = None
+    canvas_defaults = {}
+    if schema_version <= 6:
+        canvas_defaults.update({
+            "background_motion_line_spacing": 160.0,
+            "background_motion_line_thickness": 2.0,
+            "background_motion_line_color": "#FFFFFF",
+            "background_motion_response": "constant",
+            "background_motion_response_strength": 1.0,
+        })
     if schema_version <= 5:
-        canvas_defaults = {
+        canvas_defaults.update({
             "background_motion": "off",
             "background_motion_speed": 1.0,
             "background_motion_intensity": 0.35,
@@ -427,7 +441,7 @@ def _validated_preset(data):
             "value_font_style": "normal",
             "rank_label_font_weight": "bold",
             "rank_label_font_style": "normal",
-        }
+        })
     if schema_version <= 4:
         canvas_defaults.update({
             "title_text_opacity": 1.0,
@@ -443,7 +457,7 @@ def _validated_preset(data):
         data["canvas"],
         expected_fields=CANVAS_APPEARANCE_FIELDS,
         section_name="canvas",
-        missing_defaults=canvas_defaults,
+        missing_defaults=canvas_defaults or None,
     )
     bar_defaults = None
     if schema_version <= 5:

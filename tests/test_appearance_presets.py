@@ -34,6 +34,14 @@ class AppearancePresetsTest(unittest.TestCase):
                 "background_mode": "image",
                 "background_image_path": "backgrounds/documentary.png",
                 "background_image_fit": "cover",
+                "background_motion": "horizontal_speed_lines",
+                "background_motion_speed": 1.4,
+                "background_motion_intensity": 0.45,
+                "background_motion_line_spacing": 144,
+                "background_motion_line_thickness": 5,
+                "background_motion_line_color": "#12AB34",
+                "background_motion_response": "leader_acceleration",
+                "background_motion_response_strength": 1.7,
                 "max_visible_bars": 7,
                 "title_font_size": 44,
                 "title_text_color": "#ABCDEF",
@@ -114,6 +122,18 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.canvas["title_font_size"], 44)
         self.assertEqual(preset.canvas["time_label_opacity"], 0.47)
         self.assertEqual(preset.canvas["title_text_opacity"], 0.84)
+        self.assertEqual(
+            preset.canvas["background_motion"],
+            "horizontal_speed_lines",
+        )
+        self.assertEqual(
+            preset.canvas["background_motion_line_color"],
+            "#12AB34",
+        )
+        self.assertEqual(
+            preset.canvas["background_motion_response"],
+            "leader_acceleration",
+        )
         self.assertEqual(preset.bars["bar_shape"], "capsule")
         self.assertEqual(preset.bars["logo_size"], 42)
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
@@ -159,6 +179,32 @@ class AppearancePresetsTest(unittest.TestCase):
                 load_appearance_preset(stored.path).canvas["title_font_size"],
                 58,
             )
+
+    def test_schema_six_defaults_new_speed_line_fields(self):
+        current = build_appearance_preset(
+            "Legacy motion",
+            self.project_data(),
+        ).to_dict()
+        current["schema_version"] = 6
+        for field in (
+            "background_motion_line_spacing",
+            "background_motion_line_thickness",
+            "background_motion_line_color",
+            "background_motion_response",
+            "background_motion_response_strength",
+        ):
+            current["canvas"].pop(field)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "legacy_motion.json"
+            path.write_text(json.dumps(current), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertEqual(loaded.schema_version, 6)
+        self.assertEqual(loaded.canvas["background_motion_line_spacing"], 160.0)
+        self.assertEqual(loaded.canvas["background_motion_line_thickness"], 2.0)
+        self.assertEqual(loaded.canvas["background_motion_line_color"], "#FFFFFF")
+        self.assertEqual(loaded.canvas["background_motion_response"], "constant")
 
     def test_applies_visual_fields_without_mutating_or_copying_project_content(self):
         source = self.project_data()
