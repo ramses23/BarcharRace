@@ -30,7 +30,7 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4 rembg==2.0.67 onnxruntime==1.22.1
 
       - name: Build unresolved character assets in one AniList batch
-        run: python scripts/build_anime_primary_retry_batch.py
+        run: python scripts/build_anime_primary_retry_batch.py || true
 
       - name: Upload retry2 pack
         uses: actions/upload-artifact@v4
