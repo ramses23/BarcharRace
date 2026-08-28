@@ -19,7 +19,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
-from core.background_motion import effective_speed_line_motion
+from core.background_motion import (
+    effective_speed_line_motion,
+    speed_line_density_fades,
+)
 from core.bar_appearance import (
     uses_configurable_bar_content,
     uses_material_bar_renderer,
@@ -602,14 +605,14 @@ class BarRenderer(TextCompositorMixin):
     ):
         width = max(1, int(self.config.width))
         height = max(1, int(self.config.height))
-        speed, spacing = self._effective_speed_line_motion(response)
-        spacing = max(spacing, width / 92.0)
+        speed, base_spacing = self._effective_speed_line_motion(response)
+        base_spacing = max(base_spacing, width / 92.0)
         if phase is None:
             velocity = -abs(speed)
             phase = (
                 max(0, int(frame_index)) / max(1, self.config.fps)
             ) * velocity
-        offset = (float(phase) % 1.0) * spacing
+        offset = (float(phase) % 1.0) * base_spacing
         opacity = min(1.0, max(0.0, float(
             self.config.background_motion_intensity
         )))
@@ -622,19 +625,37 @@ class BarRenderer(TextCompositorMixin):
             )
         except ValueError:
             red, green, blue, color_alpha = (1.0, 1.0, 1.0, 1.0)
-        line_color = (
-            round(red * 255),
-            round(green * 255),
-            round(blue * 255),
-            round(color_alpha * opacity * 255),
-        )
+        red = round(red * 255)
+        green = round(green * 255)
+        blue = round(blue * 255)
+        base_alpha = round(color_alpha * opacity * 255)
         canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
-        first_x = -spacing + offset
-        line_count = int(np.ceil(width / spacing)) + 3
-        for index in range(line_count):
-            x = round(first_x + (index * spacing))
-            draw.line((x, 0, x, height), fill=line_color, width=thickness)
+        first_x = -base_spacing + offset
+        line_count = int(np.ceil(width / base_spacing)) + 3
+
+        def draw_subdivision(fractions, fade):
+            alpha = round(base_alpha * fade)
+            if alpha <= 0:
+                return
+            color = (red, green, blue, alpha)
+            for index in range(line_count):
+                base_x = first_x + (index * base_spacing)
+                for fraction in fractions:
+                    x = round(base_x + (fraction * base_spacing))
+                    draw.line(
+                        (x, 0, x, height),
+                        fill=color,
+                        width=thickness,
+                    )
+
+        midpoint_fade, quarter_fade = speed_line_density_fades(
+            response=response,
+            response_strength=self.config.background_motion_response_strength,
+        )
+        draw_subdivision((0.25, 0.75), quarter_fade)
+        draw_subdivision((0.5,), midpoint_fade)
+        draw_subdivision((0.0,), 1.0)
         return np.array(
             np.asarray(canvas)[::-1], dtype=np.uint8, copy=True, order="C"
         )

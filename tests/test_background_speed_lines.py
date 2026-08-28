@@ -17,6 +17,7 @@ from core.background_motion import (
     SpeedLineMotionTracker,
     effective_speed_line_motion,
     normalized_leader_change,
+    speed_line_density_fades,
 )
 from models.bar_sprite import BarSprite
 from pipeline.render_job import RenderJob
@@ -113,7 +114,7 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             high_states[0].effective_speed,
             low_states[0].effective_speed,
         )
-        self.assertLess(
+        self.assertEqual(
             high_states[0].effective_spacing,
             low_states[0].effective_spacing,
         )
@@ -198,7 +199,7 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
         self.assertLess(released.smoothed_response, high.smoothed_response)
         self.assertGreater(released.smoothed_response, 0.0)
 
-    def test_response_increases_speed_compresses_spacing_and_clamps(self):
+    def test_response_increases_speed_preserves_base_spacing_and_clamps(self):
         low_speed, low_spacing = effective_speed_line_motion(
             base_speed=1.0,
             base_spacing=160,
@@ -222,9 +223,95 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
         )
 
         self.assertGreater(high_speed, low_speed)
-        self.assertLess(high_spacing, low_spacing)
+        self.assertEqual(high_spacing, low_spacing)
+        self.assertEqual(high_spacing, 160.0)
         self.assertLessEqual(clamped_speed, MAX_EFFECTIVE_SPEED)
         self.assertGreaterEqual(clamped_spacing, 48.0)
+
+    def test_density_adds_fixed_subdivisions_with_progressive_fade(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            renderer = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(
+                    width=320,
+                    height=180,
+                    background_motion="horizontal_speed_lines",
+                    background_motion_intensity=0.8,
+                    background_motion_line_spacing=80,
+                    background_motion_line_thickness=1,
+                    background_motion_response_strength=1.0,
+                ),
+            )
+            try:
+                images = {
+                    response: renderer._horizontal_speed_lines_background(
+                        0,
+                        response=response,
+                        phase=0.0,
+                    )
+                    for response in (0.0, 0.1, 0.2, 0.5, 0.8, 1.0)
+                }
+                dense_before = renderer._horizontal_speed_lines_background(
+                    0, response=1.0, phase=0.4
+                )
+                dense_later = renderer._horizontal_speed_lines_background(
+                    1, response=1.0, phase=0.35
+                )
+            finally:
+                renderer.close()
+
+        base_alpha = [int(image[0, 0, 3]) for image in images.values()]
+        midpoint_alpha = {
+            response: int(image[0, 40, 3])
+            for response, image in images.items()
+        }
+        quarter_alpha = {
+            response: int(image[0, 20, 3])
+            for response, image in images.items()
+        }
+
+        self.assertEqual(len(set(base_alpha)), 1)
+        self.assertGreater(base_alpha[0], 0)
+        self.assertEqual(midpoint_alpha[0.0], 0)
+        self.assertLess(midpoint_alpha[0.1], midpoint_alpha[0.2])
+        self.assertLess(midpoint_alpha[0.2], midpoint_alpha[0.5])
+        self.assertEqual(midpoint_alpha[0.5], base_alpha[0])
+        self.assertEqual(quarter_alpha[0.5], 0)
+        self.assertLess(quarter_alpha[0.5], quarter_alpha[0.8])
+        self.assertLess(quarter_alpha[0.8], quarter_alpha[1.0])
+        self.assertEqual(quarter_alpha[1.0], base_alpha[0])
+        self.assertGreater(
+            len(visible_line_columns(images[0.8])),
+            len(visible_line_columns(images[0.1])),
+        )
+        self.assertGreater(
+            len(visible_line_columns(images[0.8])),
+            len(visible_line_columns(images[0.2])),
+        )
+        self.assertLess(midpoint_alpha[0.2], midpoint_alpha[0.8])
+        self.assertLess(quarter_alpha[0.2], quarter_alpha[0.8])
+        self.assertTrue(
+            set(visible_line_columns(images[0.0])).issubset(
+                set(visible_line_columns(images[1.0]))
+            )
+        )
+        dense_before_columns = visible_line_columns(dense_before)
+        dense_later_columns = visible_line_columns(dense_later)
+        self.assertEqual(len(dense_before_columns), len(dense_later_columns))
+        self.assertTrue(np.all(dense_later_columns < dense_before_columns))
+
+        fades = [
+            speed_line_density_fades(
+                response=response,
+                response_strength=1.0,
+            )
+            for response in (0.8, 0.7, 0.6, 0.5, 0.2)
+        ]
+        self.assertTrue(all(
+            current[0] >= following[0]
+            and current[1] >= following[1]
+            for current, following in zip(fades, fades[1:])
+        ))
 
     def test_line_color_thickness_and_canvas_dimensions_are_applied(self):
         with tempfile.TemporaryDirectory() as temp_dir:

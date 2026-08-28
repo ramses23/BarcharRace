@@ -50,11 +50,19 @@ def effective_speed_line_motion(
         default=160.0,
     )
     speed_multiplier = 1.0 + (2.0 * response * strength)
-    spacing_compression = 1.0 + (1.4 * response * strength)
     return (
         min(MAX_EFFECTIVE_SPEED, base_speed * speed_multiplier),
-        max(minimum_spacing, base_spacing / spacing_compression),
+        base_spacing,
     )
+
+
+def speed_line_density_fades(*, response, response_strength):
+    response = _finite_clamp(response, 0.0, 1.0, default=0.0)
+    strength = _finite_clamp(response_strength, 0.0, 2.0, default=1.0)
+    density = _clamp(response * strength, 0.0, 1.0)
+    midpoint_fade = _smoothstep(_clamp(density * 2.0, 0.0, 1.0))
+    quarter_fade = _smoothstep(_clamp((density - 0.5) * 2.0, 0.0, 1.0))
+    return midpoint_fade, quarter_fade
 
 
 class SpeedLineMotionTracker:
@@ -165,3 +173,7 @@ def _finite_clamp(value, minimum, maximum, *, default):
 
 def _clamp(value, minimum, maximum):
     return max(minimum, min(maximum, value))
+
+
+def _smoothstep(value):
+    return value * value * (3.0 - (2.0 * value))

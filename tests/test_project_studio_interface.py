@@ -226,7 +226,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue({
             "Base speed",
-            "Line spacing",
+            "Base line spacing",
             "Line opacity",
             "Line thickness",
             "Data response strength",

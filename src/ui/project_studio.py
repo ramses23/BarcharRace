@@ -4807,7 +4807,7 @@ def _background_panel(values, theme_background_color):
                 key=_widget_key("background_motion_speed"),
             )
             line_spacing = speed_columns[1].slider(
-                "Line spacing",
+                "Base line spacing",
                 24,
                 480,
                 line_spacing,
