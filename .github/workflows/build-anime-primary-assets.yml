@@ -1,0 +1,43 @@
+name: Build anime primary assets
+
+on:
+  push:
+    branches:
+      - asset-photo-test
+    paths:
+      - ".github/workflows/build-anime-primary-assets.yml"
+      - "scripts/build_anime_primary_assets.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out temporary branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4 rembg==2.0.67 onnxruntime==1.22.1
+
+      - name: Build authentic character asset pack
+        run: python scripts/build_anime_primary_assets.py
+
+      - name: Upload pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: anime-primary-assets-pack
+          path: |
+            anime_primary_assets_png_max130kb.zip
+            anime_primary_assets_preview.jpg
+          if-no-files-found: error
+          retention-days: 7
