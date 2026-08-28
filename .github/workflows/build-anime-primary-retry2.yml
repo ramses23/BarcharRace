@@ -30,14 +30,18 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4 rembg==2.0.67 onnxruntime==1.22.1
 
       - name: Build unresolved character assets in one AniList batch
-        run: python scripts/build_anime_primary_retry_batch.py || true
+        run: |
+          python scripts/build_anime_primary_retry_batch.py > anime_retry2.log 2>&1 || true
+          cat anime_retry2.log
+          ls -lah
 
-      - name: Upload retry2 pack
+      - name: Upload retry2 diagnostics and pack
         uses: actions/upload-artifact@v4
         with:
           name: anime-primary-retry2-pack
           path: |
+            anime_retry2.log
             anime_primary_retry2_assets_png_max130kb.zip
             anime_primary_retry2_preview.jpg
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
