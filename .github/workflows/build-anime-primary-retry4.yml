@@ -1,0 +1,46 @@
+name: Build anime primary retry4 assets
+
+on:
+  push:
+    branches:
+      - asset-photo-test
+    paths:
+      - ".github/workflows/build-anime-primary-retry4.yml"
+      - "scripts/build_anime_primary_retry_slow.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-retry4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out temporary branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0 requests==2.32.4 rembg==2.0.67 onnxruntime==1.22.1
+
+      - name: Build unresolved character assets slowly
+        run: |
+          python scripts/build_anime_primary_retry_slow.py > anime_retry4.log 2>&1 || true
+          cat anime_retry4.log
+
+      - name: Upload retry4 pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: anime-primary-retry4-pack
+          path: |
+            anime_retry4.log
+            anime_primary_retry4_assets_png_max130kb.zip
+            anime_primary_retry4_preview.jpg
+          if-no-files-found: warn
+          retention-days: 7
