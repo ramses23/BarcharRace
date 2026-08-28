@@ -27,4 +27,4 @@ class Scene:
     short_overlay: ShortOverlay | None = None
     frame_index: int = 0
     background_motion_response: float = 0.0
-    background_motion_phase: float | None = None
+    background_motion_line_positions: tuple[float, ...] | None = None

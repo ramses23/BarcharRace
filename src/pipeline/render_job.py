@@ -290,7 +290,9 @@ class RenderJob:
                         scene.background_motion_response = (
                             speed_line_motion.smoothed_response
                         )
-                        scene.background_motion_phase = speed_line_motion.phase
+                        scene.background_motion_line_positions = (
+                            speed_line_motion.line_positions
+                        )
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
                         frame_index=frame_id,

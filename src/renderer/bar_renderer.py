@@ -19,10 +19,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
-from core.background_motion import (
-    effective_speed_line_motion,
-    speed_line_density_fades,
-)
+from core.background_motion import constant_speed_line_positions
 from core.bar_appearance import (
     uses_configurable_bar_content,
     uses_material_bar_renderer,
@@ -38,6 +35,10 @@ from renderer.material_texture import blend_texture, procedural_texture_pattern
 from studio.fun_fact_layout import editorial_geometry, panel_geometry
 from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
+
+
+BACKGROUND_IMAGE_ZORDER = -20
+BACKGROUND_MOTION_ZORDER = -19
 
 
 class BarRenderer(TextCompositorMixin):
@@ -168,7 +169,7 @@ class BarRenderer(TextCompositorMixin):
     def _initialize_scene_artists(self, ax):
         self._initialize_background_artist(ax)
         self._background_motion_artist = ImageCommandsArtist(self.config.height)
-        self._background_motion_artist.set_zorder(-9)
+        self._background_motion_artist.set_zorder(BACKGROUND_MOTION_ZORDER)
         ax.add_artist(self._background_motion_artist)
         self._title_artist = ax.text(
             self._title_x(),
@@ -303,7 +304,7 @@ class BarRenderer(TextCompositorMixin):
             top=0,
             canvas_height=self.config.height,
         )
-        self._background_image_artist.set_zorder(-10)
+        self._background_image_artist.set_zorder(BACKGROUND_IMAGE_ZORDER)
         ax.add_artist(self._background_image_artist)
 
     def _load_background_image(self):
@@ -530,27 +531,31 @@ class BarRenderer(TextCompositorMixin):
                 round(float(self.config.background_motion_intensity), 4),
             )
         elif motion_mode == "horizontal_speed_lines":
-            response = max(0.0, min(1.0, float(getattr(
+            line_positions = getattr(
                 scene,
-                "background_motion_response",
-                0.0,
-            ))))
-            phase = getattr(scene, "background_motion_phase", None)
-            if phase is None:
-                speed, _ = self._effective_speed_line_motion(response)
-                velocity = -abs(speed)
-                phase = (frame_index / max(1, self.config.fps)) * velocity
-            phase = float(phase) % 1.0
+                "background_motion_line_positions",
+                None,
+            )
+            if line_positions is None:
+                line_positions = constant_speed_line_positions(
+                    frame_index=frame_index,
+                    fps=self.config.fps,
+                    canvas_width=self.config.width,
+                    base_speed=self.config.background_motion_speed,
+                    base_spacing=self.config.background_motion_line_spacing,
+                    line_thickness=self.config.background_motion_line_thickness,
+                )
+            line_positions = tuple(
+                float(position)
+                for position in line_positions
+                if np.isfinite(position)
+            )
             cache_key = (
                 motion_mode,
-                round(phase, 6),
-                round(response, 6),
-                round(float(self.config.background_motion_speed), 4),
+                tuple(round(position, 4) for position in line_positions),
                 round(float(self.config.background_motion_intensity), 4),
-                round(float(self.config.background_motion_line_spacing), 4),
                 round(float(self.config.background_motion_line_thickness), 4),
                 self.config.background_motion_line_color,
-                round(float(self.config.background_motion_response_strength), 4),
             )
         else:
             self._background_motion_artist.set_commands(())
@@ -562,8 +567,7 @@ class BarRenderer(TextCompositorMixin):
                 if motion_mode == "forward_motion"
                 else self._horizontal_speed_lines_background(
                     frame_index,
-                    response=response,
-                    phase=phase,
+                    line_positions=line_positions,
                 )
             )
             self._lru_put(self._background_motion_cache, cache_key, image, limit=8)
@@ -600,19 +604,19 @@ class BarRenderer(TextCompositorMixin):
         self,
         frame_index,
         *,
-        response=0.0,
-        phase=None,
+        line_positions=None,
     ):
         width = max(1, int(self.config.width))
         height = max(1, int(self.config.height))
-        speed, base_spacing = self._effective_speed_line_motion(response)
-        base_spacing = max(base_spacing, width / 92.0)
-        if phase is None:
-            velocity = -abs(speed)
-            phase = (
-                max(0, int(frame_index)) / max(1, self.config.fps)
-            ) * velocity
-        offset = (float(phase) % 1.0) * base_spacing
+        if line_positions is None:
+            line_positions = constant_speed_line_positions(
+                frame_index=frame_index,
+                fps=self.config.fps,
+                canvas_width=width,
+                base_speed=self.config.background_motion_speed,
+                base_spacing=self.config.background_motion_line_spacing,
+                line_thickness=self.config.background_motion_line_thickness,
+            )
         opacity = min(1.0, max(0.0, float(
             self.config.background_motion_intensity
         )))
@@ -625,48 +629,25 @@ class BarRenderer(TextCompositorMixin):
             )
         except ValueError:
             red, green, blue, color_alpha = (1.0, 1.0, 1.0, 1.0)
-        red = round(red * 255)
-        green = round(green * 255)
-        blue = round(blue * 255)
-        base_alpha = round(color_alpha * opacity * 255)
+        line_color = (
+            round(red * 255),
+            round(green * 255),
+            round(blue * 255),
+            round(color_alpha * opacity * 255),
+        )
         canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
-        first_x = -base_spacing + offset
-        line_count = int(np.ceil(width / base_spacing)) + 3
-
-        def draw_subdivision(fractions, fade):
-            alpha = round(base_alpha * fade)
-            if alpha <= 0:
-                return
-            color = (red, green, blue, alpha)
-            for index in range(line_count):
-                base_x = first_x + (index * base_spacing)
-                for fraction in fractions:
-                    x = round(base_x + (fraction * base_spacing))
-                    draw.line(
-                        (x, 0, x, height),
-                        fill=color,
-                        width=thickness,
-                    )
-
-        midpoint_fade, quarter_fade = speed_line_density_fades(
-            response=response,
-            response_strength=self.config.background_motion_response_strength,
-        )
-        draw_subdivision((0.25, 0.75), quarter_fade)
-        draw_subdivision((0.5,), midpoint_fade)
-        draw_subdivision((0.0,), 1.0)
+        for position in line_positions:
+            x = round(float(position))
+            if x < -thickness or x > width:
+                continue
+            draw.line(
+                (x, 0, x, height),
+                fill=line_color,
+                width=thickness,
+            )
         return np.array(
             np.asarray(canvas)[::-1], dtype=np.uint8, copy=True, order="C"
-        )
-
-    def _effective_speed_line_motion(self, response):
-        return effective_speed_line_motion(
-            base_speed=self.config.background_motion_speed,
-            base_spacing=self.config.background_motion_line_spacing,
-            line_thickness=self.config.background_motion_line_thickness,
-            response=response,
-            response_strength=self.config.background_motion_response_strength,
         )
 
     def _update_fun_fact_overlay(self, active_fact):

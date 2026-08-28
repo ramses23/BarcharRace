@@ -13,13 +13,17 @@ from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from config.project_file_loader import load_project_data
 from core.background_motion import (
+    MAX_ACTIVE_SPEED_LINES,
     MAX_EFFECTIVE_SPEED,
     SpeedLineMotionTracker,
+    constant_speed_line_positions,
     effective_speed_line_motion,
     normalized_leader_change,
-    speed_line_density_fades,
+    speed_line_emission_interval,
+    speed_line_position,
 )
 from models.bar_sprite import BarSprite
+from models.scene import Scene
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
 from studio.preview import render_project_preview
@@ -43,115 +47,215 @@ def visible_line_columns(image):
     return np.flatnonzero(np.max(image[:, :, 3], axis=0) > 0)
 
 
-def circular_phase_delta(start, end):
-    return ((end - start + 0.5) % 1.0) - 0.5
-
-
 class BackgroundSpeedLinesTest(unittest.TestCase):
-    def test_constant_lines_are_deterministic_and_move_left_by_frame(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            renderer = BarRenderer(
-                output_dir=temp_dir,
-                config=ChartConfig(
-                    width=320,
-                    height=180,
-                    fps=30,
-                    background_motion="horizontal_speed_lines",
-                    background_motion_speed=1.0,
-                    background_motion_line_spacing=80,
-                    background_motion_line_thickness=1,
+    def test_constant_schedule_matches_direct_frame_and_moves_only_left(self):
+        config = ChartConfig(
+            width=320,
+            height=180,
+            fps=30,
+            background_motion="horizontal_speed_lines",
+            background_motion_speed=1.0,
+            background_motion_line_spacing=80,
+            background_motion_line_thickness=1,
+        )
+        tracker = SpeedLineMotionTracker.from_config(config)
+        states = [tracker.next(0.0) for _ in range(12)]
+        direct = constant_speed_line_positions(
+            frame_index=11,
+            fps=config.fps,
+            canvas_width=config.width,
+            base_speed=config.background_motion_speed,
+            base_spacing=config.background_motion_line_spacing,
+            line_thickness=config.background_motion_line_thickness,
+        )
+
+        self.assertEqual(len(states[-1].line_positions), len(direct))
+        np.testing.assert_allclose(states[-1].line_positions, direct)
+        for previous, current in zip(states, states[1:]):
+            previous_positions = dict(zip(
+                previous.emission_frames,
+                previous.line_positions,
+            ))
+            current_positions = dict(zip(
+                current.emission_frames,
+                current.line_positions,
+            ))
+            for emission in previous_positions.keys() & current_positions.keys():
+                self.assertLess(
+                    current_positions[emission],
+                    previous_positions[emission],
+                )
+
+    def test_new_lines_spawn_at_right_and_high_response_emits_more_often(self):
+        low_tracker = self._tracker(smoothing=1.0)
+        high_tracker = self._tracker(smoothing=1.0)
+        low_states = [low_tracker.next(0.0) for _ in range(120)]
+        high_states = [high_tracker.next(1.0) for _ in range(120)]
+        low_emissions = {
+            emission
+            for state in low_states
+            for emission in state.emission_frames
+            if emission >= 0.0
+        }
+        high_emissions = {
+            emission
+            for state in high_states
+            for emission in state.emission_frames
+            if emission >= 0.0
+        }
+
+        self.assertGreater(len(high_emissions), len(low_emissions))
+        self.assertLess(
+            high_states[0].emission_interval_frames,
+            low_states[0].emission_interval_frames,
+        )
+        first_seen = {}
+        for state in high_states:
+            for emission, position in zip(
+                state.emission_frames,
+                state.line_positions,
+            ):
+                if emission >= 0.0:
+                    first_seen.setdefault(emission, position)
+        for emission in high_emissions:
+            self.assertEqual(
+                speed_line_position(
+                    canvas_width=high_tracker.canvas_width,
+                    speed_pixels_per_frame=(
+                        high_tracker.speed_pixels_per_frame
+                    ),
+                    current_frame=emission,
+                    emission_frame=emission,
                 ),
+                high_tracker.canvas_width,
             )
-            try:
-                first = renderer._horizontal_speed_lines_background(10)
-                repeated = renderer._horizontal_speed_lines_background(10)
-                later = renderer._horizontal_speed_lines_background(11)
-            finally:
-                renderer.close()
+            self.assertGreaterEqual(
+                first_seen[emission],
+                high_tracker.canvas_width
+                - high_tracker.speed_pixels_per_frame,
+            )
+            self.assertLessEqual(first_seen[emission], high_tracker.canvas_width)
 
-        self.assertTrue(np.array_equal(first, repeated))
-        self.assertFalse(np.array_equal(first, later))
-        first_columns = visible_line_columns(first)
-        later_columns = visible_line_columns(later)
-        self.assertEqual(len(first_columns), len(later_columns))
-        self.assertTrue(np.all(later_columns < first_columns))
-
-    def test_phase_never_reverses_and_acceleration_increases_leftward_speed(self):
-        low_tracker = SpeedLineMotionTracker(
-            fps=30,
-            base_speed=1.0,
-            base_spacing=160,
-            line_thickness=2,
-            response_mode="leader_acceleration",
-            response_strength=1.0,
-            smoothing=1.0,
-        )
-        high_tracker = SpeedLineMotionTracker(
-            fps=30,
-            base_speed=1.0,
-            base_spacing=160,
-            line_thickness=2,
-            response_mode="leader_acceleration",
-            response_strength=1.0,
-            smoothing=1.0,
-        )
-
-        low_states = [low_tracker.next(0.0) for _ in range(8)]
-        high_states = [high_tracker.next(1.0) for _ in range(8)]
-        low_deltas = [
-            circular_phase_delta(previous.phase, current.phase)
-            for previous, current in zip(low_states, low_states[1:])
+    def test_variable_schedule_reconstructs_direct_frame_deterministically(self):
+        responses = [*([0.1] * 12), *([0.8] * 24), *([0.2] * 18)]
+        sequential_tracker = self._tracker(smoothing=0.14)
+        sequential_states = [
+            sequential_tracker.next(response) for response in responses
         ]
-        high_deltas = [
-            circular_phase_delta(previous.phase, current.phase)
-            for previous, current in zip(high_states, high_states[1:])
-        ]
+        reconstructed_tracker = self._tracker(smoothing=0.14)
+        reconstructed = None
+        for response in responses:
+            reconstructed = reconstructed_tracker.next(response)
 
-        self.assertTrue(all(delta < 0.0 for delta in low_deltas))
-        self.assertTrue(all(delta < 0.0 for delta in high_deltas))
-        self.assertLess(high_deltas[0], low_deltas[0])
-        self.assertGreater(
-            high_states[0].effective_speed,
-            low_states[0].effective_speed,
+        self.assertIsNotNone(reconstructed)
+        self.assertEqual(
+            reconstructed.emission_frames,
+            sequential_states[-1].emission_frames,
         )
         self.assertEqual(
-            high_states[0].effective_spacing,
-            low_states[0].effective_spacing,
+            reconstructed.line_positions,
+            sequential_states[-1].line_positions,
+        )
+        self.assertEqual(
+            reconstructed.smoothed_response,
+            sequential_states[-1].smoothed_response,
         )
 
-    def test_left_edge_wrap_reappears_at_right(self):
+    def test_response_changes_do_not_reposition_or_remove_existing_lines(self):
+        low_tracker = self._tracker(smoothing=1.0)
+        changing_tracker = self._tracker(smoothing=1.0)
+
+        for _ in range(8):
+            low_state = low_tracker.next(0.0)
+            changing_state = changing_tracker.next(0.0)
+        tracked_emissions = set(changing_state.emission_frames)
+
+        for _ in range(8):
+            low_state = low_tracker.next(0.0)
+            changing_state = changing_tracker.next(1.0)
+            low_positions = dict(zip(
+                low_state.emission_frames,
+                low_state.line_positions,
+            ))
+            changing_positions = dict(zip(
+                changing_state.emission_frames,
+                changing_state.line_positions,
+            ))
+            for emission in tracked_emissions & low_positions.keys():
+                self.assertIn(emission, changing_positions)
+                self.assertAlmostEqual(
+                    changing_positions[emission],
+                    low_positions[emission],
+                )
+
+        before_slowdown = dict(zip(
+            changing_state.emission_frames,
+            changing_state.line_positions,
+        ))
+        slowed = changing_tracker.next(0.0)
+        after_slowdown = dict(zip(
+            slowed.emission_frames,
+            slowed.line_positions,
+        ))
+        self.assertGreater(
+            slowed.emission_interval_frames,
+            changing_state.emission_interval_frames,
+        )
+        for emission, position in before_slowdown.items():
+            expected = position - changing_tracker.speed_pixels_per_frame
+            if expected >= -changing_tracker.line_thickness:
+                self.assertIn(emission, after_slowdown)
+                self.assertAlmostEqual(after_slowdown[emission], expected)
+
+    def test_renderer_draws_only_supplied_emissions_without_subdivisions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             renderer = BarRenderer(
                 output_dir=temp_dir,
                 config=ChartConfig(
                     width=320,
                     height=180,
-                    fps=10,
                     background_motion="horizontal_speed_lines",
-                    background_motion_speed=1.0,
+                    background_motion_intensity=1.0,
                     background_motion_line_spacing=80,
                     background_motion_line_thickness=1,
                 ),
             )
-            tracker = SpeedLineMotionTracker.from_config(renderer.config)
-            first_phase = tracker.next().phase
-            next_phase = tracker.next().phase
             try:
-                first = renderer._horizontal_speed_lines_background(
-                    0, phase=first_phase
-                )
-                wrapped = renderer._horizontal_speed_lines_background(
-                    1, phase=next_phase
+                image = renderer._horizontal_speed_lines_background(
+                    50,
+                    line_positions=(40.0, 160.0, 320.0),
                 )
             finally:
                 renderer.close()
 
-        first_columns = visible_line_columns(first)
-        wrapped_columns = visible_line_columns(wrapped)
-        self.assertEqual(first_columns[0], 0)
-        self.assertLess(wrapped_columns[0], first_columns[1])
-        self.assertGreater(wrapped_columns[-1], first_columns[-1])
-        self.assertLessEqual(320 - wrapped_columns[-1], 8)
+        self.assertEqual(tuple(visible_line_columns(image)), (40, 160))
+
+    def test_lines_exit_left_and_are_not_wrapped_or_removed_early(self):
+        tracker = self._tracker(smoothing=1.0)
+        positions = []
+        disappeared_at = None
+        for frame_index in range(180):
+            state = tracker.next(0.8 if frame_index < 60 else 0.2)
+            by_emission = dict(zip(
+                state.emission_frames,
+                state.line_positions,
+            ))
+            if 0.0 in by_emission:
+                positions.append(by_emission[0.0])
+            elif positions:
+                disappeared_at = frame_index
+                break
+
+        self.assertIsNotNone(disappeared_at)
+        self.assertTrue(all(
+            current < previous
+            for previous, current in zip(positions, positions[1:])
+        ))
+        self.assertGreaterEqual(positions[-1], -tracker.line_thickness)
+        self.assertLess(
+            positions[-1] - tracker.speed_pixels_per_frame,
+            -tracker.line_thickness,
+        )
 
     def test_leader_change_is_scale_independent_and_tie_safe(self):
         low = normalized_leader_change(
@@ -199,7 +303,7 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
         self.assertLess(released.smoothed_response, high.smoothed_response)
         self.assertGreater(released.smoothed_response, 0.0)
 
-    def test_response_increases_speed_preserves_base_spacing_and_clamps(self):
+    def test_emission_interval_reacts_to_data_and_is_safely_bounded(self):
         low_speed, low_spacing = effective_speed_line_motion(
             base_speed=1.0,
             base_spacing=160,
@@ -222,95 +326,45 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             response_strength=999,
         )
 
-        self.assertGreater(high_speed, low_speed)
+        low_interval = speed_line_emission_interval(
+            fps=30,
+            canvas_width=1920,
+            base_speed=1.0,
+            base_spacing=160,
+            line_thickness=2,
+            response=0.0,
+            response_strength=1.0,
+        )
+        high_interval = speed_line_emission_interval(
+            fps=30,
+            canvas_width=1920,
+            base_speed=1.0,
+            base_spacing=160,
+            line_thickness=2,
+            response=1.0,
+            response_strength=1.0,
+        )
+        dense_tracker = SpeedLineMotionTracker(
+            fps=30,
+            base_speed=4.0,
+            base_spacing=24,
+            line_thickness=1,
+            response_mode="leader_acceleration",
+            response_strength=2.0,
+            smoothing=1.0,
+            canvas_width=7680,
+        )
+        dense_states = [dense_tracker.next(1.0) for _ in range(500)]
+
+        self.assertEqual(high_speed, low_speed)
         self.assertEqual(high_spacing, low_spacing)
         self.assertEqual(high_spacing, 160.0)
+        self.assertLess(high_interval, low_interval)
         self.assertLessEqual(clamped_speed, MAX_EFFECTIVE_SPEED)
         self.assertGreaterEqual(clamped_spacing, 48.0)
-
-    def test_density_adds_fixed_subdivisions_with_progressive_fade(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            renderer = BarRenderer(
-                output_dir=temp_dir,
-                config=ChartConfig(
-                    width=320,
-                    height=180,
-                    background_motion="horizontal_speed_lines",
-                    background_motion_intensity=0.8,
-                    background_motion_line_spacing=80,
-                    background_motion_line_thickness=1,
-                    background_motion_response_strength=1.0,
-                ),
-            )
-            try:
-                images = {
-                    response: renderer._horizontal_speed_lines_background(
-                        0,
-                        response=response,
-                        phase=0.0,
-                    )
-                    for response in (0.0, 0.1, 0.2, 0.5, 0.8, 1.0)
-                }
-                dense_before = renderer._horizontal_speed_lines_background(
-                    0, response=1.0, phase=0.4
-                )
-                dense_later = renderer._horizontal_speed_lines_background(
-                    1, response=1.0, phase=0.35
-                )
-            finally:
-                renderer.close()
-
-        base_alpha = [int(image[0, 0, 3]) for image in images.values()]
-        midpoint_alpha = {
-            response: int(image[0, 40, 3])
-            for response, image in images.items()
-        }
-        quarter_alpha = {
-            response: int(image[0, 20, 3])
-            for response, image in images.items()
-        }
-
-        self.assertEqual(len(set(base_alpha)), 1)
-        self.assertGreater(base_alpha[0], 0)
-        self.assertEqual(midpoint_alpha[0.0], 0)
-        self.assertLess(midpoint_alpha[0.1], midpoint_alpha[0.2])
-        self.assertLess(midpoint_alpha[0.2], midpoint_alpha[0.5])
-        self.assertEqual(midpoint_alpha[0.5], base_alpha[0])
-        self.assertEqual(quarter_alpha[0.5], 0)
-        self.assertLess(quarter_alpha[0.5], quarter_alpha[0.8])
-        self.assertLess(quarter_alpha[0.8], quarter_alpha[1.0])
-        self.assertEqual(quarter_alpha[1.0], base_alpha[0])
-        self.assertGreater(
-            len(visible_line_columns(images[0.8])),
-            len(visible_line_columns(images[0.1])),
-        )
-        self.assertGreater(
-            len(visible_line_columns(images[0.8])),
-            len(visible_line_columns(images[0.2])),
-        )
-        self.assertLess(midpoint_alpha[0.2], midpoint_alpha[0.8])
-        self.assertLess(quarter_alpha[0.2], quarter_alpha[0.8])
-        self.assertTrue(
-            set(visible_line_columns(images[0.0])).issubset(
-                set(visible_line_columns(images[1.0]))
-            )
-        )
-        dense_before_columns = visible_line_columns(dense_before)
-        dense_later_columns = visible_line_columns(dense_later)
-        self.assertEqual(len(dense_before_columns), len(dense_later_columns))
-        self.assertTrue(np.all(dense_later_columns < dense_before_columns))
-
-        fades = [
-            speed_line_density_fades(
-                response=response,
-                response_strength=1.0,
-            )
-            for response in (0.8, 0.7, 0.6, 0.5, 0.2)
-        ]
         self.assertTrue(all(
-            current[0] >= following[0]
-            and current[1] >= following[1]
-            for current, following in zip(fades, fades[1:])
+            len(state.line_positions) <= MAX_ACTIVE_SPEED_LINES
+            for state in dense_states
         ))
 
     def test_line_color_thickness_and_canvas_dimensions_are_applied(self):
@@ -350,13 +404,13 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             )
             try:
                 thin = thin_renderer._horizontal_speed_lines_background(
-                    0, phase=0.0
+                    0, line_positions=(0.0, 80.0, 160.0, 240.0)
                 )
                 thick = thick_renderer._horizontal_speed_lines_background(
-                    0, phase=0.0
+                    0, line_positions=(0.0, 80.0, 160.0, 240.0)
                 )
                 vertical = vertical_renderer._horizontal_speed_lines_background(
-                    0, phase=0.0
+                    0, line_positions=(0.0, 80.0, 160.0, 240.0)
                 )
             finally:
                 thin_renderer.close()
@@ -374,6 +428,72 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
         self.assertGreater(colored_pixel[0], 240)
         self.assertLess(colored_pixel[1], 50)
         self.assertEqual(colored_pixel[3], 255)
+
+    def test_background_motion_is_composed_below_all_chart_content(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=320,
+            height=180,
+            dpi=72,
+            left_margin=20,
+            right_margin=20,
+            background_color_override="#000000",
+            background_motion="horizontal_speed_lines",
+            background_motion_intensity=1.0,
+            background_motion_line_thickness=3,
+            background_motion_line_color="#FFFFFF",
+            title_enabled=False,
+            subtitle_enabled=False,
+            time_label_enabled=False,
+            source_label_enabled=False,
+            category_labels_enabled=False,
+            value_labels_enabled=False,
+        ))
+        scene = Scene(
+            title="",
+            bars=[BarSprite(
+                name="Bar",
+                value=1,
+                color="#FF0000",
+                x=20,
+                y=90,
+                width=280,
+                height=30,
+            )],
+            background_motion_line_positions=(100.0,),
+        )
+        try:
+            rgba = np.frombuffer(
+                renderer.render_rgba(scene),
+                dtype=np.uint8,
+            ).reshape((180, 320, 4))
+            background_zorder = renderer._background_motion_artist.get_zorder()
+            bar_content_artist = next(
+                artist
+                for artist in (
+                    renderer._advanced_composite_artist,
+                    renderer._gradient_artist,
+                    renderer._bar_artists[0].bar,
+                )
+                if artist is not None
+            )
+            content_zorders = (
+                renderer._text_background_artist.get_zorder(),
+                renderer._logo_composite_artist.get_zorder(),
+                renderer._text_bar_artist.get_zorder(),
+                renderer._text_foreground_artist.get_zorder(),
+                renderer._fun_fact_artist.get_zorder(),
+                renderer._short_overlay_artist.get_zorder(),
+                bar_content_artist.get_zorder(),
+            )
+        finally:
+            renderer.close()
+
+        self.assertTrue(all(
+            background_zorder < zorder for zorder in content_zorders
+        ))
+        self.assertGreater(rgba[90, 100, 0], 240)
+        self.assertLess(rgba[90, 100, 1], 20)
+        self.assertLess(rgba[90, 100, 2], 20)
 
     def test_builder_loader_and_form_values_preserve_speed_line_settings(self):
         data = self._project_data(
@@ -434,17 +554,44 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
                 for call in renderer_class.return_value.render.call_args_list
             ]
             responses = [scene.background_motion_response for scene in scenes]
-            phases = [scene.background_motion_phase for scene in scenes]
+            line_positions = [
+                scene.background_motion_line_positions for scene in scenes
+            ]
             self.assertEqual(result.frames_rendered, 4)
             self.assertEqual(chart.steps_per_transition, 4)
             self.assertGreater(responses[-1], responses[0])
             self.assertTrue(all(math.isfinite(value) for value in responses))
-            self.assertEqual(phases[0], 0.0)
-            phase_deltas = [
-                circular_phase_delta(previous, current)
-                for previous, current in zip(phases, phases[1:])
-            ]
-            self.assertTrue(all(delta < 0.0 for delta in phase_deltas))
+            self.assertTrue(all(value is not None for value in line_positions))
+            self.assertGreater(len(line_positions[0]), 0)
+
+            preview_data = self._project_data(
+                csv_path="data.csv",
+                steps_per_transition=4,
+                background_motion="horizontal_speed_lines",
+                background_motion_response="leader_acceleration",
+            )
+            with patch("studio.preview.BarRenderer") as preview_renderer:
+                preview_renderer.return_value.render.return_value = str(
+                    root / "preview.png"
+                )
+                render_project_preview(
+                    root / "project.json",
+                    output_dir=root / "previews",
+                    root_dir=root,
+                    project_data=preview_data,
+                    preview_mode="transition",
+                    year=2000,
+                    transition_progress=0.5,
+                )
+            preview_scene = preview_renderer.return_value.render.call_args.args[0]
+            self.assertEqual(
+                preview_scene.background_motion_line_positions,
+                scenes[2].background_motion_line_positions,
+            )
+            self.assertEqual(
+                preview_scene.background_motion_response,
+                scenes[2].background_motion_response,
+            )
 
     def test_short_preview_receives_line_color_thickness_and_vertical_canvas(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -482,13 +629,27 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             self.assertEqual((config.width, config.height), (1080, 1920))
             self.assertEqual(config.background_motion_line_color, "#12AB34")
             self.assertEqual(config.background_motion_line_thickness, 5)
-            self.assertIsNotNone(scene.background_motion_phase)
+            self.assertIsNotNone(scene.background_motion_line_positions)
+            self.assertGreater(len(scene.background_motion_line_positions), 0)
             self.assertGreater(scene.background_motion_response, 0.0)
 
     def test_legacy_modes_remain_available_with_off_as_default(self):
         self.assertEqual(ChartConfig().background_motion, "off")
         forward = ChartConfig(background_motion="forward_motion")
         self.assertEqual(forward.background_motion, "forward_motion")
+
+    @staticmethod
+    def _tracker(*, smoothing=1.0):
+        return SpeedLineMotionTracker(
+            fps=30,
+            base_speed=1.0,
+            base_spacing=80,
+            line_thickness=1,
+            response_mode="leader_acceleration",
+            response_strength=1.0,
+            smoothing=smoothing,
+            canvas_width=320,
+        )
 
     @staticmethod
     def _project_data(**overrides):

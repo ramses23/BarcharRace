@@ -166,7 +166,9 @@ def render_project_preview(
         scene.background_motion_response = (
             speed_line_motion.smoothed_response
         )
-        scene.background_motion_phase = speed_line_motion.phase
+        scene.background_motion_line_positions = (
+            speed_line_motion.line_positions
+        )
     duration = estimate_export_duration(
         timeline.get_years(),
         chart_config,

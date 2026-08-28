@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from math import isfinite
+from math import ceil, floor, inf, isfinite
 
 
 FULL_RESPONSE_RELATIVE_CHANGE = 0.25
@@ -7,6 +7,9 @@ DEFAULT_RESPONSE_SMOOTHING = 0.14
 MAX_EFFECTIVE_SPEED = 12.0
 MIN_EFFECTIVE_SPACING = 24.0
 MAX_EFFECTIVE_SPACING = 2048.0
+MIN_EMISSION_INTERVAL_FRAMES = 2.0
+MAX_ACTIVE_SPEED_LINES = 128
+MAX_EMISSION_FREQUENCY_MULTIPLIER = 4.0
 
 
 @dataclass(frozen=True)
@@ -15,7 +18,9 @@ class SpeedLineMotion:
     smoothed_response: float
     effective_speed: float
     effective_spacing: float
-    phase: float
+    emission_interval_frames: float
+    emission_frames: tuple[float, ...]
+    line_positions: tuple[float, ...]
 
 
 def normalized_leader_change(current_bars, start_bars, end_bars):
@@ -38,8 +43,6 @@ def effective_speed_line_motion(
     response,
     response_strength,
 ):
-    response = _finite_clamp(response, 0.0, 1.0, default=0.0)
-    strength = _finite_clamp(response_strength, 0.0, 2.0, default=1.0)
     base_speed = _finite_clamp(base_speed, 0.0, MAX_EFFECTIVE_SPEED, default=1.0)
     thickness = _finite_clamp(line_thickness, 1.0, 64.0, default=2.0)
     minimum_spacing = max(MIN_EFFECTIVE_SPACING, (thickness * 2.0) + 8.0)
@@ -49,20 +52,113 @@ def effective_speed_line_motion(
         MAX_EFFECTIVE_SPACING,
         default=160.0,
     )
-    speed_multiplier = 1.0 + (2.0 * response * strength)
-    return (
-        min(MAX_EFFECTIVE_SPEED, base_speed * speed_multiplier),
-        base_spacing,
+    return base_speed, base_spacing
+
+
+def speed_line_emission_interval(
+    *,
+    fps,
+    canvas_width,
+    base_speed,
+    base_spacing,
+    line_thickness,
+    response,
+    response_strength,
+):
+    speed, spacing = effective_speed_line_motion(
+        base_speed=base_speed,
+        base_spacing=base_spacing,
+        line_thickness=line_thickness,
+        response=response,
+        response_strength=response_strength,
     )
+    fps = max(1.0, _finite_value(fps) or 1.0)
+    width = max(1.0, _finite_value(canvas_width) or 1.0)
+    thickness = _finite_clamp(line_thickness, 1.0, 64.0, default=2.0)
+    speed_pixels_per_frame = (speed * spacing) / fps
+    if speed_pixels_per_frame <= 0.0:
+        return inf
 
-
-def speed_line_density_fades(*, response, response_strength):
     response = _finite_clamp(response, 0.0, 1.0, default=0.0)
     strength = _finite_clamp(response_strength, 0.0, 2.0, default=1.0)
     density = _clamp(response * strength, 0.0, 1.0)
-    midpoint_fade = _smoothstep(_clamp(density * 2.0, 0.0, 1.0))
-    quarter_fade = _smoothstep(_clamp((density - 0.5) * 2.0, 0.0, 1.0))
-    return midpoint_fade, quarter_fade
+    frequency_multiplier = 1.0 + (
+        (MAX_EMISSION_FREQUENCY_MULTIPLIER - 1.0) * density
+    )
+    requested_interval = (fps / speed) / frequency_multiplier
+    crossing_frames = (width + thickness) / speed_pixels_per_frame
+    bounded_interval = crossing_frames / max(1, MAX_ACTIVE_SPEED_LINES - 1)
+    return max(
+        MIN_EMISSION_INTERVAL_FRAMES,
+        bounded_interval,
+        requested_interval,
+    )
+
+
+def constant_speed_line_positions(
+    *,
+    frame_index,
+    fps,
+    canvas_width,
+    base_speed,
+    base_spacing,
+    line_thickness,
+    response=0.0,
+    response_strength=1.0,
+):
+    speed, spacing = effective_speed_line_motion(
+        base_speed=base_speed,
+        base_spacing=base_spacing,
+        line_thickness=line_thickness,
+        response=response,
+        response_strength=response_strength,
+    )
+    fps = max(1.0, _finite_value(fps) or 1.0)
+    width = max(1.0, _finite_value(canvas_width) or 1.0)
+    thickness = _finite_clamp(line_thickness, 1.0, 64.0, default=2.0)
+    speed_pixels_per_frame = (speed * spacing) / fps
+    if speed_pixels_per_frame <= 0.0:
+        return ()
+
+    interval = speed_line_emission_interval(
+        fps=fps,
+        canvas_width=width,
+        base_speed=speed,
+        base_spacing=spacing,
+        line_thickness=thickness,
+        response=response,
+        response_strength=response_strength,
+    )
+    current_frame = max(0.0, _finite_value(frame_index) or 0.0)
+    crossing_frames = (width + thickness) / speed_pixels_per_frame
+    first_index = ceil((current_frame - crossing_frames) / interval)
+    last_index = floor(current_frame / interval)
+    return tuple(
+        speed_line_position(
+            canvas_width=width,
+            speed_pixels_per_frame=speed_pixels_per_frame,
+            current_frame=current_frame,
+            emission_frame=index * interval,
+        )
+        for index in range(first_index, last_index + 1)
+    )
+
+
+def speed_line_position(
+    *,
+    canvas_width,
+    speed_pixels_per_frame,
+    current_frame,
+    emission_frame,
+):
+    width = max(1.0, _finite_value(canvas_width) or 1.0)
+    speed = abs(_finite_value(speed_pixels_per_frame) or 0.0)
+    age = max(
+        0.0,
+        (_finite_value(current_frame) or 0.0)
+        - (_finite_value(emission_frame) or 0.0),
+    )
+    return width - (speed * age)
 
 
 class SpeedLineMotionTracker:
@@ -76,16 +172,36 @@ class SpeedLineMotionTracker:
         response_mode,
         response_strength,
         smoothing=DEFAULT_RESPONSE_SMOOTHING,
+        canvas_width=1920,
     ):
         self.fps = max(1.0, float(fps))
-        self.base_speed = base_speed
-        self.base_spacing = base_spacing
-        self.line_thickness = line_thickness
+        self.base_speed, self.base_spacing = effective_speed_line_motion(
+            base_speed=base_speed,
+            base_spacing=base_spacing,
+            line_thickness=line_thickness,
+            response=0.0,
+            response_strength=response_strength,
+        )
+        self.line_thickness = _finite_clamp(
+            line_thickness,
+            1.0,
+            64.0,
+            default=2.0,
+        )
+        self.canvas_width = max(
+            1.0,
+            _finite_value(canvas_width) or 1920.0,
+        )
         self.response_mode = response_mode
         self.response_strength = response_strength
         self.smoothing = _finite_clamp(smoothing, 0.01, 1.0, default=0.14)
         self.response = 0.0
-        self.phase = 0.0
+        self.frame_index = 0
+        self.emission_progress = 0.0
+        self.speed_pixels_per_frame = (
+            self.base_speed * self.base_spacing
+        ) / self.fps
+        self.emission_frames = self._initial_emission_frames()
 
     @classmethod
     def from_config(cls, config):
@@ -96,6 +212,7 @@ class SpeedLineMotionTracker:
             line_thickness=config.background_motion_line_thickness,
             response_mode=config.background_motion_response,
             response_strength=config.background_motion_response_strength,
+            canvas_width=config.width,
         )
 
     def next(self, target_response=0.0):
@@ -105,23 +222,79 @@ class SpeedLineMotionTracker:
             else 0.0
         )
         self.response += (target - self.response) * self.smoothing
-        speed, spacing = effective_speed_line_motion(
+        interval = speed_line_emission_interval(
+            fps=self.fps,
+            canvas_width=self.canvas_width,
             base_speed=self.base_speed,
             base_spacing=self.base_spacing,
             line_thickness=self.line_thickness,
             response=self.response,
             response_strength=self.response_strength,
         )
+        active_emissions, line_positions = self._active_lines()
         motion = SpeedLineMotion(
             target_response=target,
             smoothed_response=self.response,
-            effective_speed=speed,
-            effective_spacing=spacing,
-            phase=self.phase,
+            effective_speed=self.base_speed,
+            effective_spacing=self.base_spacing,
+            emission_interval_frames=interval,
+            emission_frames=active_emissions,
+            line_positions=line_positions,
         )
-        velocity = -abs(speed)
-        self.phase = (self.phase + (velocity / self.fps)) % 1.0
+        self._advance_emission_clock(interval)
+        self.frame_index += 1
         return motion
+
+    def _initial_emission_frames(self):
+        if self.speed_pixels_per_frame <= 0.0:
+            return []
+        interval = speed_line_emission_interval(
+            fps=self.fps,
+            canvas_width=self.canvas_width,
+            base_speed=self.base_speed,
+            base_spacing=self.base_spacing,
+            line_thickness=self.line_thickness,
+            response=0.0,
+            response_strength=self.response_strength,
+        )
+        crossing_frames = (
+            self.canvas_width + self.line_thickness
+        ) / self.speed_pixels_per_frame
+        count = min(
+            MAX_ACTIVE_SPEED_LINES,
+            int(ceil(crossing_frames / interval)) + 1,
+        )
+        return sorted(-(index * interval) for index in range(count))
+
+    def _active_lines(self):
+        active_emissions = []
+        line_positions = []
+        for emission_frame in self.emission_frames:
+            if emission_frame > self.frame_index:
+                continue
+            position = speed_line_position(
+                canvas_width=self.canvas_width,
+                speed_pixels_per_frame=self.speed_pixels_per_frame,
+                current_frame=self.frame_index,
+                emission_frame=emission_frame,
+            )
+            if position < -self.line_thickness:
+                continue
+            active_emissions.append(emission_frame)
+            line_positions.append(position)
+        self.emission_frames = active_emissions
+        return tuple(active_emissions), tuple(line_positions)
+
+    def _advance_emission_clock(self, interval):
+        if not isfinite(interval) or interval <= 0.0:
+            return
+        rate = 1.0 / interval
+        next_progress = self.emission_progress + rate
+        if next_progress >= 1.0:
+            offset = (1.0 - self.emission_progress) / rate
+            self.emission_frames.append(self.frame_index + offset)
+            next_progress -= 1.0
+        self.emission_progress = max(0.0, min(next_progress, 1.0))
 
 
 def _current_leader(bars):
@@ -173,7 +346,3 @@ def _finite_clamp(value, minimum, maximum, *, default):
 
 def _clamp(value, minimum, maximum):
     return max(minimum, min(maximum, value))
-
-
-def _smoothstep(value):
-    return value * value * (3.0 - (2.0 * value))
