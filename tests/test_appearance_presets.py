@@ -42,6 +42,8 @@ class AppearancePresetsTest(unittest.TestCase):
                 "background_motion_line_color": "#12AB34",
                 "background_motion_response": "leader_acceleration",
                 "background_motion_response_strength": 1.7,
+                "background_motion_exit_compression": True,
+                "background_motion_exit_compression_strength": 0.7,
                 "max_visible_bars": 7,
                 "title_font_size": 44,
                 "title_text_color": "#ABCDEF",
@@ -134,6 +136,13 @@ class AppearancePresetsTest(unittest.TestCase):
             preset.canvas["background_motion_response"],
             "leader_acceleration",
         )
+        self.assertTrue(
+            preset.canvas["background_motion_exit_compression"]
+        )
+        self.assertEqual(
+            preset.canvas["background_motion_exit_compression_strength"],
+            0.7,
+        )
         self.assertEqual(preset.bars["bar_shape"], "capsule")
         self.assertEqual(preset.bars["logo_size"], 42)
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
@@ -192,6 +201,8 @@ class AppearancePresetsTest(unittest.TestCase):
             "background_motion_line_color",
             "background_motion_response",
             "background_motion_response_strength",
+            "background_motion_exit_compression",
+            "background_motion_exit_compression_strength",
         ):
             current["canvas"].pop(field)
 
@@ -205,6 +216,13 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(loaded.canvas["background_motion_line_thickness"], 2.0)
         self.assertEqual(loaded.canvas["background_motion_line_color"], "#FFFFFF")
         self.assertEqual(loaded.canvas["background_motion_response"], "constant")
+        self.assertFalse(
+            loaded.canvas["background_motion_exit_compression"]
+        )
+        self.assertEqual(
+            loaded.canvas["background_motion_exit_compression_strength"],
+            0.5,
+        )
 
     def test_applies_visual_fields_without_mutating_or_copying_project_content(self):
         source = self.project_data()

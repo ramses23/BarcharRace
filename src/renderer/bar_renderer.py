@@ -19,7 +19,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
-from core.background_motion import constant_speed_line_positions
+from core.background_motion import (
+    constant_speed_line_positions,
+    left_edge_exit_compressed_positions,
+)
 from core.bar_appearance import (
     uses_configurable_bar_content,
     uses_material_bar_renderer,
@@ -556,6 +559,10 @@ class BarRenderer(TextCompositorMixin):
                 round(float(self.config.background_motion_intensity), 4),
                 round(float(self.config.background_motion_line_thickness), 4),
                 self.config.background_motion_line_color,
+                bool(self.config.background_motion_exit_compression),
+                round(float(
+                    self.config.background_motion_exit_compression_strength
+                ), 4),
             )
         else:
             self._background_motion_artist.set_commands(())
@@ -617,6 +624,15 @@ class BarRenderer(TextCompositorMixin):
                 base_spacing=self.config.background_motion_line_spacing,
                 line_thickness=self.config.background_motion_line_thickness,
             )
+        line_positions = left_edge_exit_compressed_positions(
+            line_positions,
+            canvas_width=width,
+            base_spacing=self.config.background_motion_line_spacing,
+            enabled=self.config.background_motion_exit_compression,
+            strength=(
+                self.config.background_motion_exit_compression_strength
+            ),
+        )
         opacity = min(1.0, max(0.0, float(
             self.config.background_motion_intensity
         )))

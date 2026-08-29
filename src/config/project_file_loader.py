@@ -418,7 +418,11 @@ def _convert_chart_value(key, value):
             "forward_motion",
             "horizontal_speed_lines",
         ),
-        "background_motion_response": ("constant", "leader_acceleration"),
+        "background_motion_response": (
+            "constant",
+            "leader_acceleration",
+            "second_place_acceleration",
+        ),
     }
 
     if key in bar_enum_options:
@@ -454,6 +458,7 @@ def _convert_chart_value(key, value):
         "rank_labels_enabled",
         "category_labels_enabled",
         "value_labels_enabled",
+        "background_motion_exit_compression",
     ):
         if not isinstance(value, bool):
             raise ProjectFileError(f"Chart field '{key}' must be boolean.")
@@ -515,6 +520,7 @@ def _convert_chart_value(key, value):
         "source_text_opacity",
         "rank_label_text_opacity",
         "background_motion_intensity",
+        "background_motion_exit_compression_strength",
     ):
         if (
             isinstance(value, bool)

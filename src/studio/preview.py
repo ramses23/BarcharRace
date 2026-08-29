@@ -3,7 +3,7 @@ from dataclasses import replace
 from config.project_file_loader import load_project_data, load_project_file
 from core.background_motion import (
     SpeedLineMotionTracker,
-    normalized_leader_change,
+    normalized_motion_response,
 )
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
@@ -405,15 +405,11 @@ def _preview_speed_line_motion(
             )
 
         for frame_sprites in frames:
-            target_response = (
-                normalized_leader_change(
-                    frame_sprites,
-                    start_sprites,
-                    end_sprites,
-                )
-                if chart_config.background_motion_response
-                == "leader_acceleration"
-                else 0.0
+            target_response = normalized_motion_response(
+                frame_sprites,
+                start_sprites,
+                end_sprites,
+                response_mode=chart_config.background_motion_response,
             )
             latest_motion = tracker.next(target_response)
             if current_frame_index >= target_frame_index:

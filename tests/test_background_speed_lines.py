@@ -18,7 +18,9 @@ from core.background_motion import (
     SpeedLineMotionTracker,
     constant_speed_line_positions,
     effective_speed_line_motion,
+    left_edge_exit_compressed_positions,
     normalized_leader_change,
+    normalized_second_place_change,
     speed_line_emission_interval,
     speed_line_position,
 )
@@ -48,6 +50,18 @@ def visible_line_columns(image):
 
 
 class BackgroundSpeedLinesTest(unittest.TestCase):
+    def test_spacing_accepts_800_without_changing_the_default(self):
+        default_config = ChartConfig()
+        config = ChartConfig(
+            background_motion="horizontal_speed_lines",
+            background_motion_line_spacing=800,
+        )
+        tracker = SpeedLineMotionTracker.from_config(config)
+
+        self.assertEqual(default_config.background_motion_line_spacing, 160.0)
+        self.assertEqual(config.background_motion_line_spacing, 800)
+        self.assertEqual(tracker.base_spacing, 800.0)
+
     def test_constant_schedule_matches_direct_frame_and_moves_only_left(self):
         config = ChartConfig(
             width=320,
@@ -85,6 +99,46 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
                     current_positions[emission],
                     previous_positions[emission],
                 )
+
+    def test_initial_frame_is_clear_and_first_line_enters_from_right(self):
+        tracker = self._tracker(smoothing=1.0)
+        initial = tracker.next(0.0)
+        following = tracker.next(0.0)
+
+        self.assertFalse(any(
+            -tracker.line_thickness <= position < tracker.canvas_width
+            for position in initial.line_positions
+        ))
+        self.assertIn(tracker.canvas_width, initial.line_positions)
+        self.assertAlmostEqual(
+            following.line_positions[0],
+            tracker.canvas_width - tracker.speed_pixels_per_frame,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            renderer = BarRenderer(
+                output_dir=temp_dir,
+                config=ChartConfig(
+                    width=320,
+                    height=180,
+                    background_motion="horizontal_speed_lines",
+                    background_motion_intensity=1.0,
+                ),
+            )
+            try:
+                initial_image = renderer._horizontal_speed_lines_background(
+                    0,
+                    line_positions=initial.line_positions,
+                )
+                following_image = renderer._horizontal_speed_lines_background(
+                    1,
+                    line_positions=following.line_positions,
+                )
+            finally:
+                renderer.close()
+
+        self.assertEqual(len(visible_line_columns(initial_image)), 0)
+        self.assertGreater(len(visible_line_columns(following_image)), 0)
 
     def test_new_lines_spawn_at_right_and_high_response_emits_more_often(self):
         low_tracker = self._tracker(smoothing=1.0)
@@ -279,6 +333,88 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
         self.assertTrue(math.isfinite(tie))
         self.assertGreaterEqual(tie, 0.0)
         self.assertLessEqual(tie, 1.0)
+
+    def test_second_place_change_uses_second_rank_and_has_stable_fallback(self):
+        current = [
+            sprite("Leader", 200),
+            sprite("Second", 110),
+            sprite("Third", 90),
+        ]
+        start = [
+            sprite("Leader", 200),
+            sprite("Second", 100),
+            sprite("Third", 90),
+        ]
+        end = [
+            sprite("Leader", 200),
+            sprite("Second", 150),
+            sprite("Third", 90),
+        ]
+
+        self.assertEqual(normalized_leader_change(current, start, end), 0.0)
+        self.assertEqual(
+            normalized_second_place_change(current, start, end),
+            1.0,
+        )
+        self.assertEqual(
+            normalized_second_place_change(
+                [sprite("Only", 100)],
+                [sprite("Only", 90)],
+                [sprite("Only", 110)],
+            ),
+            0.0,
+        )
+        self.assertEqual(
+            normalized_second_place_change(
+                [sprite("Only", 100), sprite("Hidden", 90, opacity=0.0)],
+                start,
+                end,
+            ),
+            0.0,
+        )
+
+    def test_exit_compression_is_local_bounded_and_never_reverses_motion(self):
+        raw = (12.0, 36.0, 72.0, 150.0, 260.0)
+        compressed = left_edge_exit_compressed_positions(
+            raw,
+            canvas_width=320,
+            base_spacing=80,
+            enabled=True,
+            strength=1.0,
+        )
+
+        self.assertLess(compressed[0], raw[0])
+        self.assertLess(compressed[1], raw[1])
+        self.assertLess(
+            compressed[1] - compressed[0],
+            raw[1] - raw[0],
+        )
+        self.assertEqual(compressed[3:], raw[3:])
+        self.assertEqual(
+            left_edge_exit_compressed_positions(
+                raw,
+                canvas_width=320,
+                base_spacing=80,
+                enabled=False,
+                strength=1.0,
+            ),
+            raw,
+        )
+
+        transformed = [
+            left_edge_exit_compressed_positions(
+                (position,),
+                canvas_width=320,
+                base_spacing=80,
+                enabled=True,
+                strength=1.0,
+            )[0]
+            for position in range(90, -1, -3)
+        ]
+        self.assertTrue(all(
+            current < previous
+            for previous, current in zip(transformed, transformed[1:])
+        ))
 
     def test_smoothing_approaches_and_releases_target_gradually(self):
         tracker = SpeedLineMotionTracker(
@@ -503,8 +639,10 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             background_motion_line_spacing=144,
             background_motion_line_thickness=5,
             background_motion_line_color="#12AB34",
-            background_motion_response="leader_acceleration",
+            background_motion_response="second_place_acceleration",
             background_motion_response_strength=1.7,
+            background_motion_exit_compression=True,
+            background_motion_exit_compression_strength=0.7,
         )
 
         config = load_project_data(data).chart_config
@@ -513,8 +651,13 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
         self.assertEqual(config.background_motion, "horizontal_speed_lines")
         self.assertEqual(config.background_motion_line_color, "#12AB34")
         self.assertEqual(config.background_motion_line_thickness, 5)
-        self.assertEqual(config.background_motion_response, "leader_acceleration")
+        self.assertEqual(
+            config.background_motion_response,
+            "second_place_acceleration",
+        )
         self.assertEqual(config.background_motion_response_strength, 1.7)
+        self.assertTrue(config.background_motion_exit_compression)
+        self.assertEqual(config.background_motion_exit_compression_strength, 0.7)
         self.assertEqual(values["background_motion_line_spacing"], 144)
         self.assertEqual(config.steps_per_transition, 30)
 
@@ -534,7 +677,8 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
                 frame_output_mode="png_sequence",
                 steps_per_transition=4,
                 background_motion="horizontal_speed_lines",
-                background_motion_response="leader_acceleration",
+                background_motion_response="second_place_acceleration",
+                background_motion_exit_compression=True,
             )
 
             with patch("pipeline.render_job.BarRenderer") as renderer_class:
@@ -562,13 +706,17 @@ class BackgroundSpeedLinesTest(unittest.TestCase):
             self.assertGreater(responses[-1], responses[0])
             self.assertTrue(all(math.isfinite(value) for value in responses))
             self.assertTrue(all(value is not None for value in line_positions))
-            self.assertGreater(len(line_positions[0]), 0)
+            self.assertFalse(any(
+                position < chart.width
+                for position in line_positions[0]
+            ))
 
             preview_data = self._project_data(
                 csv_path="data.csv",
                 steps_per_transition=4,
                 background_motion="horizontal_speed_lines",
-                background_motion_response="leader_acceleration",
+                background_motion_response="second_place_acceleration",
+                background_motion_exit_compression=True,
             )
             with patch("studio.preview.BarRenderer") as preview_renderer:
                 preview_renderer.return_value.render.return_value = str(

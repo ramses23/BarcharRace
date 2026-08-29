@@ -143,6 +143,8 @@ class ChartConfig:
     background_motion_line_color: str = "#FFFFFF"
     background_motion_response: str = "constant"
     background_motion_response_strength: float = 1.0
+    background_motion_exit_compression: bool = False
+    background_motion_exit_compression_strength: float = 0.5
     typography_preset: str = "studio"
 
     title_enabled: bool = True

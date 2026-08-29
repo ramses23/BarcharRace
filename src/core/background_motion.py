@@ -10,6 +10,10 @@ MAX_EFFECTIVE_SPACING = 2048.0
 MIN_EMISSION_INTERVAL_FRAMES = 2.0
 MAX_ACTIVE_SPEED_LINES = 128
 MAX_EMISSION_FREQUENCY_MULTIPLIER = 4.0
+MAX_EXIT_COMPRESSED_LINES = 3
+MAX_EXIT_COMPRESSION_RATIO = 0.35
+MAX_EXIT_COMPRESSION_ZONE_RATIO = 0.30
+EXIT_COMPRESSION_ZONE_SPACINGS = 3.0
 
 
 @dataclass(frozen=True)
@@ -24,15 +28,55 @@ class SpeedLineMotion:
 
 
 def normalized_leader_change(current_bars, start_bars, end_bars):
-    leader = _current_leader(current_bars)
-    if leader is None:
+    return normalized_rank_change(
+        current_bars,
+        start_bars,
+        end_bars,
+        rank=1,
+    )
+
+
+def normalized_second_place_change(current_bars, start_bars, end_bars):
+    return normalized_rank_change(
+        current_bars,
+        start_bars,
+        end_bars,
+        rank=2,
+    )
+
+
+def normalized_rank_change(current_bars, start_bars, end_bars, *, rank):
+    ranked_bar = _current_ranked_bar(current_bars, rank=rank)
+    if ranked_bar is None:
         return 0.0
 
-    start_value = _value_for_name(start_bars, leader.name)
-    end_value = _value_for_name(end_bars, leader.name)
+    start_value = _value_for_name(start_bars, ranked_bar.name)
+    end_value = _value_for_name(end_bars, ranked_bar.name)
     scale = max(abs(start_value), abs(end_value), 1e-9)
     relative_change = abs(end_value - start_value) / scale
     return _clamp(relative_change / FULL_RESPONSE_RELATIVE_CHANGE, 0.0, 1.0)
+
+
+def normalized_motion_response(
+    current_bars,
+    start_bars,
+    end_bars,
+    *,
+    response_mode,
+):
+    if response_mode == "leader_acceleration":
+        return normalized_leader_change(
+            current_bars,
+            start_bars,
+            end_bars,
+        )
+    if response_mode == "second_place_acceleration":
+        return normalized_second_place_change(
+            current_bars,
+            start_bars,
+            end_bars,
+        )
+    return 0.0
 
 
 def effective_speed_line_motion(
@@ -131,7 +175,7 @@ def constant_speed_line_positions(
     )
     current_frame = max(0.0, _finite_value(frame_index) or 0.0)
     crossing_frames = (width + thickness) / speed_pixels_per_frame
-    first_index = ceil((current_frame - crossing_frames) / interval)
+    first_index = max(0, ceil((current_frame - crossing_frames) / interval))
     last_index = floor(current_frame / interval)
     return tuple(
         speed_line_position(
@@ -159,6 +203,61 @@ def speed_line_position(
         - (_finite_value(emission_frame) or 0.0),
     )
     return width - (speed * age)
+
+
+def left_edge_exit_compressed_positions(
+    line_positions,
+    *,
+    canvas_width,
+    base_spacing,
+    enabled,
+    strength,
+):
+    positions = tuple(float(position) for position in line_positions)
+    if not enabled or not positions:
+        return positions
+
+    width = max(1.0, _finite_value(canvas_width) or 1.0)
+    spacing = _finite_clamp(
+        base_spacing,
+        MIN_EFFECTIVE_SPACING,
+        MAX_EFFECTIVE_SPACING,
+        default=160.0,
+    )
+    zone_width = min(
+        width * MAX_EXIT_COMPRESSION_ZONE_RATIO,
+        spacing * EXIT_COMPRESSION_ZONE_SPACINGS,
+    )
+    if zone_width <= 0.0:
+        return positions
+
+    compression_ratio = MAX_EXIT_COMPRESSION_RATIO * _finite_clamp(
+        strength,
+        0.0,
+        1.0,
+        default=0.5,
+    )
+    if compression_ratio <= 0.0:
+        return positions
+
+    eligible = sorted(
+        (
+            (index, position)
+            for index, position in enumerate(positions)
+            if 0.0 <= position < zone_width
+        ),
+        key=lambda item: item[1],
+    )[:MAX_EXIT_COMPRESSED_LINES]
+    compressed = list(positions)
+    for index, position in eligible:
+        normalized_position = position / zone_width
+        shift = (
+            compression_ratio
+            * position
+            * (1.0 - normalized_position)
+        )
+        compressed[index] = position - shift
+    return tuple(compressed)
 
 
 class SpeedLineMotionTracker:
@@ -218,7 +317,10 @@ class SpeedLineMotionTracker:
     def next(self, target_response=0.0):
         target = (
             _finite_clamp(target_response, 0.0, 1.0, default=0.0)
-            if self.response_mode == "leader_acceleration"
+            if self.response_mode in (
+                "leader_acceleration",
+                "second_place_acceleration",
+            )
             else 0.0
         )
         self.response += (target - self.response) * self.smoothing
@@ -248,23 +350,7 @@ class SpeedLineMotionTracker:
     def _initial_emission_frames(self):
         if self.speed_pixels_per_frame <= 0.0:
             return []
-        interval = speed_line_emission_interval(
-            fps=self.fps,
-            canvas_width=self.canvas_width,
-            base_speed=self.base_speed,
-            base_spacing=self.base_spacing,
-            line_thickness=self.line_thickness,
-            response=0.0,
-            response_strength=self.response_strength,
-        )
-        crossing_frames = (
-            self.canvas_width + self.line_thickness
-        ) / self.speed_pixels_per_frame
-        count = min(
-            MAX_ACTIVE_SPEED_LINES,
-            int(ceil(crossing_frames / interval)) + 1,
-        )
-        return sorted(-(index * interval) for index in range(count))
+        return [0.0]
 
     def _active_lines(self):
         active_emissions = []
@@ -297,16 +383,18 @@ class SpeedLineMotionTracker:
         self.emission_progress = max(0.0, min(next_progress, 1.0))
 
 
-def _current_leader(bars):
+def _current_ranked_bar(bars, *, rank):
+    if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
+        return None
     candidates = [
         bar
         for bar in bars
         if _finite_value(getattr(bar, "value", None)) is not None
         and _visible_opacity(bar) > 0.0
     ]
-    if not candidates:
+    if len(candidates) < rank:
         return None
-    return min(
+    ranked = sorted(
         candidates,
         key=lambda bar: (
             -float(bar.value),
@@ -314,6 +402,7 @@ def _current_leader(bars):
             str(bar.name),
         ),
     )
+    return ranked[rank - 1]
 
 
 def _value_for_name(bars, name):

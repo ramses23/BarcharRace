@@ -230,6 +230,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             "Line opacity",
             "Line thickness",
             "Data response strength",
+            "Exit compression strength",
         }.issubset({control.label for control in app.slider}))
         self.assertIn(
             "Line color",
@@ -240,7 +241,16 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             for control in app.get("button_group")
             if control.label == "Motion response"
         )
-        response.set_value("leader_acceleration")
+        self.assertIn("Second-place acceleration", response.options)
+        response.set_value("second_place_acceleration")
+        next(
+            control for control in app.slider
+            if control.label == "Base line spacing"
+        ).set_value(800)
+        next(
+            control for control in app.checkbox
+            if control.label == "Left-edge exit compression"
+        ).check()
         next(
             control for control in app.slider
             if control.label == "Line thickness"
@@ -256,8 +266,10 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self.assertEqual(chart["background_motion"], "horizontal_speed_lines")
         self.assertEqual(
             chart["background_motion_response"],
-            "leader_acceleration",
+            "second_place_acceleration",
         )
+        self.assertEqual(chart["background_motion_line_spacing"], 800.0)
+        self.assertTrue(chart["background_motion_exit_compression"])
         self.assertEqual(chart["background_motion_line_thickness"], 5.0)
         self.assertEqual(chart["background_motion_line_color"], "#12AB34")
 
