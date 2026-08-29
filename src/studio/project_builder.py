@@ -191,13 +191,6 @@ def build_project_data(
     background_motion="off",
     background_motion_speed=1.0,
     background_motion_intensity=0.35,
-    background_motion_line_spacing=160.0,
-    background_motion_line_thickness=2.0,
-    background_motion_line_color="#FFFFFF",
-    background_motion_response="constant",
-    background_motion_response_strength=1.0,
-    background_motion_exit_compression=False,
-    background_motion_exit_compression_strength=0.5,
     typography_preset,
     value_format,
     fps,
@@ -351,19 +344,6 @@ def build_project_data(
             "background_motion": background_motion,
             "background_motion_speed": background_motion_speed,
             "background_motion_intensity": background_motion_intensity,
-            "background_motion_line_spacing": background_motion_line_spacing,
-            "background_motion_line_thickness": background_motion_line_thickness,
-            "background_motion_line_color": background_motion_line_color,
-            "background_motion_response": background_motion_response,
-            "background_motion_response_strength": (
-                background_motion_response_strength
-            ),
-            "background_motion_exit_compression": (
-                background_motion_exit_compression
-            ),
-            "background_motion_exit_compression_strength": (
-                background_motion_exit_compression_strength
-            ),
             "value_format": value_format,
             "typography_preset": typography_preset,
             "title_font_family": title_font_family,
@@ -589,27 +569,6 @@ def project_form_values(project_data=None):
         "background_motion": chart.get("background_motion", "off"),
         "background_motion_speed": chart.get("background_motion_speed", 1.0),
         "background_motion_intensity": chart.get("background_motion_intensity", 0.35),
-        "background_motion_line_spacing": chart.get(
-            "background_motion_line_spacing", 160.0
-        ),
-        "background_motion_line_thickness": chart.get(
-            "background_motion_line_thickness", 2.0
-        ),
-        "background_motion_line_color": chart.get(
-            "background_motion_line_color", "#FFFFFF"
-        ),
-        "background_motion_response": chart.get(
-            "background_motion_response", "constant"
-        ),
-        "background_motion_response_strength": chart.get(
-            "background_motion_response_strength", 1.0
-        ),
-        "background_motion_exit_compression": chart.get(
-            "background_motion_exit_compression", False
-        ),
-        "background_motion_exit_compression_strength": chart.get(
-            "background_motion_exit_compression_strength", 0.5
-        ),
         "typography_preset": chart.get("typography_preset", "editorial"),
         "title_font_family": chart.get("title_font_family"),
         "subtitle_font_family": chart.get("subtitle_font_family"),

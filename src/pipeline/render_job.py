@@ -7,10 +7,6 @@ from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
-from core.background_motion import (
-    SpeedLineMotionTracker,
-    normalized_motion_response,
-)
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
@@ -156,11 +152,6 @@ class RenderJob:
                 )),
             )
         chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
-        speed_line_tracker = (
-            SpeedLineMotionTracker.from_config(chart_config)
-            if chart_config.background_motion == "horizontal_speed_lines"
-            else None
-        )
         selector = BarSelector(config=chart_config.selection)
         layout = LayoutEngine(
             config=chart_config,
@@ -273,24 +264,6 @@ class RenderJob:
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
                     scene.frame_index = frame_id
-                    if speed_line_tracker is not None:
-                        target_response = normalized_motion_response(
-                            frame_sprites,
-                            start_sprites,
-                            end_sprites,
-                            response_mode=(
-                                chart_config.background_motion_response
-                            ),
-                        )
-                        speed_line_motion = speed_line_tracker.next(
-                            target_response
-                        )
-                        scene.background_motion_response = (
-                            speed_line_motion.smoothed_response
-                        )
-                        scene.background_motion_line_positions = (
-                            speed_line_motion.line_positions
-                        )
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
                         frame_index=frame_id,

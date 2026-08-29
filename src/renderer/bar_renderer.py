@@ -19,10 +19,6 @@ from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
-from core.background_motion import (
-    constant_speed_line_positions,
-    left_edge_exit_compressed_positions,
-)
 from core.bar_appearance import (
     uses_configurable_bar_content,
     uses_material_bar_renderer,
@@ -38,10 +34,6 @@ from renderer.material_texture import blend_texture, procedural_texture_pattern
 from studio.fun_fact_layout import editorial_geometry, panel_geometry
 from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
-
-
-BACKGROUND_IMAGE_ZORDER = -20
-BACKGROUND_MOTION_ZORDER = -19
 
 
 class BarRenderer(TextCompositorMixin):
@@ -172,7 +164,7 @@ class BarRenderer(TextCompositorMixin):
     def _initialize_scene_artists(self, ax):
         self._initialize_background_artist(ax)
         self._background_motion_artist = ImageCommandsArtist(self.config.height)
-        self._background_motion_artist.set_zorder(BACKGROUND_MOTION_ZORDER)
+        self._background_motion_artist.set_zorder(-9)
         ax.add_artist(self._background_motion_artist)
         self._title_artist = ax.text(
             self._title_x(),
@@ -307,7 +299,7 @@ class BarRenderer(TextCompositorMixin):
             top=0,
             canvas_height=self.config.height,
         )
-        self._background_image_artist.set_zorder(BACKGROUND_IMAGE_ZORDER)
+        self._background_image_artist.set_zorder(-10)
         ax.add_artist(self._background_image_artist)
 
     def _load_background_image(self):
@@ -521,62 +513,18 @@ class BarRenderer(TextCompositorMixin):
     def _update_background_motion(self, scene):
         if self._background_motion_artist is None:
             return
-        motion_mode = self.config.background_motion
-        if motion_mode == "off":
+        if self.config.background_motion != "forward_motion":
             self._background_motion_artist.set_commands(())
             return
         frame_index = max(0, int(getattr(scene, "frame_index", 0)))
-        if motion_mode == "forward_motion":
-            cache_key = (
-                motion_mode,
-                frame_index,
-                round(float(self.config.background_motion_speed), 4),
-                round(float(self.config.background_motion_intensity), 4),
-            )
-        elif motion_mode == "horizontal_speed_lines":
-            line_positions = getattr(
-                scene,
-                "background_motion_line_positions",
-                None,
-            )
-            if line_positions is None:
-                line_positions = constant_speed_line_positions(
-                    frame_index=frame_index,
-                    fps=self.config.fps,
-                    canvas_width=self.config.width,
-                    base_speed=self.config.background_motion_speed,
-                    base_spacing=self.config.background_motion_line_spacing,
-                    line_thickness=self.config.background_motion_line_thickness,
-                )
-            line_positions = tuple(
-                float(position)
-                for position in line_positions
-                if np.isfinite(position)
-            )
-            cache_key = (
-                motion_mode,
-                tuple(round(position, 4) for position in line_positions),
-                round(float(self.config.background_motion_intensity), 4),
-                round(float(self.config.background_motion_line_thickness), 4),
-                self.config.background_motion_line_color,
-                bool(self.config.background_motion_exit_compression),
-                round(float(
-                    self.config.background_motion_exit_compression_strength
-                ), 4),
-            )
-        else:
-            self._background_motion_artist.set_commands(())
-            return
+        cache_key = (
+            frame_index,
+            round(float(self.config.background_motion_speed), 4),
+            round(float(self.config.background_motion_intensity), 4),
+        )
         image = self._lru_get(self._background_motion_cache, cache_key)
         if image is None:
-            image = (
-                self._forward_motion_background(frame_index)
-                if motion_mode == "forward_motion"
-                else self._horizontal_speed_lines_background(
-                    frame_index,
-                    line_positions=line_positions,
-                )
-            )
+            image = self._forward_motion_background(frame_index)
             self._lru_put(self._background_motion_cache, cache_key, image, limit=8)
         self._background_motion_artist.set_commands(((image, 0, 0),))
 
@@ -603,65 +551,6 @@ class BarRenderer(TextCompositorMixin):
             y = horizon + round((height - horizon) * (depth ** 2.15))
             local_alpha = round(alpha * (0.25 + 0.75 * depth))
             draw.line((0, y, width, y), fill=(255, 255, 255, local_alpha), width=max(1, round(1 + depth * 2)))
-        return np.array(
-            np.asarray(canvas)[::-1], dtype=np.uint8, copy=True, order="C"
-        )
-
-    def _horizontal_speed_lines_background(
-        self,
-        frame_index,
-        *,
-        line_positions=None,
-    ):
-        width = max(1, int(self.config.width))
-        height = max(1, int(self.config.height))
-        if line_positions is None:
-            line_positions = constant_speed_line_positions(
-                frame_index=frame_index,
-                fps=self.config.fps,
-                canvas_width=width,
-                base_speed=self.config.background_motion_speed,
-                base_spacing=self.config.background_motion_line_spacing,
-                line_thickness=self.config.background_motion_line_thickness,
-            )
-        line_positions = left_edge_exit_compressed_positions(
-            line_positions,
-            canvas_width=width,
-            base_spacing=self.config.background_motion_line_spacing,
-            enabled=self.config.background_motion_exit_compression,
-            strength=(
-                self.config.background_motion_exit_compression_strength
-            ),
-        )
-        opacity = min(1.0, max(0.0, float(
-            self.config.background_motion_intensity
-        )))
-        thickness = max(1, min(64, round(float(
-            self.config.background_motion_line_thickness
-        ))))
-        try:
-            red, green, blue, color_alpha = mcolors.to_rgba(
-                self.config.background_motion_line_color
-            )
-        except ValueError:
-            red, green, blue, color_alpha = (1.0, 1.0, 1.0, 1.0)
-        line_color = (
-            round(red * 255),
-            round(green * 255),
-            round(blue * 255),
-            round(color_alpha * opacity * 255),
-        )
-        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(canvas)
-        for position in line_positions:
-            x = round(float(position))
-            if x < -thickness or x > width:
-                continue
-            draw.line(
-                (x, 0, x, height),
-                fill=line_color,
-                width=thickness,
-            )
         return np.array(
             np.asarray(canvas)[::-1], dtype=np.uint8, copy=True, order="C"
         )

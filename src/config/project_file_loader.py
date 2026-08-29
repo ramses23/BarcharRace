@@ -413,16 +413,7 @@ def _convert_chart_value(key, value):
         "bar_color_source": ("manual", "primary_logo"),
         "background_mode": ("color", "image"),
         "background_image_fit": ("cover", "contain", "stretch"),
-        "background_motion": (
-            "off",
-            "forward_motion",
-            "horizontal_speed_lines",
-        ),
-        "background_motion_response": (
-            "constant",
-            "leader_acceleration",
-            "second_place_acceleration",
-        ),
+        "background_motion": ("off", "forward_motion"),
     }
 
     if key in bar_enum_options:
@@ -458,7 +449,6 @@ def _convert_chart_value(key, value):
         "rank_labels_enabled",
         "category_labels_enabled",
         "value_labels_enabled",
-        "background_motion_exit_compression",
     ):
         if not isinstance(value, bool):
             raise ProjectFileError(f"Chart field '{key}' must be boolean.")
@@ -486,7 +476,6 @@ def _convert_chart_value(key, value):
         "time_label_text_color",
         "source_text_color",
         "rank_label_text_color",
-        "background_motion_line_color",
     ):
         if key.endswith("_text_color") and value is None:
             return None
@@ -520,7 +509,6 @@ def _convert_chart_value(key, value):
         "source_text_opacity",
         "rank_label_text_opacity",
         "background_motion_intensity",
-        "background_motion_exit_compression_strength",
     ):
         if (
             isinstance(value, bool)
@@ -542,7 +530,6 @@ def _convert_chart_value(key, value):
         "bar_secondary_logo_padding",
         "bar_secondary_logo_border_width",
         "background_motion_speed",
-        "background_motion_response_strength",
     ):
         if (
             isinstance(value, bool)
@@ -557,8 +544,6 @@ def _convert_chart_value(key, value):
         "bar_bevel_size",
         "bar_inner_shadow_size",
         "bar_shine_width",
-        "background_motion_line_spacing",
-        "background_motion_line_thickness",
     ):
         if (
             isinstance(value, bool)

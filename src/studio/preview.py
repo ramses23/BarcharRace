@@ -1,10 +1,6 @@
 from dataclasses import replace
 
 from config.project_file_loader import load_project_data, load_project_file
-from core.background_motion import (
-    SpeedLineMotionTracker,
-    normalized_motion_response,
-)
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
@@ -154,21 +150,6 @@ def render_project_preview(
         fun_fact=active_fact,
         frame_index=frame_index,
     )
-    speed_line_motion = _preview_speed_line_motion(
-        timeline=timeline,
-        selector=selector,
-        layout=layout,
-        chart_config=chart_config,
-        years=years,
-        target_frame_index=frame_index,
-    )
-    if speed_line_motion is not None:
-        scene.background_motion_response = (
-            speed_line_motion.smoothed_response
-        )
-        scene.background_motion_line_positions = (
-            speed_line_motion.line_positions
-        )
     duration = estimate_export_duration(
         timeline.get_years(),
         chart_config,
@@ -351,72 +332,6 @@ def _transition_sprites(
     frame_index = round(_clamped_progress(progress) * (len(frames) - 1))
 
     return frames[frame_index]
-
-
-def _preview_speed_line_motion(
-    *,
-    timeline,
-    selector,
-    layout,
-    chart_config,
-    years,
-    target_frame_index,
-):
-    if chart_config.background_motion != "horizontal_speed_lines":
-        return None
-
-    tracker = SpeedLineMotionTracker.from_config(chart_config)
-    if len(years) < 2:
-        return tracker.next(0.0)
-
-    sprites_by_year = {
-        year: _sprites_for_year(timeline, selector, layout, year)
-        for year in years
-    }
-    motion = MotionEngine(animation_config=chart_config.animation)
-    current_frame_index = 0
-    latest_motion = None
-
-    for index in range(len(years) - 1):
-        year_a = years[index]
-        year_b = years[index + 1]
-        start_sprites = sprites_by_year[year_a]
-        end_sprites = sprites_by_year[year_b]
-        if chart_config.animation.continuous_motion:
-            previous_year = years[index - 1] if index > 0 else year_a
-            next_year = (
-                years[index + 2]
-                if index + 2 < len(years)
-                else year_b
-            )
-            frames = motion.interpolate_sprites_continuous(
-                sprites_by_year[previous_year],
-                start_sprites,
-                end_sprites,
-                sprites_by_year[next_year],
-                steps=chart_config.steps_per_transition,
-                include_start=index == 0,
-            )
-        else:
-            frames = motion.interpolate_sprites(
-                start_sprites,
-                end_sprites,
-                steps=chart_config.steps_per_transition,
-            )
-
-        for frame_sprites in frames:
-            target_response = normalized_motion_response(
-                frame_sprites,
-                start_sprites,
-                end_sprites,
-                response_mode=chart_config.background_motion_response,
-            )
-            latest_motion = tracker.next(target_response)
-            if current_frame_index >= target_frame_index:
-                return latest_motion
-            current_frame_index += 1
-
-    return latest_motion or tracker.next(0.0)
 
 
 def _sprites_for_year(timeline, selector, layout, year):

@@ -1284,13 +1284,6 @@ def _project_form(
         background_motion=canvas_settings["background"]["motion"],
         background_motion_speed=canvas_settings["background"]["motion_speed"],
         background_motion_intensity=canvas_settings["background"]["motion_intensity"],
-        background_motion_line_spacing=canvas_settings["background"]["line_spacing"],
-        background_motion_line_thickness=canvas_settings["background"]["line_thickness"],
-        background_motion_line_color=canvas_settings["background"]["line_color"],
-        background_motion_response=canvas_settings["background"]["motion_response"],
-        background_motion_response_strength=canvas_settings["background"]["response_strength"],
-        background_motion_exit_compression=canvas_settings["background"]["exit_compression"],
-        background_motion_exit_compression_strength=canvas_settings["background"]["exit_compression_strength"],
         typography_preset=typography_preset,
         value_format=bars_settings["value_format"],
         fps=render_settings["fps"],
@@ -1795,27 +1788,6 @@ def _canvas_settings_from_values(
             "motion": values.get("background_motion", "off"),
             "motion_speed": float(values.get("background_motion_speed", 1.0)),
             "motion_intensity": float(values.get("background_motion_intensity", 0.35)),
-            "line_spacing": float(values.get(
-                "background_motion_line_spacing", 160.0
-            )),
-            "line_thickness": float(values.get(
-                "background_motion_line_thickness", 2.0
-            )),
-            "line_color": values.get(
-                "background_motion_line_color", "#FFFFFF"
-            ),
-            "motion_response": values.get(
-                "background_motion_response", "constant"
-            ),
-            "response_strength": float(values.get(
-                "background_motion_response_strength", 1.0
-            )),
-            "exit_compression": bool(values.get(
-                "background_motion_exit_compression", False
-            )),
-            "exit_compression_strength": float(values.get(
-                "background_motion_exit_compression_strength", 0.5
-            )),
         },
         "title_font_family": values.get("title_font_family"),
         "subtitle_font_family": values.get("subtitle_font_family"),
@@ -4765,155 +4737,31 @@ def _background_panel(values, theme_background_color):
         st.markdown("**Background motion**")
         motion = st.segmented_control(
             "Motion",
-            options=("off", "forward_motion", "horizontal_speed_lines"),
+            options=("off", "forward_motion"),
             default=(
                 values.get("background_motion", "off")
-                if values.get("background_motion", "off")
-                in ("off", "forward_motion", "horizontal_speed_lines")
+                if values.get("background_motion", "off") in ("off", "forward_motion")
                 else "off"
             ),
             format_func=lambda value: {
                 "off": "Off",
                 "forward_motion": "Forward motion",
-                "horizontal_speed_lines": "Horizontal speed lines",
             }[value],
             key=_widget_key("background_motion"),
         ) or "off"
-        motion_speed_default = min(4.0, max(
-            0.0, float(values.get("background_motion_speed", 1.0))
-        ))
-        motion_intensity_default = min(1.0, max(
-            0.0, float(values.get("background_motion_intensity", 0.35))
-        ))
-        line_spacing = int(min(800, max(
-            24, float(values.get("background_motion_line_spacing", 160.0))
-        )))
-        line_thickness = int(min(12, max(
-            1, float(values.get("background_motion_line_thickness", 2.0))
-        )))
-        line_color = _color_or_default(
-            values.get("background_motion_line_color"),
-            "#FFFFFF",
+        motion_columns = st.columns(2)
+        motion_speed = motion_columns[0].slider(
+            "Motion speed", 0.0, 4.0,
+            min(4.0, max(0.0, float(values.get("background_motion_speed", 1.0)))), 0.1,
+            disabled=motion == "off",
+            key=_widget_key("background_motion_speed"),
         )
-        motion_response = values.get(
-            "background_motion_response", "constant"
+        motion_intensity = motion_columns[1].slider(
+            "Motion intensity", 0.0, 1.0,
+            min(1.0, max(0.0, float(values.get("background_motion_intensity", 0.35)))), 0.05,
+            disabled=motion == "off",
+            key=_widget_key("background_motion_intensity"),
         )
-        if motion_response not in (
-            "constant",
-            "leader_acceleration",
-            "second_place_acceleration",
-        ):
-            motion_response = "constant"
-        response_strength = min(2.0, max(0.0, float(
-            values.get("background_motion_response_strength", 1.0)
-        )))
-        exit_compression = bool(values.get(
-            "background_motion_exit_compression", False
-        ))
-        exit_compression_strength = min(1.0, max(0.0, float(
-            values.get("background_motion_exit_compression_strength", 0.5)
-        )))
-
-        if motion == "horizontal_speed_lines":
-            speed_columns = st.columns(2)
-            motion_speed = speed_columns[0].slider(
-                "Base speed",
-                0.0,
-                4.0,
-                motion_speed_default,
-                0.1,
-                key=_widget_key("background_motion_speed"),
-            )
-            line_spacing = speed_columns[1].slider(
-                "Base line spacing",
-                24,
-                800,
-                line_spacing,
-                8,
-                key=_widget_key("background_motion_line_spacing"),
-            )
-            style_columns = st.columns(3)
-            motion_intensity = style_columns[0].slider(
-                "Line opacity",
-                0.0,
-                1.0,
-                motion_intensity_default,
-                0.05,
-                key=_widget_key("background_motion_intensity"),
-            )
-            line_thickness = style_columns[1].slider(
-                "Line thickness",
-                1,
-                12,
-                line_thickness,
-                1,
-                key=_widget_key("background_motion_line_thickness"),
-            )
-            line_color = style_columns[2].color_picker(
-                "Line color",
-                value=line_color,
-                key=_widget_key("background_motion_line_color"),
-            )
-            motion_response = st.segmented_control(
-                "Motion response",
-                options=(
-                    "constant",
-                    "leader_acceleration",
-                    "second_place_acceleration",
-                ),
-                default=motion_response,
-                format_func=lambda value: {
-                    "constant": "Constant",
-                    "leader_acceleration": "Leader acceleration",
-                    "second_place_acceleration": "Second-place acceleration",
-                }[value],
-                key=_widget_key("background_motion_response"),
-            ) or "constant"
-            response_strength = st.slider(
-                "Data response strength",
-                0.0,
-                2.0,
-                response_strength,
-                0.1,
-                disabled=motion_response == "constant",
-                key=_widget_key("background_motion_response_strength"),
-            )
-            exit_compression = st.checkbox(
-                "Left-edge exit compression",
-                value=exit_compression,
-                key=_widget_key("background_motion_exit_compression"),
-            )
-            exit_compression_strength = st.slider(
-                "Exit compression strength",
-                0.0,
-                1.0,
-                exit_compression_strength,
-                0.05,
-                disabled=not exit_compression,
-                key=_widget_key(
-                    "background_motion_exit_compression_strength"
-                ),
-            )
-        else:
-            motion_columns = st.columns(2)
-            motion_speed = motion_columns[0].slider(
-                "Motion speed",
-                0.0,
-                4.0,
-                motion_speed_default,
-                0.1,
-                disabled=motion == "off",
-                key=_widget_key("background_motion_speed"),
-            )
-            motion_intensity = motion_columns[1].slider(
-                "Motion intensity",
-                0.0,
-                1.0,
-                motion_intensity_default,
-                0.05,
-                disabled=motion == "off",
-                key=_widget_key("background_motion_intensity"),
-            )
 
     return {
         "mode": mode,
@@ -4923,13 +4771,6 @@ def _background_panel(values, theme_background_color):
         "motion": motion,
         "motion_speed": float(motion_speed),
         "motion_intensity": float(motion_intensity),
-        "line_spacing": float(line_spacing),
-        "line_thickness": float(line_thickness),
-        "line_color": line_color,
-        "motion_response": motion_response,
-        "response_strength": float(response_strength),
-        "exit_compression": bool(exit_compression),
-        "exit_compression_strength": float(exit_compression_strength),
     }
 
 

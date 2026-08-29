@@ -26,5 +26,3 @@ class Scene:
     fun_fact: ActiveFunFact | None = None
     short_overlay: ShortOverlay | None = None
     frame_index: int = 0
-    background_motion_response: float = 0.0
-    background_motion_line_positions: tuple[float, ...] | None = None
