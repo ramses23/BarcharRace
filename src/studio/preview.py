@@ -5,6 +5,7 @@ from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
+from core.value_axis import ValueAxisTracker, scale_bar_sprites
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
@@ -90,16 +91,17 @@ def render_project_preview(
 
     if preview_mode == "transition":
         year_a, year_b = _selected_transition_years(year, years)
+        progress = _clamped_progress(transition_progress)
         sprites = _transition_sprites(
             timeline=timeline,
             selector=selector,
             layout=layout,
             animation_config=chart_config.animation,
+            steps=chart_config.steps_per_transition,
             year_a=year_a,
             year_b=year_b,
-            progress=transition_progress,
+            progress=progress,
         )
-        progress = _clamped_progress(transition_progress)
         display_year = year_a + (year_b - year_a) * progress
         subtitle = (
             f"{timeline.get_time_label(year_a)} -> "
@@ -115,9 +117,10 @@ def render_project_preview(
             if fun_fact_scheduler is not None
             else None
         )
-        frame_index = (
-            years.index(year_a) * chart_config.steps_per_transition
-            + round(progress * chart_config.steps_per_transition)
+        frame_index = _transition_frame_index(
+            chart_config,
+            years.index(year_a),
+            progress,
         )
     else:
         selected_year = _selected_year(year, years)
@@ -141,6 +144,17 @@ def render_project_preview(
         else:
             active_fact = fun_fact_scheduler.force(force_fun_fact_id)
 
+    value_axis = _preview_value_axis_state(
+        timeline=timeline,
+        selector=selector,
+        layout=layout,
+        chart_config=chart_config,
+        years=years,
+        target_frame_index=frame_index,
+    )
+    if value_axis is not None:
+        sprites = scale_bar_sprites(sprites, value_axis.scale)
+
     scene = Scene(
         title=chart_config.title,
         subtitle=subtitle,
@@ -149,6 +163,7 @@ def render_project_preview(
         bars=sprites,
         fun_fact=active_fact,
         frame_index=frame_index,
+        value_axis=value_axis,
     )
     duration = estimate_export_duration(
         timeline.get_years(),
@@ -298,6 +313,7 @@ def _transition_sprites(
     selector,
     layout,
     animation_config,
+    steps,
     year_a,
     year_b,
     progress,
@@ -320,18 +336,93 @@ def _transition_sprites(
             start_sprites,
             end_sprites,
             _sprites_for_year(timeline, selector, layout, next_year),
-            steps=100,
+            steps=steps,
             include_start=True,
         )
     else:
         frames = motion.interpolate_sprites(
             start_sprites,
             end_sprites,
-            steps=101,
+            steps=steps,
         )
     frame_index = round(_clamped_progress(progress) * (len(frames) - 1))
 
     return frames[frame_index]
+
+
+def _transition_frame_index(chart_config, transition_index, progress):
+    steps = max(1, int(chart_config.steps_per_transition))
+    local_span = (
+        steps
+        if chart_config.animation.continuous_motion
+        else max(0, steps - 1)
+    )
+    return (
+        max(0, int(transition_index)) * steps
+        + round(_clamped_progress(progress) * local_span)
+    )
+
+
+def _preview_value_axis_state(
+    *,
+    timeline,
+    selector,
+    layout,
+    chart_config,
+    years,
+    target_frame_index,
+):
+    if not chart_config.value_grid_enabled:
+        return None
+
+    sprites_by_year = {
+        year: _sprites_for_year(timeline, selector, layout, year)
+        for year in years
+    }
+    tracker = ValueAxisTracker.from_config(
+        chart_config,
+        sprites_by_year.values(),
+    )
+    if len(years) < 2:
+        return tracker.next(sprites_by_year[years[0]])
+
+    motion = MotionEngine(animation_config=chart_config.animation)
+    current_frame_index = 0
+    latest_state = None
+    for index in range(len(years) - 1):
+        year_a = years[index]
+        year_b = years[index + 1]
+        start_sprites = sprites_by_year[year_a]
+        end_sprites = sprites_by_year[year_b]
+        if chart_config.animation.continuous_motion:
+            previous_year = years[index - 1] if index > 0 else year_a
+            next_year = (
+                years[index + 2]
+                if index + 2 < len(years)
+                else year_b
+            )
+            frames = motion.interpolate_sprites_continuous(
+                sprites_by_year[previous_year],
+                start_sprites,
+                end_sprites,
+                sprites_by_year[next_year],
+                steps=chart_config.steps_per_transition,
+                include_start=index == 0,
+            )
+        else:
+            frames = motion.interpolate_sprites(
+                start_sprites,
+                end_sprites,
+                steps=chart_config.steps_per_transition,
+            )
+
+        for frame_sprites in frames:
+            latest_state = tracker.next(frame_sprites)
+            if current_frame_index >= target_frame_index:
+                return latest_state
+            current_frame_index += 1
+
+    return latest_state
 
 
 def _sprites_for_year(timeline, selector, layout, year):

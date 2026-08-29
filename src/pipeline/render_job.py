@@ -10,6 +10,7 @@ from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
+from core.value_axis import ValueAxisTracker, scale_bar_sprites
 from utils.video_duration import estimate_video_duration
 from exporters.video_exporter import VideoExporter
 from importers.data_source_loader import DataSourceLoader
@@ -192,6 +193,14 @@ class RenderJob:
                 layout=layout,
             ),
         )
+        value_axis_tracker = (
+            ValueAxisTracker.from_config(
+                chart_config,
+                sprites_by_year.values(),
+            )
+            if chart_config.value_grid_enabled
+            else None
+        )
 
         frame_id = 0
         transitions_rendered = 0
@@ -253,6 +262,14 @@ class RenderJob:
                     else:
                         progress = None
 
+                    value_axis = None
+                    if value_axis_tracker is not None:
+                        value_axis = value_axis_tracker.next(frame_sprites)
+                        frame_sprites = scale_bar_sprites(
+                            frame_sprites,
+                            value_axis.scale,
+                        )
+
                     scene = self._build_scene(
                         year_a=year_a,
                         year_b=year_b,
@@ -264,6 +281,7 @@ class RenderJob:
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
                     scene.frame_index = frame_id
+                    scene.value_axis = value_axis
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
                         frame_index=frame_id,

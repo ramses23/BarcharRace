@@ -97,13 +97,22 @@ class LayoutEngine:
 
     def _vertical_geometry(self, count):
         if self.config.bar_vertical_layout_mode != "fill_available" or count <= 0:
-            return self.config.bar_height, self.config.bar_gap, self.config.top_margin
+            first_y = self.config.top_margin
+            if self._reserves_value_axis_lane():
+                first_y = max(
+                    first_y,
+                    self._value_axis_min_row_top()
+                    + (self.config.bar_height / 2),
+                )
+            return self.config.bar_height, self.config.bar_gap, first_y
         top = max(0, self.config.bar_vertical_top_padding)
         bottom_edge = self.config.height - max(0, self.config.bar_vertical_bottom_padding)
         if self.config.title_enabled:
             top = max(top, self.config.title_y + self._text_half_height(self.config.title_font_size) + 12)
         if self.config.subtitle_enabled:
             top = max(top, self.config.subtitle_y + self._text_half_height(self.config.subtitle_font_size) + 12)
+        if self._reserves_value_axis_lane():
+            top = max(top, self._value_axis_min_row_top())
         if self.config.source_label_enabled:
             bottom_edge = min(bottom_edge, self.config.source_y - self._text_half_height(self.config.source_font_size) - 12)
         available = max(count, bottom_edge - top)
@@ -118,6 +127,31 @@ class LayoutEngine:
 
     def _text_half_height(self, point_size):
         return max(1.0, float(point_size) * self.config.dpi / 144.0)
+
+    def _reserves_value_axis_lane(self):
+        return (
+            self.config.value_grid_enabled
+            and self.config.value_grid_tick_labels_enabled
+        )
+
+    def _value_axis_min_row_top(self):
+        text_bottom = 0.0
+        if self.config.title_enabled:
+            text_bottom = max(
+                text_bottom,
+                self.config.title_y
+                + self._text_half_height(self.config.title_font_size),
+            )
+        if self.config.subtitle_enabled:
+            text_bottom = max(
+                text_bottom,
+                self.config.subtitle_y
+                + self._text_half_height(self.config.subtitle_font_size),
+            )
+        tick_height = self._text_half_height(
+            self.config.value_grid_tick_font_size
+        ) * 2.0
+        return text_bottom + tick_height + 18.0
 
     def _bar_width(self, value, max_value, max_bar_width):
         if max_value <= 0:

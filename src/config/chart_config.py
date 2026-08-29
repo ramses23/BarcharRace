@@ -138,6 +138,18 @@ class ChartConfig:
     background_motion: str = "off"
     background_motion_speed: float = 1.0
     background_motion_intensity: float = 0.35
+    value_grid_enabled: bool = False
+    value_grid_mode: str = "dynamic"
+    value_grid_tick_labels_enabled: bool = True
+    value_grid_line_color: str = "#FFFFFF"
+    value_grid_line_opacity: float = 0.18
+    value_grid_line_thickness: float = 1.0
+    value_grid_tick_text_color: str | None = None
+    value_grid_tick_text_opacity: float = 0.72
+    value_grid_tick_font_size: int = 16
+    value_grid_tick_font_weight: str = "normal"
+    value_grid_tick_font_style: str = "normal"
+    value_grid_target_tick_count: int = 5
     typography_preset: str = "studio"
 
     title_enabled: bool = True
@@ -296,6 +308,10 @@ class ChartConfig:
     @property
     def resolved_rank_label_text_color(self):
         return self.rank_label_text_color or self.muted_text_color
+
+    @property
+    def resolved_value_grid_tick_text_color(self):
+        return self.value_grid_tick_text_color or self.muted_text_color
 
     @property
     def font_family(self):

@@ -4,13 +4,16 @@ from config.project_file_loader import load_project_data
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.timeline import Timeline
+from core.value_axis import scale_bar_sprites
 from models.scene import Scene
 from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.preview import (
     _preview_mode,
+    _preview_value_axis_state,
     _selected_transition_years,
     _selected_year,
     _sprites_for_year,
+    _transition_frame_index,
     _transition_sprites,
 )
 
@@ -52,17 +55,35 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
             selector=selector,
             layout=layout,
             animation_config=chart_config.animation,
+            steps=chart_config.steps_per_transition,
             year_a=year_a,
             year_b=year_b,
             progress=progress,
         )
         subtitle = f"{timeline.get_time_label(year_a)} -> {timeline.get_time_label(year_b)}"
         time_label = timeline.get_time_label(year_a + ((year_b - year_a) * progress))
+        frame_index = _transition_frame_index(
+            chart_config,
+            years.index(year_a),
+            progress,
+        )
     else:
         selected_year = _selected_year(year, years)
         sprites = _sprites_for_year(timeline, selector, layout, selected_year)
         subtitle = timeline.get_time_label(selected_year)
         time_label = subtitle
+        frame_index = years.index(selected_year) * chart_config.steps_per_transition
+
+    value_axis = _preview_value_axis_state(
+        timeline=timeline,
+        selector=selector,
+        layout=layout,
+        chart_config=chart_config,
+        years=years,
+        target_frame_index=frame_index,
+    )
+    if value_axis is not None:
+        sprites = scale_bar_sprites(sprites, value_axis.scale)
 
     return StudioLayoutPreview(
         chart_config=chart_config,
@@ -74,5 +95,7 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
             time_label=time_label,
             source_label=preset.data_source_config.source_label,
             bars=sprites,
+            frame_index=frame_index,
+            value_axis=value_axis,
         ),
     )

@@ -34,6 +34,10 @@ class AppearancePresetsTest(unittest.TestCase):
                 "background_mode": "image",
                 "background_image_path": "backgrounds/documentary.png",
                 "background_image_fit": "cover",
+                "value_grid_enabled": True,
+                "value_grid_mode": "static",
+                "value_grid_line_color": "#345678",
+                "value_grid_target_tick_count": 6,
                 "max_visible_bars": 7,
                 "title_font_size": 44,
                 "title_text_color": "#ABCDEF",
@@ -114,6 +118,9 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.canvas["title_font_size"], 44)
         self.assertEqual(preset.canvas["time_label_opacity"], 0.47)
         self.assertEqual(preset.canvas["title_text_opacity"], 0.84)
+        self.assertTrue(preset.canvas["value_grid_enabled"])
+        self.assertEqual(preset.canvas["value_grid_mode"], "static")
+        self.assertEqual(preset.canvas["value_grid_target_tick_count"], 6)
         self.assertEqual(preset.bars["bar_shape"], "capsule")
         self.assertEqual(preset.bars["logo_size"], 42)
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
@@ -363,6 +370,29 @@ class AppearancePresetsTest(unittest.TestCase):
             )
             self.assertEqual(len(catalog.errors), 1)
             self.assertIn("Invalid JSON", catalog.errors[0])
+
+    def test_loads_v6_preset_with_value_grid_disabled_compatibility_defaults(self):
+        current = build_appearance_preset("Before value grid", self.project_data())
+        data = current.to_dict()
+        data["schema_version"] = 6
+        value_grid_fields = tuple(
+            field
+            for field in CANVAS_APPEARANCE_FIELDS
+            if field.startswith("value_grid_")
+        )
+        for field in value_grid_fields:
+            del data["canvas"][field]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "schema_6.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertEqual(loaded.schema_version, 6)
+        self.assertFalse(loaded.canvas["value_grid_enabled"])
+        self.assertEqual(loaded.canvas["value_grid_mode"], "dynamic")
+        self.assertTrue(loaded.canvas["value_grid_tick_labels_enabled"])
+        self.assertEqual(loaded.canvas["value_grid_target_tick_count"], 5)
 
     def test_rejects_unknown_missing_and_invalid_visual_fields(self):
         preset = build_appearance_preset("Strict preset", self.project_data())

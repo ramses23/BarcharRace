@@ -299,6 +299,7 @@ def _convert_chart_value(key, value):
         "time_label_font_size",
         "source_font_size",
         "rank_label_font_size",
+        "value_grid_tick_font_size",
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ProjectFileError(f"Chart field '{key}' must be at least 1.")
@@ -414,6 +415,7 @@ def _convert_chart_value(key, value):
         "background_mode": ("color", "image"),
         "background_image_fit": ("cover", "contain", "stretch"),
         "background_motion": ("off", "forward_motion"),
+        "value_grid_mode": ("static", "dynamic"),
     }
 
     if key in bar_enum_options:
@@ -449,6 +451,8 @@ def _convert_chart_value(key, value):
         "rank_labels_enabled",
         "category_labels_enabled",
         "value_labels_enabled",
+        "value_grid_enabled",
+        "value_grid_tick_labels_enabled",
     ):
         if not isinstance(value, bool):
             raise ProjectFileError(f"Chart field '{key}' must be boolean.")
@@ -476,6 +480,8 @@ def _convert_chart_value(key, value):
         "time_label_text_color",
         "source_text_color",
         "rank_label_text_color",
+        "value_grid_line_color",
+        "value_grid_tick_text_color",
     ):
         if key.endswith("_text_color") and value is None:
             return None
@@ -509,6 +515,8 @@ def _convert_chart_value(key, value):
         "source_text_opacity",
         "rank_label_text_opacity",
         "background_motion_intensity",
+        "value_grid_line_opacity",
+        "value_grid_tick_text_opacity",
     ):
         if (
             isinstance(value, bool)
@@ -544,6 +552,7 @@ def _convert_chart_value(key, value):
         "bar_bevel_size",
         "bar_inner_shadow_size",
         "bar_shine_width",
+        "value_grid_line_thickness",
     ):
         if (
             isinstance(value, bool)
@@ -563,6 +572,7 @@ def _convert_chart_value(key, value):
         "bar_vertical_bottom_padding",
         "bar_label_offset_x",
         "bar_label_offset_y",
+        "value_grid_target_tick_count",
     ):
         if isinstance(value, bool) or not isinstance(value, int):
             raise ProjectFileError(f"Chart field '{key}' must be an integer.")
@@ -570,6 +580,10 @@ def _convert_chart_value(key, value):
         if key == "bar_gradient_color_count" and value not in (2, 3):
             raise ProjectFileError(
                 "Chart field 'bar_gradient_color_count' must be 2 or 3."
+            )
+        if key == "value_grid_target_tick_count" and not 2 <= value <= 12:
+            raise ProjectFileError(
+                "Chart field 'value_grid_target_tick_count' must be from 2 to 12."
             )
         if key in (
             "bar_vertical_top_padding",

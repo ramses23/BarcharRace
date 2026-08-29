@@ -191,6 +191,18 @@ def build_project_data(
     background_motion="off",
     background_motion_speed=1.0,
     background_motion_intensity=0.35,
+    value_grid_enabled=False,
+    value_grid_mode="dynamic",
+    value_grid_tick_labels_enabled=True,
+    value_grid_line_color="#FFFFFF",
+    value_grid_line_opacity=0.18,
+    value_grid_line_thickness=1.0,
+    value_grid_tick_text_color=None,
+    value_grid_tick_text_opacity=0.72,
+    value_grid_tick_font_size=16,
+    value_grid_tick_font_weight="normal",
+    value_grid_tick_font_style="normal",
+    value_grid_target_tick_count=5,
     typography_preset,
     value_format,
     fps,
@@ -344,6 +356,20 @@ def build_project_data(
             "background_motion": background_motion,
             "background_motion_speed": background_motion_speed,
             "background_motion_intensity": background_motion_intensity,
+            "value_grid_enabled": value_grid_enabled,
+            "value_grid_mode": value_grid_mode,
+            "value_grid_tick_labels_enabled": (
+                value_grid_tick_labels_enabled
+            ),
+            "value_grid_line_color": value_grid_line_color,
+            "value_grid_line_opacity": value_grid_line_opacity,
+            "value_grid_line_thickness": value_grid_line_thickness,
+            "value_grid_tick_text_color": value_grid_tick_text_color,
+            "value_grid_tick_text_opacity": value_grid_tick_text_opacity,
+            "value_grid_tick_font_size": value_grid_tick_font_size,
+            "value_grid_tick_font_weight": value_grid_tick_font_weight,
+            "value_grid_tick_font_style": value_grid_tick_font_style,
+            "value_grid_target_tick_count": value_grid_target_tick_count,
             "value_format": value_format,
             "typography_preset": typography_preset,
             "title_font_family": title_font_family,
@@ -569,6 +595,38 @@ def project_form_values(project_data=None):
         "background_motion": chart.get("background_motion", "off"),
         "background_motion_speed": chart.get("background_motion_speed", 1.0),
         "background_motion_intensity": chart.get("background_motion_intensity", 0.35),
+        "value_grid_enabled": chart.get("value_grid_enabled", False),
+        "value_grid_mode": chart.get("value_grid_mode", "dynamic"),
+        "value_grid_tick_labels_enabled": chart.get(
+            "value_grid_tick_labels_enabled", True
+        ),
+        "value_grid_line_color": chart.get(
+            "value_grid_line_color", "#FFFFFF"
+        ),
+        "value_grid_line_opacity": chart.get(
+            "value_grid_line_opacity", 0.18
+        ),
+        "value_grid_line_thickness": chart.get(
+            "value_grid_line_thickness", 1.0
+        ),
+        "value_grid_tick_text_color": chart.get(
+            "value_grid_tick_text_color"
+        ),
+        "value_grid_tick_text_opacity": chart.get(
+            "value_grid_tick_text_opacity", 0.72
+        ),
+        "value_grid_tick_font_size": chart.get(
+            "value_grid_tick_font_size", 16
+        ),
+        "value_grid_tick_font_weight": chart.get(
+            "value_grid_tick_font_weight", "normal"
+        ),
+        "value_grid_tick_font_style": chart.get(
+            "value_grid_tick_font_style", "normal"
+        ),
+        "value_grid_target_tick_count": chart.get(
+            "value_grid_target_tick_count", 5
+        ),
         "typography_preset": chart.get("typography_preset", "editorial"),
         "title_font_family": chart.get("title_font_family"),
         "subtitle_font_family": chart.get("subtitle_font_family"),

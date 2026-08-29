@@ -12,7 +12,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import PolyCollection
+from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 from PIL import Image, ImageChops, ImageDraw, ImageOps
@@ -52,6 +52,9 @@ class BarRenderer(TextCompositorMixin):
         self._source_artist = None
         self._background_image_artist = None
         self._background_motion_artist = None
+        self._value_grid_collection = None
+        self._value_tick_artists = []
+        self._current_value_axis_width = self.config.max_bar_width
         self._background_motion_cache = OrderedDict()
         self._background_image_cache = None
         self._gradient_artist = None
@@ -130,6 +133,9 @@ class BarRenderer(TextCompositorMixin):
             self._source_artist = None
             self._background_image_artist = None
             self._background_motion_artist = None
+            self._value_grid_collection = None
+            self._value_tick_artists = []
+            self._current_value_axis_width = self.config.max_bar_width
             self._background_image_cache = None
             self._gradient_artist = None
             self._advanced_composite_artist = None
@@ -166,6 +172,12 @@ class BarRenderer(TextCompositorMixin):
         self._background_motion_artist = ImageCommandsArtist(self.config.height)
         self._background_motion_artist.set_zorder(-9)
         ax.add_artist(self._background_motion_artist)
+        self._value_grid_collection = LineCollection(
+            [],
+            zorder=0.4,
+            antialiaseds=True,
+        )
+        ax.add_collection(self._value_grid_collection)
         self._title_artist = ax.text(
             self._title_x(),
             self.config.title_y,
@@ -352,6 +364,7 @@ class BarRenderer(TextCompositorMixin):
 
     def _update_scene_artists(self, ax, scene):
         self._update_background_motion(scene)
+        self._update_value_axis(ax, scene.value_axis)
         self._set_text_artist(
             self._title_artist,
             self._fit_title(scene.title),
@@ -393,6 +406,76 @@ class BarRenderer(TextCompositorMixin):
 
         self._update_fun_fact_overlay(scene.fun_fact)
         self._update_short_overlay(scene.short_overlay)
+
+    def _update_value_axis(self, ax, value_axis):
+        if self._value_grid_collection is None:
+            return
+        if value_axis is None or not self.config.value_grid_enabled:
+            self._current_value_axis_width = self.config.max_bar_width
+            self._value_grid_collection.set_visible(False)
+            self._value_grid_collection.set_segments([])
+            for artist in self._value_tick_artists:
+                artist.set_visible(False)
+            return
+
+        self._current_value_axis_width = value_axis.scale.width
+        ticks = tuple(value_axis.ticks)
+        self._value_grid_collection.set_visible(bool(ticks))
+        segments = [
+            ((tick.x, value_axis.line_top), (tick.x, value_axis.line_bottom))
+            for tick in ticks
+        ]
+        try:
+            red, green, blue, color_alpha = mcolors.to_rgba(
+                self.config.value_grid_line_color
+            )
+        except ValueError:
+            red, green, blue, color_alpha = (1.0, 1.0, 1.0, 1.0)
+        base_alpha = max(0.0, min(
+            1.0,
+            float(self.config.value_grid_line_opacity) * color_alpha,
+        ))
+        self._value_grid_collection.set_segments(segments)
+        self._value_grid_collection.set_colors([
+            (red, green, blue, base_alpha * tick.opacity)
+            for tick in ticks
+        ])
+        self._value_grid_collection.set_linewidths([
+            max(0.1, float(self.config.value_grid_line_thickness))
+            for _ in ticks
+        ])
+
+        self._ensure_value_tick_capacity(ax, len(ticks))
+        show_labels = self.config.value_grid_tick_labels_enabled
+        for artist, tick in zip(self._value_tick_artists, ticks):
+            visible = show_labels and bool(tick.label)
+            artist.set_visible(visible)
+            if not visible:
+                continue
+            artist.set_position((tick.x, value_axis.label_y))
+            artist.set_text(tick.label)
+            artist.set_alpha(
+                max(0.0, min(1.0, self.config.value_grid_tick_text_opacity))
+                * tick.opacity
+            )
+        for artist in self._value_tick_artists[len(ticks):]:
+            artist.set_visible(False)
+
+    def _ensure_value_tick_capacity(self, ax, count):
+        while len(self._value_tick_artists) < count:
+            self._value_tick_artists.append(ax.text(
+                0,
+                0,
+                "",
+                ha="center",
+                va="center",
+                fontsize=self.config.value_grid_tick_font_size,
+                fontfamily=self._font_family(self.config.value_font_family),
+                fontweight=self.config.value_grid_tick_font_weight,
+                fontstyle=self.config.value_grid_tick_font_style,
+                color=self.config.resolved_value_grid_tick_text_color,
+                zorder=0.5,
+            ))
 
     def _update_short_overlay(self, overlay):
         if self._short_overlay_artist is None:
@@ -1466,7 +1549,10 @@ class BarRenderer(TextCompositorMixin):
         colors = []
 
         for sprite in sprites:
-            track_sprite = replace(sprite, width=self.config.max_bar_width)
+            track_sprite = replace(
+                sprite,
+                width=self._current_value_axis_width,
+            )
             vertices.append(self._bar_shape_path(track_sprite).vertices)
             colors.append(mcolors.to_rgba(
                 self.config.bar_track_color,

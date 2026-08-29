@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 6
+APPEARANCE_PRESET_SCHEMA_VERSION = 7
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -26,6 +26,18 @@ CANVAS_APPEARANCE_FIELDS = (
     "background_motion",
     "background_motion_speed",
     "background_motion_intensity",
+    "value_grid_enabled",
+    "value_grid_mode",
+    "value_grid_tick_labels_enabled",
+    "value_grid_line_color",
+    "value_grid_line_opacity",
+    "value_grid_line_thickness",
+    "value_grid_tick_text_color",
+    "value_grid_tick_text_opacity",
+    "value_grid_tick_font_size",
+    "value_grid_tick_font_weight",
+    "value_grid_tick_font_style",
+    "value_grid_target_tick_count",
     "max_visible_bars",
     "title_font_family",
     "subtitle_font_family",
@@ -145,6 +157,7 @@ _ROOT_FIELDS_BY_VERSION = {
     4: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     5: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     6: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+    7: {"schema_version", "name", "canvas", "bars", "fun_facts"},
 }
 _MAX_NAME_LENGTH = 80
 
@@ -407,9 +420,24 @@ def _validated_preset(data):
             "Missing appearance preset fields: " + ", ".join(sorted(missing))
         )
     name = _validated_name(data["name"])
-    canvas_defaults = None
+    canvas_defaults = {}
+    if schema_version <= 6:
+        canvas_defaults.update({
+            "value_grid_enabled": False,
+            "value_grid_mode": "dynamic",
+            "value_grid_tick_labels_enabled": True,
+            "value_grid_line_color": "#FFFFFF",
+            "value_grid_line_opacity": 0.18,
+            "value_grid_line_thickness": 1.0,
+            "value_grid_tick_text_color": None,
+            "value_grid_tick_text_opacity": 0.72,
+            "value_grid_tick_font_size": 16,
+            "value_grid_tick_font_weight": "normal",
+            "value_grid_tick_font_style": "normal",
+            "value_grid_target_tick_count": 5,
+        })
     if schema_version <= 5:
-        canvas_defaults = {
+        canvas_defaults.update({
             "background_motion": "off",
             "background_motion_speed": 1.0,
             "background_motion_intensity": 0.35,
@@ -427,7 +455,7 @@ def _validated_preset(data):
             "value_font_style": "normal",
             "rank_label_font_weight": "bold",
             "rank_label_font_style": "normal",
-        }
+        })
     if schema_version <= 4:
         canvas_defaults.update({
             "title_text_opacity": 1.0,
@@ -443,7 +471,7 @@ def _validated_preset(data):
         data["canvas"],
         expected_fields=CANVAS_APPEARANCE_FIELDS,
         section_name="canvas",
-        missing_defaults=canvas_defaults,
+        missing_defaults=canvas_defaults or None,
     )
     bar_defaults = None
     if schema_version <= 5:

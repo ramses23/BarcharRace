@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 from models.bar_sprite import BarSprite
 from models.fun_fact import ActiveFunFact
+from models.value_axis import ValueAxisState
 
 
 @dataclass(frozen=True)
@@ -26,3 +27,4 @@ class Scene:
     fun_fact: ActiveFunFact | None = None
     short_overlay: ShortOverlay | None = None
     frame_index: int = 0
+    value_axis: ValueAxisState | None = None

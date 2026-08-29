@@ -169,6 +169,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         "ranking_lane": ranking_lane.to_dict(),
         "category_lane": category_lane.to_dict(),
         "value_lane": value_lane.to_dict(),
+        "value_axis": _value_axis_geometry(scene.value_axis),
         "primary_logo_rects": [rect.to_dict() for rect in primary_logos],
         "secondary_logo_rects": [rect.to_dict() for rect in secondary_logos],
         "text_bounds": {
@@ -190,6 +191,29 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         "value_examples": [
             format_value(sprite.value, chart_config.value_format)
             for sprite in sprites
+        ],
+    }
+
+
+def _value_axis_geometry(value_axis):
+    if value_axis is None:
+        return None
+    return {
+        "origin_x": round(float(value_axis.scale.origin_x), 3),
+        "right_x": round(float(value_axis.scale.right_x), 3),
+        "width": round(float(value_axis.scale.width), 3),
+        "domain_max": round(float(value_axis.scale.domain_max), 6),
+        "line_top": round(float(value_axis.line_top), 3),
+        "line_bottom": round(float(value_axis.line_bottom), 3),
+        "label_y": round(float(value_axis.label_y), 3),
+        "ticks": [
+            {
+                "value": round(float(tick.value), 12),
+                "x": round(float(tick.x), 3),
+                "label": tick.label,
+                "opacity": round(float(tick.opacity), 3),
+            }
+            for tick in value_axis.ticks
         ],
     }
 

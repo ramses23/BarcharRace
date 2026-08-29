@@ -1284,6 +1284,18 @@ def _project_form(
         background_motion=canvas_settings["background"]["motion"],
         background_motion_speed=canvas_settings["background"]["motion_speed"],
         background_motion_intensity=canvas_settings["background"]["motion_intensity"],
+        value_grid_enabled=canvas_settings["value_axis"]["enabled"],
+        value_grid_mode=canvas_settings["value_axis"]["mode"],
+        value_grid_tick_labels_enabled=canvas_settings["value_axis"]["show_labels"],
+        value_grid_line_color=canvas_settings["value_axis"]["line_color"],
+        value_grid_line_opacity=canvas_settings["value_axis"]["line_opacity"],
+        value_grid_line_thickness=canvas_settings["value_axis"]["line_thickness"],
+        value_grid_tick_text_color=canvas_settings["value_axis"]["text_color"],
+        value_grid_tick_text_opacity=canvas_settings["value_axis"]["text_opacity"],
+        value_grid_tick_font_size=canvas_settings["value_axis"]["font_size"],
+        value_grid_tick_font_weight=canvas_settings["value_axis"]["font_weight"],
+        value_grid_tick_font_style=canvas_settings["value_axis"]["font_style"],
+        value_grid_target_tick_count=canvas_settings["value_axis"]["target_tick_count"],
         typography_preset=typography_preset,
         value_format=bars_settings["value_format"],
         fps=render_settings["fps"],
@@ -1788,6 +1800,41 @@ def _canvas_settings_from_values(
             "motion": values.get("background_motion", "off"),
             "motion_speed": float(values.get("background_motion_speed", 1.0)),
             "motion_intensity": float(values.get("background_motion_intensity", 0.35)),
+        },
+        "value_axis": {
+            "enabled": bool(values.get("value_grid_enabled", False)),
+            "mode": values.get("value_grid_mode", "dynamic"),
+            "show_labels": bool(values.get(
+                "value_grid_tick_labels_enabled", True
+            )),
+            "line_color": _color_or_default(
+                values.get("value_grid_line_color"), "#FFFFFF"
+            ),
+            "line_opacity": _opacity_or_default(
+                values.get("value_grid_line_opacity"), 0.18
+            ),
+            "line_thickness": float(values.get(
+                "value_grid_line_thickness", 1.0
+            )),
+            "text_color": _color_or_default(
+                values.get("value_grid_tick_text_color"),
+                theme_settings.muted_text_color,
+            ),
+            "text_opacity": _opacity_or_default(
+                values.get("value_grid_tick_text_opacity"), 0.72
+            ),
+            "font_size": _positive_int_or_default(
+                values.get("value_grid_tick_font_size"), 16
+            ),
+            "font_weight": values.get(
+                "value_grid_tick_font_weight", "normal"
+            ),
+            "font_style": values.get(
+                "value_grid_tick_font_style", "normal"
+            ),
+            "target_tick_count": _int_in_range_or_default(
+                values.get("value_grid_target_tick_count"), 5, 2, 12
+            ),
         },
         "title_font_family": values.get("title_font_family"),
         "subtitle_font_family": values.get("subtitle_font_family"),
@@ -2816,6 +2863,7 @@ def _canvas_text_section(
 
     layout_settings = get_layout_preset(layout_preset)
     background = _background_panel(values, theme_settings.background_color)
+    value_axis = _value_axis_panel(values, theme_settings)
     with st.expander("Available content area", expanded=True, icon=":material/height:"):
         st.caption(
             "Visible bar slots and Top N work together: Top N selects data; "
@@ -3300,6 +3348,7 @@ def _canvas_text_section(
         "left_margin": int(left_margin),
         "rank_label_gap": int(rank_label_gap),
         "background": background,
+        "value_axis": value_axis,
         "title_font_family": title_font_family,
         "subtitle_font_family": subtitle_font_family,
         "label_font_family": label_font_family,
@@ -4607,6 +4656,140 @@ def _clear_logo_session_overrides():
     st.session_state.pop(APPLIED_SECONDARY_LOGO_MATCHES_STATE, None)
     st.session_state.pop(CUSTOM_TEXTURE_PATH_STATE, None)
     st.session_state.pop(BACKGROUND_IMAGE_PATH_STATE, None)
+
+
+def _value_axis_panel(values, theme_settings):
+    with st.expander("Value axis", icon=":material/grid_on:"):
+        enabled = st.toggle(
+            "Show value grid",
+            value=bool(values.get("value_grid_enabled", False)),
+            key=_widget_key("value_grid_enabled"),
+        )
+        mode = values.get("value_grid_mode", "dynamic")
+        if mode not in ("static", "dynamic"):
+            mode = "dynamic"
+        mode = st.segmented_control(
+            "Grid mode",
+            options=("static", "dynamic"),
+            default=mode,
+            format_func=lambda value: {
+                "static": "Static",
+                "dynamic": "Dynamic",
+            }[value],
+            disabled=not enabled,
+            key=_widget_key("value_grid_mode"),
+        ) or mode
+        show_labels = st.toggle(
+            "Show tick labels",
+            value=bool(values.get("value_grid_tick_labels_enabled", True)),
+            disabled=not enabled,
+            key=_widget_key("value_grid_tick_labels_enabled"),
+        )
+
+        line_columns = st.columns(3)
+        line_color = line_columns[0].color_picker(
+            "Grid line color",
+            value=_color_or_default(
+                values.get("value_grid_line_color"), "#FFFFFF"
+            ),
+            disabled=not enabled,
+            key=_widget_key("value_grid_line_color"),
+        )
+        line_opacity = line_columns[1].slider(
+            "Grid line opacity",
+            0.0,
+            1.0,
+            _opacity_or_default(values.get("value_grid_line_opacity"), 0.18),
+            0.05,
+            disabled=not enabled,
+            key=_widget_key("value_grid_line_opacity"),
+        )
+        line_thickness = line_columns[2].slider(
+            "Grid line thickness",
+            0.5,
+            4.0,
+            min(4.0, max(0.5, float(values.get(
+                "value_grid_line_thickness", 1.0
+            )))),
+            0.25,
+            disabled=not enabled,
+            key=_widget_key("value_grid_line_thickness"),
+        )
+
+        label_enabled = enabled and show_labels
+        text_columns = st.columns(3)
+        text_color = text_columns[0].color_picker(
+            "Tick text color",
+            value=_color_or_default(
+                values.get("value_grid_tick_text_color"),
+                theme_settings.muted_text_color,
+            ),
+            disabled=not label_enabled,
+            key=_widget_key("value_grid_tick_text_color"),
+        )
+        text_opacity = text_columns[1].slider(
+            "Tick text opacity",
+            0.0,
+            1.0,
+            _opacity_or_default(
+                values.get("value_grid_tick_text_opacity"), 0.72
+            ),
+            0.05,
+            disabled=not label_enabled,
+            key=_widget_key("value_grid_tick_text_opacity"),
+        )
+        font_size = text_columns[2].number_input(
+            "Tick font size",
+            min_value=8,
+            max_value=72,
+            value=_int_in_range_or_default(
+                values.get("value_grid_tick_font_size"), 16, 8, 72
+            ),
+            step=1,
+            disabled=not label_enabled,
+            key=_widget_key("value_grid_tick_font_size"),
+        )
+        style_columns = st.columns(3)
+        bold = style_columns[0].toggle(
+            "Bold",
+            value=values.get("value_grid_tick_font_weight", "normal")
+            == "bold",
+            disabled=not label_enabled,
+            key=_widget_key("value_grid_tick_bold"),
+        )
+        italic = style_columns[1].toggle(
+            "Italic",
+            value=values.get("value_grid_tick_font_style", "normal")
+            == "italic",
+            disabled=not label_enabled,
+            key=_widget_key("value_grid_tick_italic"),
+        )
+        target_tick_count = style_columns[2].number_input(
+            "Target tick count",
+            min_value=2,
+            max_value=12,
+            value=_int_in_range_or_default(
+                values.get("value_grid_target_tick_count"), 5, 2, 12
+            ),
+            step=1,
+            disabled=not enabled,
+            key=_widget_key("value_grid_target_tick_count"),
+        )
+
+    return {
+        "enabled": bool(enabled),
+        "mode": mode,
+        "show_labels": bool(show_labels),
+        "line_color": line_color,
+        "line_opacity": float(line_opacity),
+        "line_thickness": float(line_thickness),
+        "text_color": text_color,
+        "text_opacity": float(text_opacity),
+        "font_size": int(font_size),
+        "font_weight": "bold" if bold else "normal",
+        "font_style": "italic" if italic else "normal",
+        "target_tick_count": int(target_tick_count),
+    }
 
 
 def _background_panel(values, theme_background_color):

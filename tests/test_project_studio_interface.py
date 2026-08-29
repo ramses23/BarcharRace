@@ -789,6 +789,66 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(restored_duration, initial_duration)
 
+    def test_value_axis_controls_persist_to_project_draft(self):
+        app_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "ui"
+            / "project_studio.py"
+        )
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+
+        show_grid = next(
+            control for control in app.toggle
+            if control.label == "Show value grid"
+        )
+        self.assertFalse(show_grid.value)
+        self.assertTrue(next(
+            control for control in app.get("button_group")
+            if control.label == "Grid mode"
+        ).disabled)
+
+        show_grid.set_value(True)
+        app.run()
+        grid_mode = next(
+            control for control in app.get("button_group")
+            if control.label == "Grid mode"
+        )
+        grid_mode.set_value("static")
+        next(
+            control for control in app.color_picker
+            if control.label == "Grid line color"
+        ).set_value("#123456")
+        next(
+            control for control in app.slider
+            if control.label == "Grid line opacity"
+        ).set_value(0.4)
+        next(
+            control for control in app.slider
+            if control.label == "Grid line thickness"
+        ).set_value(2.5)
+        next(
+            control for control in app.number_input
+            if control.label == "Tick font size"
+        ).set_value(18)
+        next(
+            control for control in app.number_input
+            if control.label == "Target tick count"
+        ).set_value(6)
+        app.run()
+
+        project_data = json.loads(app.json[0].value)
+        chart = project_data["chart"]
+        self.assertTrue(chart["value_grid_enabled"])
+        self.assertEqual(chart["value_grid_mode"], "static")
+        self.assertTrue(chart["value_grid_tick_labels_enabled"])
+        self.assertEqual(chart["value_grid_line_color"], "#123456")
+        self.assertEqual(chart["value_grid_line_opacity"], 0.4)
+        self.assertEqual(chart["value_grid_line_thickness"], 2.5)
+        self.assertEqual(chart["value_grid_tick_font_size"], 18)
+        self.assertEqual(chart["value_grid_target_tick_count"], 6)
+
     def test_short_export_controls_persist_range_text_and_resolution(self):
         app_path = (
             Path(__file__).resolve().parents[1]
