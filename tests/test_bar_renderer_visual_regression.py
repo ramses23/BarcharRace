@@ -52,7 +52,7 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
 
         self.assertEqual(
             signature,
-            "3ccb229f58f622f252539b710e1f225a5ef1e4a051b018044a29ebefb383180f",
+            "74a5d3b055400c2f12131a606cc0a0edbed0619c8cd03d70e3ff8784eaa8a8ef",
         )
 
     def test_advanced_frame_matches_reference_signature(self):
@@ -107,7 +107,7 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
 
         self.assertEqual(
             signature,
-            "1525011b36259d758147224be791c89cc9ac70e26b312862aa850e7fb715ff66",
+            "f0ef2e00f95b6deadfba1412cd3c081435f7a5a6108abc8972745c30bb742ee4",
         )
 
     def test_unified_classic_gradient_matches_legacy_simple_signature(self):
@@ -159,7 +159,7 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
 
         self.assertEqual(
             signature,
-            "3ccb229f58f622f252539b710e1f225a5ef1e4a051b018044a29ebefb383180f",
+            "74a5d3b055400c2f12131a606cc0a0edbed0619c8cd03d70e3ff8784eaa8a8ef",
         )
 
     @staticmethod

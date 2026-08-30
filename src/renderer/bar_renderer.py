@@ -1474,8 +1474,7 @@ class BarRenderer(TextCompositorMixin):
             self._set_bar_artists_visible(artists, False)
             return
 
-        alpha = min(1.0, max(0.25, sprite.width / self.config.max_bar_width))
-        rgba = mcolors.to_rgba(sprite.color, alpha * opacity)
+        rgba = mcolors.to_rgba(sprite.color, opacity)
         bar_path = None
 
         if not self._uses_advanced_appearance() and (
@@ -1671,13 +1670,9 @@ class BarRenderer(TextCompositorMixin):
             width,
             height,
         ).copy()
-        width_alpha = min(
-            1.0,
-            max(0.25, sprite.width / self.config.max_bar_width),
-        )
         material.putalpha(self._scaled_alpha_mask(
             mask,
-            width_alpha * self._opacity(sprite),
+            self._opacity(sprite),
         ))
         self._alpha_composite_at(
             canvas,
@@ -2144,8 +2139,7 @@ class BarRenderer(TextCompositorMixin):
             if opacity <= 0:
                 continue
 
-            alpha = min(1.0, max(0.25, sprite.width / self.config.max_bar_width))
-            rgba = mcolors.to_rgba(sprite.color, alpha * opacity)
+            rgba = mcolors.to_rgba(sprite.color, opacity)
             gradient = self._bar_gradient(rgba)[0]
             edges = self._bar_gradient_edges(sprite, segment_count)
 
@@ -3188,8 +3182,7 @@ class BarRenderer(TextCompositorMixin):
             if opacity <= 0:
                 continue
 
-            alpha = min(1.0, max(0.25, sprite.width / self.config.max_bar_width))
-            rgba = mcolors.to_rgba(sprite.color, alpha * opacity)
+            rgba = mcolors.to_rgba(sprite.color, opacity)
 
             self._draw_bar_shadow(ax, sprite, opacity)
 
