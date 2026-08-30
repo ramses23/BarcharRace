@@ -8,6 +8,7 @@ from utils.value_formatter import format_adaptive_compact_value, format_value
 
 VALUE_AXIS_HEADROOM = 1.12
 VALUE_AXIS_EXPANSION_SMOOTHING = 0.22
+VALUE_AXIS_CONTRACTION_SMOOTHING = 0.045
 VALUE_AXIS_TICK_FADE_IN = 0.22
 VALUE_AXIS_TICK_FADE_OUT = 0.16
 MIN_AXIS_DOMAIN = 1e-9
@@ -150,6 +151,7 @@ class ValueAxisTracker:
         chart_config,
         headroom=VALUE_AXIS_HEADROOM,
         expansion_smoothing=VALUE_AXIS_EXPANSION_SMOOTHING,
+        contraction_smoothing=VALUE_AXIS_CONTRACTION_SMOOTHING,
     ):
         self.mode = mode if mode in ("static", "dynamic") else "dynamic"
         self.origin_x = float(origin_x)
@@ -169,12 +171,15 @@ class ValueAxisTracker:
             expansion_smoothing,
             default=VALUE_AXIS_EXPANSION_SMOOTHING,
         )
+        self.contraction_smoothing = _unit_interval(
+            contraction_smoothing,
+            default=VALUE_AXIS_CONTRACTION_SMOOTHING,
+        )
         self.static_domain = nice_axis_max(
             max(MIN_AXIS_DOMAIN, float(static_max_value)) * self.headroom,
             self.target_tick_count,
         )
         self.domain = None
-        self.effective_scale = None
         self._tick_opacities = {}
         self._started = False
 
@@ -218,28 +223,19 @@ class ValueAxisTracker:
         )
         if self.domain is None or self.mode == "static":
             self.domain = target_domain
-        elif target_domain > self.domain:
-            self.domain += (
-                target_domain - self.domain
-            ) * self.expansion_smoothing
+        else:
+            smoothing = (
+                self.expansion_smoothing
+                if target_domain > self.domain
+                else self.contraction_smoothing
+            )
+            self.domain += (target_domain - self.domain) * smoothing
             self.domain = max(self.domain, visible_max * 1.015)
-
-        domain = max(MIN_AXIS_DOMAIN, self.domain)
-        desired_scale = self.axis_width / domain
-        self.effective_scale = (
-            desired_scale
-            if self.effective_scale is None
-            else min(self.effective_scale, desired_scale)
-        )
-        effective_axis_width = min(
-            self.axis_width,
-            self.effective_scale * domain,
-        )
 
         scale = ValueScale(
             origin_x=self.origin_x,
-            width=effective_axis_width,
-            domain_max=domain,
+            width=self.axis_width,
+            domain_max=max(MIN_AXIS_DOMAIN, self.domain),
         )
         effective_tick_count = adaptive_tick_count(
             scale.width,

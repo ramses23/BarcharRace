@@ -12,12 +12,6 @@ class ValueScale:
     def right_x(self):
         return self.origin_x + self.width
 
-    @property
-    def pixels_per_value(self):
-        if not isfinite(self.domain_max) or self.domain_max <= 0.0:
-            return 0.0
-        return self.width / self.domain_max
-
     def x_for_value(self, value):
         try:
             value = float(value)
@@ -26,7 +20,7 @@ class ValueScale:
         if not isfinite(value) or self.domain_max <= 0.0:
             value = 0.0
         value = max(0.0, min(self.domain_max, value))
-        return self.origin_x + (value * self.pixels_per_value)
+        return self.origin_x + ((value / self.domain_max) * self.width)
 
     def width_for_value(self, value):
         return self.x_for_value(value) - self.origin_x

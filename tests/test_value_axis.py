@@ -110,7 +110,7 @@ class ValueAxisTest(unittest.TestCase):
         self.assertLess(last_tick.x, first_tick.x)
         self.assertEqual(last_tick.opacity, 1.0)
 
-    def test_dynamic_domain_never_contracts_after_leader_decreases(self):
+    def test_contraction_is_slower_than_expansion(self):
         config = self._config(value_grid_mode="dynamic")
         tracker = ValueAxisTracker.from_config(
             config,
@@ -121,118 +121,11 @@ class ValueAxisTest(unittest.TestCase):
         contracted = tracker.next([sprite("A", 100)])
 
         expansion = expanded.scale.domain_max - initial.scale.domain_max
+        contraction = expanded.scale.domain_max - contracted.scale.domain_max
         self.assertGreater(expansion, 0.0)
-        self.assertEqual(
-            contracted.scale.domain_max,
-            expanded.scale.domain_max,
-        )
-        self.assertEqual(
-            contracted.scale.pixels_per_value,
-            expanded.scale.pixels_per_value,
-        )
-
-    def test_growth_only_scale_with_synthetic_leader_sequence(self):
-        values = (
-            1_000_000_000,
-            1_500_000_000,
-            1_200_000_000,
-            1_100_000_000,
-        )
-        frames = [[sprite("Leader", value, width=1_400)] for value in values]
-        tracker = ValueAxisTracker.from_config(
-            self._config(value_grid_mode="dynamic"),
-            frames,
-        )
-        states = [tracker.next(frame) for frame in frames]
-        endpoints = [
-            scale_bar_sprites(frame, state.scale)[0].x
-            + scale_bar_sprites(frame, state.scale)[0].width
-            for frame, state in zip(frames, states)
-        ]
-
-        domains = [state.scale.domain_max for state in states]
-        scales = [state.scale.pixels_per_value for state in states]
-        self.assertTrue(all(
-            current >= previous
-            for previous, current in zip(domains, domains[1:])
-        ))
-        self.assertEqual(domains[2:], [domains[1], domains[1]])
-        self.assertTrue(all(
-            current <= previous
-            for previous, current in zip(scales, scales[1:])
-        ))
-        self.assertLess(endpoints[2], endpoints[1])
-        self.assertLess(endpoints[3], endpoints[2])
-        self._assert_persistent_ticks_never_move_right(states)
-
-    def test_safe_width_recovery_never_increases_scale(self):
-        for mode in ("dynamic", "static"):
-            with self.subTest(mode=mode):
-                frames = [
-                    [sprite("Leader", 1_000_000_000, width=width)]
-                    for width in (1_400, 700, 1_400)
-                ]
-                tracker = ValueAxisTracker.from_config(
-                    self._config(value_grid_mode=mode),
-                    frames,
-                )
-                states = [tracker.next(frame) for frame in frames]
-                scales = [
-                    state.scale.pixels_per_value for state in states
-                ]
-
-                self.assertLess(scales[1], scales[0])
-                self.assertEqual(scales[2], scales[1])
-                self.assertLessEqual(states[1].scale.width, 700)
-                self.assertEqual(states[2].scale.width, states[1].scale.width)
-                self._assert_persistent_ticks_never_move_right(states)
-                fresh_tracker = ValueAxisTracker.from_config(
-                    self._config(value_grid_mode=mode),
-                    frames,
-                )
-                fresh_state = fresh_tracker.next(frames[0])
-                self.assertEqual(
-                    fresh_state.scale.pixels_per_value,
-                    states[0].scale.pixels_per_value,
-                )
-
-    def test_real_chrome_decrease_shrinks_bar_not_persistent_ticks(self):
-        values = (938_460_600, 898_849_333)
-        frames = [[sprite("Chrome", value, width=1_400)] for value in values]
-        tracker = ValueAxisTracker.from_config(
-            self._config(
-                value_grid_mode="dynamic",
-                value_grid_target_tick_count=5,
-            ),
-            frames,
-        )
-        states = [tracker.next(frame) for frame in frames]
-        scaled = [
-            scale_bar_sprites(frame, state.scale)[0]
-            for frame, state in zip(frames, states)
-        ]
-
-        self.assertLess(
-            scaled[1].x + scaled[1].width,
-            scaled[0].x + scaled[0].width,
-        )
-        self.assertEqual(
-            states[1].scale.pixels_per_value,
-            states[0].scale.pixels_per_value,
-        )
-        for tick_value in (
-            250_000_000,
-            500_000_000,
-            750_000_000,
-            1_000_000_000,
-        ):
-            previous = next(
-                tick for tick in states[0].ticks if tick.value == tick_value
-            )
-            current = next(
-                tick for tick in states[1].ticks if tick.value == tick_value
-            )
-            self.assertLessEqual(current.x, previous.x + 1e-9)
+        self.assertGreater(contraction, 0.0)
+        self.assertLess(contraction, expansion)
+        self.assertGreater(contracted.scale.domain_max, initial.scale.domain_max)
 
     def test_tick_changes_fade_by_value_identity(self):
         config = self._config(
@@ -254,7 +147,7 @@ class ValueAxisTest(unittest.TestCase):
         self.assertLess(second_by_value[30_000].opacity, 1.0)
         self.assertLess(second_by_value[20_000].x, first_by_value[20_000].x)
 
-    def test_static_mode_keeps_domain_fixed_and_scale_never_moves_right(self):
+    def test_static_mode_keeps_domain_fixed_and_uses_current_frame_width(self):
         config = self._config(value_grid_mode="static")
         tracker = ValueAxisTracker.from_config(
             config,
@@ -262,12 +155,10 @@ class ValueAxisTest(unittest.TestCase):
         )
         low = tracker.next([sprite("A", 35_000, width=600)])
         high = tracker.next([sprite("A", 70_000, width=300)])
-        recovered = tracker.next([sprite("A", 35_000, width=600)])
 
         self.assertEqual(low.scale.domain_max, high.scale.domain_max)
         self.assertEqual(low.scale.width, 600)
         self.assertEqual(high.scale.width, 300)
-        self.assertEqual(recovered.scale.width, 300)
         self.assertNotEqual(
             [(tick.value, tick.x) for tick in low.ticks],
             [(tick.value, tick.x) for tick in high.ticks],
@@ -442,22 +333,7 @@ class ValueAxisTest(unittest.TestCase):
                     collision_right,
                 )
 
-        recovered_state = tracker.next(wide)
-        self.assertAlmostEqual(
-            recovered_state.scale.pixels_per_value,
-            constrained_state.scale.pixels_per_value,
-        )
-        self.assertAlmostEqual(
-            recovered_state.scale.width,
-            constrained_state.scale.width,
-        )
-        self._assert_persistent_ticks_never_move_right([
-            wide_state,
-            constrained_state,
-            recovered_state,
-        ])
-
-    def test_browser_static_domain_shrinks_width_without_recovery(self):
+    def test_browser_static_domain_is_global_but_width_is_per_frame(self):
         config = self._browser_config(value_grid_mode="static")
         layout = LayoutEngine(
             config=config,
@@ -469,7 +345,6 @@ class ValueAxisTest(unittest.TestCase):
 
         wide_state = tracker.next(wide)
         constrained_state = tracker.next(constrained)
-        recovered_state = tracker.next(wide)
 
         self.assertEqual(
             wide_state.scale.domain_max,
@@ -480,15 +355,6 @@ class ValueAxisTest(unittest.TestCase):
             constrained_state.scale.width,
             704.0143603133159,
         )
-        self.assertAlmostEqual(
-            recovered_state.scale.width,
-            constrained_state.scale.width,
-        )
-        self._assert_persistent_ticks_never_move_right([
-            wide_state,
-            constrained_state,
-            recovered_state,
-        ])
 
     def test_real_tick_labels_do_not_overlap_for_targets_and_aspect_ratios(self):
         for width, height in ((1920, 1080), (1080, 1920)):
@@ -522,26 +388,6 @@ class ValueAxisTest(unittest.TestCase):
                         target_count,
                     )
                     self._assert_tick_labels_do_not_overlap(config, state)
-                    frames = [
-                        [sprite(
-                            "IE",
-                            1_122_031_900,
-                            width=axis_width,
-                            x=config.left_margin,
-                        )]
-                        for axis_width in (
-                            config.max_bar_width,
-                            config.max_bar_width / 2,
-                            config.max_bar_width,
-                        )
-                    ]
-                    tracker = ValueAxisTracker.from_config(config, frames)
-                    states = [tracker.next(frame) for frame in frames]
-                    self._assert_persistent_ticks_never_move_right(states)
-                    self.assertEqual(
-                        states[2].scale.pixels_per_value,
-                        states[1].scale.pixels_per_value,
-                    )
 
     def test_grid_layer_is_behind_bars_text_and_logos(self):
         config = self._config(
@@ -829,23 +675,6 @@ class ValueAxisTest(unittest.TestCase):
             for (_, previous_right), (current_left, _)
             in zip(bounds, bounds[1:])
         ))
-
-    def _assert_persistent_ticks_never_move_right(
-        self, states, epsilon=1e-9
-    ):
-        for previous, current in zip(states, states[1:]):
-            previous_ticks = {
-                tick.value: tick for tick in previous.ticks
-            }
-            current_ticks = {
-                tick.value: tick for tick in current.ticks
-            }
-            for value in previous_ticks.keys() & current_ticks.keys():
-                self.assertLessEqual(
-                    current_ticks[value].x,
-                    previous_ticks[value].x + epsilon,
-                    f"Persistent tick {value} moved right",
-                )
 
     @staticmethod
     def _browser_config(**overrides):
