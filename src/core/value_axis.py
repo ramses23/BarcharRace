@@ -180,6 +180,8 @@ class ValueAxisTracker:
             self.target_tick_count,
         )
         self.domain = None
+        self._effective_scale = None
+        self._previous_visible_max = None
         self._tick_opacities = {}
         self._started = False
 
@@ -232,10 +234,36 @@ class ValueAxisTracker:
             self.domain += (target_domain - self.domain) * smoothing
             self.domain = max(self.domain, visible_max * 1.015)
 
+        domain = max(MIN_AXIS_DOMAIN, self.domain)
+        desired_scale = self.axis_width / domain
+        effective_axis_width = self.axis_width
+        if self.mode == "dynamic":
+            if self._effective_scale is None:
+                self._effective_scale = desired_scale
+            elif visible_max >= self._previous_visible_max:
+                # Rising/equal maxima must not move persistent ticks right.
+                self._effective_scale = min(
+                    self._effective_scale,
+                    desired_scale,
+                )
+            elif desired_scale > self._effective_scale:
+                self._effective_scale += (
+                    desired_scale - self._effective_scale
+                ) * self.contraction_smoothing
+            else:
+                self._effective_scale = desired_scale
+            effective_axis_width = min(
+                self.axis_width,
+                max(0.0, self._effective_scale * domain),
+            )
+        else:
+            self._effective_scale = desired_scale
+        self._previous_visible_max = visible_max
+
         scale = ValueScale(
             origin_x=self.origin_x,
-            width=self.axis_width,
-            domain_max=max(MIN_AXIS_DOMAIN, self.domain),
+            width=effective_axis_width,
+            domain_max=domain,
         )
         effective_tick_count = adaptive_tick_count(
             scale.width,

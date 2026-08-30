@@ -25,6 +25,7 @@ from core.value_axis import (
     scale_bar_sprites,
 )
 from models.bar_sprite import BarSprite
+from models.fun_fact import ActiveFunFact, FunFact
 from models.scene import Scene
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
@@ -109,6 +110,87 @@ class ValueAxisTest(unittest.TestCase):
         ))
         self.assertLess(last_tick.x, first_tick.x)
         self.assertEqual(last_tick.opacity, 1.0)
+
+    def test_dynamic_rising_visible_max_never_moves_persistent_ticks_right(self):
+        config = self._browser_config(value_grid_mode="dynamic")
+        tracker = ValueAxisTracker.from_config(config, [[
+            sprite("Firefox", 1_590_915_078, width=1444),
+            sprite("Chrome", 1_500_000_000, width=1362),
+        ]])
+        states = [
+            tracker.next([
+                sprite("Firefox", 1_590_915_078, width=1444),
+                sprite("Chrome", 1_500_000_000, width=1362),
+            ]),
+            tracker.next([
+                sprite("Chrome", 1_592_032_263, width=1453),
+                sprite("Firefox", 1_580_000_000, width=1401),
+            ]),
+            tracker.next([
+                sprite("Chrome", 1_610_259_340, width=1462),
+                sprite("Firefox", 1_570_000_000, width=1388),
+            ]),
+        ]
+
+        for previous, current in zip(states, states[1:]):
+            previous_ticks = {tick.value: tick.x for tick in previous.ticks}
+            persistent = [
+                tick
+                for tick in current.ticks
+                if tick.value > 0 and tick.value in previous_ticks
+            ]
+            self.assertTrue(persistent)
+            self.assertTrue(all(
+                tick.x <= previous_ticks[tick.value] + 1e-9
+                for tick in persistent
+            ))
+
+    def test_dynamic_equal_visible_max_never_moves_persistent_ticks_right(self):
+        config = self._config(value_grid_mode="dynamic")
+        tracker = ValueAxisTracker.from_config(
+            config,
+            [[sprite("A", 100, width=300)]],
+        )
+        first = tracker.next([sprite("A", 100, width=300)])
+        second = tracker.next([sprite("A", 100, width=450)])
+        first_ticks = {tick.value: tick.x for tick in first.ticks}
+        persistent = [
+            tick
+            for tick in second.ticks
+            if tick.value > 0 and tick.value in first_ticks
+        ]
+
+        self.assertTrue(persistent)
+        self.assertTrue(all(
+            tick.x <= first_ticks[tick.value] + 1e-9
+            for tick in persistent
+        ))
+
+    def test_dynamic_falling_real_max_allows_smooth_rightward_ticks(self):
+        config = self._browser_config(value_grid_mode="dynamic")
+        tracker = ValueAxisTracker.from_config(
+            config,
+            [[sprite("Chrome", 898_849_333, width=1256)]],
+        )
+        september = tracker.next([
+            sprite("Chrome", 898_849_333, width=1256),
+        ])
+        october = tracker.next([
+            sprite("Chrome", 880_537_500, width=1256),
+        ])
+        september_ticks = {tick.value: tick.x for tick in september.ticks}
+        persistent = [
+            tick
+            for tick in october.ticks
+            if tick.value > 0 and tick.value in september_ticks
+        ]
+
+        self.assertLess(october.scale.domain_max, september.scale.domain_max)
+        self.assertTrue(persistent)
+        self.assertTrue(all(
+            tick.x > september_ticks[tick.value]
+            for tick in persistent
+        ))
 
     def test_contraction_is_slower_than_expansion(self):
         config = self._config(value_grid_mode="dynamic")
@@ -332,6 +414,43 @@ class ValueAxisTest(unittest.TestCase):
                     scaled.x + scaled.width + required_value_lane,
                     collision_right,
                 )
+
+    def test_editorial_reservation_is_stable_before_during_and_after_card(self):
+        config = self._browser_config(value_grid_mode="dynamic")
+        fun_fact_config = self._browser_fun_fact()
+        bars = LayoutEngine(
+            config=config,
+            fun_fact_config=fun_fact_config,
+        ).build(self._browser_bars_2009())
+        state = ValueAxisTracker.from_config(config, [bars]).next(bars)
+        scaled = scale_bar_sprites(bars, state.scale)
+        active = ActiveFunFact(
+            FunFact(
+                id="audit",
+                start="2010-01",
+                end="2010-01",
+                headline="Editorial audit",
+            ),
+            opacity=1.0,
+        )
+        scenes = (
+            Scene(title="", bars=scaled, value_axis=state),
+            Scene(
+                title="",
+                bars=scaled,
+                value_axis=state,
+                fun_fact=active,
+            ),
+            Scene(title="", bars=scaled, value_axis=state),
+        )
+        geometries = [
+            build_scene_geometry(config, fun_fact_config, scene)
+            for scene in scenes
+        ]
+
+        self.assertEqual(geometries[0], geometries[1])
+        self.assertEqual(geometries[1], geometries[2])
+        self.assertIsNotNone(geometries[0]["editorial_rect"])
 
     def test_browser_static_domain_is_global_but_width_is_per_frame(self):
         config = self._browser_config(value_grid_mode="static")
