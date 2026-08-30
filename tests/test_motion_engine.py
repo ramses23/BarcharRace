@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import _test_path
@@ -7,6 +8,136 @@ from models.bar_sprite import BarSprite
 
 
 class MotionEngineTest(unittest.TestCase):
+    @staticmethod
+    def _sprite(value, *, name="A", y=0, rank=1):
+        return BarSprite(
+            name=name,
+            value=value,
+            color="#123456",
+            x=0,
+            y=y,
+            width=max(0, value),
+            height=40,
+            rank=rank,
+        )
+
+    def _continuous_values(self, points, *, steps=140, value_smoothing=True):
+        engine = MotionEngine(
+            AnimationConfig(
+                motion_mode="continuous",
+                value_smoothing=value_smoothing,
+            )
+        )
+        frames = engine.interpolate_sprites_continuous(
+            [self._sprite(points[0])],
+            [self._sprite(points[1])],
+            [self._sprite(points[2])],
+            [self._sprite(points[3])],
+            steps=steps,
+            include_start=True,
+        )
+        return [frame[0].value for frame in frames]
+
+    def assertMonotoneSegment(self, values, start, end):
+        self.assertEqual(values[0], start)
+        self.assertEqual(values[-1], end)
+        lower, upper = sorted((start, end))
+        self.assertTrue(all(lower <= value <= upper for value in values))
+        if end > start:
+            self.assertTrue(all(a <= b for a, b in zip(values, values[1:])))
+        elif end < start:
+            self.assertTrue(all(a >= b for a, b in zip(values, values[1:])))
+        else:
+            self.assertTrue(all(value == start for value in values))
+
+    def test_real_ie_values_start_moving_immediately_without_overshoot(self):
+        values = self._continuous_values(
+            (1_012_073_100, 999_017_500, 999_188_800, 1_009_314_166)
+        )
+
+        self.assertMonotoneSegment(values, 999_017_500, 999_188_800)
+        self.assertGreater(values[1], values[0])
+        self.assertEqual(sum(value == values[0] for value in values), 1)
+
+    def test_monotone_cubic_values_increase_smoothly(self):
+        values = self._continuous_values((100, 120, 150, 180))
+
+        self.assertMonotoneSegment(values, 120, 150)
+        self.assertGreater(values[1], values[0])
+
+    def test_monotone_cubic_values_decrease_smoothly(self):
+        values = self._continuous_values((180, 150, 120, 100))
+
+        self.assertMonotoneSegment(values, 150, 120)
+        self.assertLess(values[1], values[0])
+
+    def test_monotone_cubic_values_leave_local_maximum_immediately(self):
+        values = self._continuous_values((100, 200, 180, 160))
+
+        self.assertMonotoneSegment(values, 200, 180)
+        self.assertLess(values[1], values[0])
+
+    def test_monotone_cubic_values_leave_local_minimum_immediately(self):
+        values = self._continuous_values((200, 100, 120, 150))
+
+        self.assertMonotoneSegment(values, 100, 120)
+        self.assertGreater(values[1], values[0])
+
+    def test_monotone_cubic_values_preserve_equal_endpoints_exactly(self):
+        values = self._continuous_values((50, 100, 100, 150))
+
+        self.assertMonotoneSegment(values, 100, 100)
+
+    def test_monotone_cubic_values_handle_timeline_boundaries(self):
+        first = self._continuous_values((100, 100, 120, 150))
+        last = self._continuous_values((100, 120, 150, 150))
+
+        self.assertMonotoneSegment(first, 100, 120)
+        self.assertMonotoneSegment(last, 120, 150)
+        self.assertGreater(first[1], first[0])
+        self.assertLess(last[-2], last[-1])
+
+    def test_monotone_cubic_values_handle_small_negative_and_large_values(self):
+        cases = (
+            ((1e12, 1e12 - 1, 1e12 - 0.999, 1e12 + 100), 1e12 - 1, 1e12 - 0.999),
+            ((-20, -10, 0, 15), -10, 0),
+            ((1e300, 1.1e300, 1.2e300, 1.3e300), 1.1e300, 1.2e300),
+        )
+
+        for points, start, end in cases:
+            with self.subTest(points=points):
+                values = self._continuous_values(points)
+                self.assertMonotoneSegment(values, start, end)
+                self.assertTrue(all(math.isfinite(value) for value in values))
+
+    def test_continuous_entering_and_exiting_values_remain_finite(self):
+        engine = MotionEngine(AnimationConfig(motion_mode="continuous"))
+        entering = self._sprite(10, name="entering")
+        exiting = self._sprite(20, name="exiting")
+
+        frames = engine.interpolate_sprites_continuous(
+            [exiting],
+            [exiting],
+            [entering],
+            [entering],
+            steps=10,
+        )
+
+        self.assertTrue(all(
+            math.isfinite(sprite.value)
+            for frame in frames
+            for sprite in frame
+        ))
+
+    def test_continuous_value_smoothing_false_remains_linear(self):
+        values = self._continuous_values(
+            (200, 100, 120, 150),
+            steps=4,
+            value_smoothing=False,
+        )
+
+        self.assertEqual(values, [100, 105, 110, 115, 120])
+
     def test_continuous_motion_preserves_velocity_across_period_boundary(self):
         def sprite(value, y):
             return BarSprite(

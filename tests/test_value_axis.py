@@ -654,6 +654,93 @@ class ValueAxisTest(unittest.TestCase):
                     preview_axis.scale.x_for_value(bar.value),
                 )
 
+    def test_monotone_values_match_preview_render_job_and_value_axis(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_path = root / "data.csv"
+            csv_path.write_text(
+                "year,country,value\n"
+                "0,IE,1012073100\n"
+                "1,IE,999017500\n"
+                "2,IE,999188800\n"
+                "3,IE,1009314166\n",
+                encoding="utf-8",
+            )
+            steps = 8
+            chart = ChartConfig(
+                frames_dir=str(root / "frames"),
+                output_file=str(root / "video.mp4"),
+                frame_output_mode="png_sequence",
+                steps_per_transition=steps,
+                value_grid_enabled=True,
+                value_grid_mode="dynamic",
+                animation=AnimationConfig(
+                    easing="ease_out_cubic",
+                    value_smoothing=True,
+                    motion_mode="continuous",
+                ),
+            )
+            with patch("pipeline.render_job.BarRenderer") as renderer_class:
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        RenderJob(
+                            config=chart,
+                            data_source_config=DataSourceConfig(
+                                source_type="csv",
+                                csv_path=str(csv_path),
+                            ),
+                            dataset_config=DatasetConfig(),
+                        ).run()
+            render_scenes = [
+                call.args[0]
+                for call in renderer_class.return_value.render.call_args_list
+            ]
+            preview_data = self._project_data(
+                csv_path="data.csv",
+                steps_per_transition=steps,
+                value_grid_enabled=True,
+                value_grid_mode="dynamic",
+                motion_mode="continuous",
+            )
+
+            for step in (1, 4, 8):
+                with self.subTest(step=step):
+                    with patch("studio.preview.BarRenderer") as preview_renderer:
+                        preview_renderer.return_value.render.return_value = str(
+                            root / "preview.png"
+                        )
+                        render_project_preview(
+                            root / "project.json",
+                            output_dir=root / "previews",
+                            root_dir=root,
+                            project_data=preview_data,
+                            preview_mode="transition",
+                            year=1,
+                            transition_progress=step / steps,
+                        )
+                    preview_scene = (
+                        preview_renderer.return_value.render.call_args.args[0]
+                    )
+                    render_scene = render_scenes[steps + step]
+                    preview_bar = preview_scene.bars[0]
+                    render_bar = render_scene.bars[0]
+
+                    self.assertEqual(preview_bar.value, render_bar.value)
+                    self.assertEqual(
+                        preview_bar.width,
+                        preview_scene.value_axis.scale.width_for_value(
+                            preview_bar.value
+                        ),
+                    )
+                    self.assertEqual(
+                        render_bar.width,
+                        render_scene.value_axis.scale.width_for_value(
+                            render_bar.value
+                        ),
+                    )
+
+            self.assertGreater(render_scenes[steps + 1].bars[0].value, 999_017_500)
+
     def _assert_tick_labels_do_not_overlap(self, config, state):
         font = measurement_font(
             config.value_grid_tick_font_size,

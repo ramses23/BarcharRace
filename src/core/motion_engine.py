@@ -1,3 +1,5 @@
+from math import isfinite
+
 from config.animation_config import AnimationConfig
 from utils.interpolation import lerp
 from models.bar_sprite import BarSprite
@@ -138,7 +140,7 @@ class MotionEngine:
             value=(
                 lerp(start.value, end.value, value_t)
                 if value_t is not None
-                else self._bounded_catmull_rom(
+                else self._monotone_cubic_value(
                     previous.value,
                     start.value,
                     end.value,
@@ -242,6 +244,65 @@ class MotionEngine:
             + (-p0 + 3 * p1 - 3 * p2 + p3) * (t * t * t)
         )
         return min(max(p1, p2), max(min(p1, p2), value))
+
+    def _monotone_cubic_value(self, p0, p1, p2, p3, t):
+        """Interpolate p1 -> p2 with an equal-step PCHIP Hermite segment."""
+        if t <= 0.0:
+            return p1
+        if t >= 1.0:
+            return p2
+        if p1 == p2:
+            return p1
+
+        points = tuple(float(value) for value in (p0, p1, p2, p3))
+        if not all(isfinite(value) for value in points):
+            return lerp(p1, p2, t)
+
+        # Normalize before taking differences so very large finite values do
+        # not overflow. PCHIP tangent ratios are invariant under this scale.
+        scale = max(1.0, *(abs(value) for value in points))
+        q0, q1, q2, q3 = (value / scale for value in points)
+        d0 = q1 - q0
+        d1 = q2 - q1
+        d2 = q3 - q2
+        if d1 == 0.0:
+            return lerp(p1, p2, t)
+
+        # For equal period spacing, PCHIP uses the harmonic mean of adjacent
+        # secants. A sign change makes the shared-node tangent zero, which
+        # preserves local extrema without an after-the-fact value clamp.
+        m1 = self._pchip_tangent(d0, d1)
+        m2 = self._pchip_tangent(d1, d2)
+        alpha = m1 / d1
+        beta = m2 / d1
+
+        t2 = t * t
+        t3 = t2 * t
+        h10 = t3 - (2.0 * t2) + t
+        h01 = (-2.0 * t3) + (3.0 * t2)
+        h11 = t3 - t2
+        progress = h01 + (h10 * alpha) + (h11 * beta)
+
+        # Monotone PCHIP keeps progress in [0, 1]. Prefer the delta form to
+        # retain tiny changes next to large baselines; use weighted endpoints
+        # only when subtracting opposite extreme values would overflow.
+        segment_delta = p2 - p1
+        if isfinite(segment_delta):
+            return p1 + (segment_delta * progress)
+        return (p1 * (1.0 - progress)) + (p2 * progress)
+
+    def _pchip_tangent(self, left_secant, right_secant):
+        same_direction = (
+            (left_secant > 0.0 and right_secant > 0.0)
+            or (left_secant < 0.0 and right_secant < 0.0)
+        )
+        if not same_direction:
+            return 0.0
+
+        return (
+            2.0 * left_secant * right_secant
+            / (left_secant + right_secant)
+        )
 
     def _rank_bounds(self, start_sprite, end_sprite):
         start_rank = self._sprite_rank(start_sprite)
