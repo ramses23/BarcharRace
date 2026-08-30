@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import fields, replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,11 +12,15 @@ from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from config.project_file_loader import ProjectFileError, load_project_data
 from config.project_preset import ProjectPreset
+from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
+from core.scene_geometry import build_scene_geometry
 from core.layout_engine import LayoutEngine
 from models.bar_data import BarData
+from models.scene import Scene
 from PIL import Image
 from pipeline.render_job import RenderJob
 from studio.project_builder import project_form_values
+from studio.fun_fact_layout import editorial_geometry
 from studio.project_runtime import resolve_project_preset_paths
 from studio.preview import render_project_preview
 from studio.short_export import (
@@ -23,6 +28,7 @@ from studio.short_export import (
     estimate_export_duration,
     resolve_export_output_path,
     resolve_export_periods,
+    short_bar_area_bottom,
     short_fun_fact_config,
     short_overlay_for_frame,
 )
@@ -100,6 +106,115 @@ class ShortExportTest(unittest.TestCase):
         self.assertTrue(all(0 <= sprite.x < 1080 for sprite in sprites))
         self.assertTrue(all(sprite.x + sprite.width <= 1080 for sprite in sprites))
 
+    def test_short_fill_available_reserves_date_and_source_safe_region(self):
+        chart = ChartConfig(
+            width=1920,
+            height=1080,
+            dpi=150,
+            max_visible_bars=10,
+            auto_fit_bar_count=True,
+            bar_vertical_layout_mode="fill_available",
+            bar_vertical_top_padding=18,
+            bar_vertical_bottom_padding=18,
+            title_enabled=False,
+            subtitle_enabled=False,
+            time_label_enabled=True,
+            time_label_font_size=70,
+            source_label_enabled=True,
+            source_font_size=13,
+            logos_enabled=True,
+            logo_size=100,
+            bar_logo_position="inside_right",
+            value_labels_enabled=True,
+            value_font_size=26,
+            value_grid_enabled=True,
+            value_grid_tick_labels_enabled=True,
+        )
+        short = apply_export_profile(chart, ExportConfig(mode="short"))
+        bars = [
+            BarData(
+                name=f"Browser {index}",
+                value=10 - index,
+                logo_path=f"browser-{index}.png",
+            )
+            for index in range(10)
+        ]
+        sprites = LayoutEngine(config=short).build(bars)
+        scene = Scene(
+            title="",
+            time_label="2009-04",
+            source_label="Source: browser dataset",
+            bars=sprites,
+        )
+        geometry = build_scene_geometry(short, FunFactConfig(), scene)
+        last_row = geometry["row_rects"][-1]
+        last_row_bottom = last_row["y"] + last_row["height"]
+        effective_rank_bottom = (
+            last_row_bottom + (RANK_MOTION_HEIGHT_EMPHASIS / 2.0)
+        )
+        date_top = geometry["text_bounds"]["date"]["y"]
+        source_top = geometry["text_bounds"]["source"]["y"]
+        value_bottom = (
+            sprites[-1].y
+            + (short.value_font_size * short.dpi / 144.0)
+        )
+        last_logo = geometry["primary_logo_rects"][-1]
+        last_logo_bottom = last_logo["y"] + last_logo["height"]
+
+        self.assertEqual((short.width, short.height), (1080, 1920))
+        self.assertEqual(len(sprites), 10)
+        self.assertLessEqual(
+            effective_rank_bottom + 12.0,
+            date_top,
+        )
+        self.assertLessEqual(value_bottom, date_top)
+        self.assertLessEqual(last_logo_bottom, date_top)
+        self.assertLessEqual(effective_rank_bottom + 12.0, source_top)
+        self.assertEqual(
+            short.height - short.bar_vertical_bottom_padding,
+            int(short_bar_area_bottom(replace(
+                short,
+                bar_vertical_bottom_padding=chart.bar_vertical_bottom_padding,
+            ))),
+        )
+
+    def test_short_safe_region_does_not_change_standard_or_editorial_geometry(self):
+        chart = ChartConfig(
+            width=1920,
+            height=1080,
+            bar_vertical_layout_mode="fill_available",
+            max_visible_bars=10,
+        )
+        bars = [BarData(name=str(index), value=10 - index) for index in range(10)]
+        standard_rows = LayoutEngine(config=chart).build(bars)
+
+        standard = apply_export_profile(chart, ExportConfig(mode="standard"))
+        reapplied_rows = LayoutEngine(config=standard).build(bars)
+
+        self.assertIs(standard, chart)
+        self.assertEqual(
+            [(sprite.y, sprite.height) for sprite in standard_rows],
+            [(sprite.y, sprite.height) for sprite in reapplied_rows],
+        )
+
+        short = apply_export_profile(chart, ExportConfig(mode="short"))
+        prior_short = replace(
+            short,
+            bar_vertical_bottom_padding=chart.bar_vertical_bottom_padding,
+        )
+        facts = FunFactConfig(
+            enabled=True,
+            layout="editorial_floating",
+            editorial_card_x=520,
+            editorial_card_y=300,
+            editorial_card_width=500,
+            editorial_card_height=700,
+        )
+        self.assertEqual(
+            editorial_geometry(prior_short, facts),
+            editorial_geometry(short, facts),
+        )
+
     def test_range_is_inclusive_and_rejects_invalid_or_unknown_periods(self):
         periods = (2000, 2001, 2002, 2003)
         export = ExportConfig(
@@ -145,6 +260,10 @@ class ShortExportTest(unittest.TestCase):
     def test_intro_context_and_outro_follow_frame_time(self):
         export = ExportConfig(
             mode="short",
+            short_intro_text="A neutral intro",
+            short_context_title="Configured context",
+            short_context_subtitle="Configured range",
+            short_outro_text="Configured CTA",
             short_intro_duration=2.0,
             short_outro_duration=2.0,
         )
@@ -163,6 +282,59 @@ class ShortExportTest(unittest.TestCase):
         self.assertGreater(intro.opacity, 0)
         self.assertEqual(context.kind, "context")
         self.assertEqual(outro.kind, "outro")
+
+    def test_short_defaults_are_semantically_neutral_and_draw_no_empty_panel(self):
+        export = ExportConfig(mode="short")
+        default_text = " ".join((
+            export.short_intro_text,
+            export.short_context_title,
+            export.short_context_subtitle,
+            export.short_outro_text,
+        ))
+
+        self.assertNotIn("World’s Largest Economies", default_text)
+        self.assertNotIn("2001 → 2005", default_text)
+        self.assertNotIn("CHINA", default_text)
+        self.assertEqual(default_text.strip(), "")
+        for frame_index in (0, 120, 299):
+            self.assertIsNone(short_overlay_for_frame(
+                export,
+                frame_index=frame_index,
+                total_frames=300,
+                fps=30,
+            ))
+
+    def test_legacy_defaults_load_and_explicit_short_text_roundtrips_exactly(self):
+        legacy = load_project_data({"name": "legacy"})
+        self.assertEqual(legacy.export_config, ExportConfig())
+        self.assertIsNone(short_overlay_for_frame(
+            replace(legacy.export_config, mode="short"),
+            frame_index=0,
+            total_frames=30,
+            fps=30,
+        ))
+
+        configured = ExportConfig(
+            mode="short",
+            short_intro_text="  Exact intro  ",
+            short_context_title="Exact project topic",
+            short_context_subtitle="1999 → 2026",
+            short_outro_text="Exact CTA →",
+        )
+        serialized = {
+            "name": "configured",
+            "export": {
+                field.name: getattr(configured, field.name)
+                for field in fields(ExportConfig)
+            },
+        }
+        reloaded = load_project_data(serialized)
+
+        self.assertEqual(reloaded.export_config, configured)
+        self.assertEqual(
+            reloaded.export_config.short_intro_text,
+            "  Exact intro  ",
+        )
 
     def test_short_can_exclude_fun_facts_without_mutating_project_config(self):
         original = FunFactConfig(enabled=True, source="facts.json")
@@ -227,7 +399,9 @@ class ShortExportTest(unittest.TestCase):
                 mode="short",
                 short_from_period=2001,
                 short_to_period=2003,
+                short_intro_text="Configured intro",
                 short_intro_duration=0.03,
+                short_outro_text="Configured outro",
                 short_outro_duration=0.05,
             )
 
@@ -258,6 +432,123 @@ class ShortExportTest(unittest.TestCase):
             self.assertEqual(result.frames_rendered, 4)
             self.assertEqual(scenes[0].short_overlay.kind, "intro")
             self.assertEqual(scenes[-1].short_overlay.kind, "outro")
+
+    def test_short_preview_and_render_job_share_safe_profile_and_rows(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            csv_path = root / "browsers.csv"
+            rows = ["year,country,value"]
+            for year in (2000, 2001):
+                rows.extend(
+                    f"{year},Browser {index},{1000 - (index * 50) + year}"
+                    for index in range(10)
+                )
+            csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            chart = ChartConfig(
+                width=1920,
+                height=1080,
+                dpi=150,
+                frames_dir=str(root / "frames"),
+                output_file=str(root / "race.mp4"),
+                frame_output_mode="png_sequence",
+                max_visible_bars=10,
+                bar_vertical_layout_mode="fill_available",
+                bar_vertical_top_padding=18,
+                bar_vertical_bottom_padding=18,
+                title_enabled=False,
+                subtitle_enabled=False,
+                time_label_font_size=70,
+                source_font_size=13,
+                logos_enabled=False,
+                value_grid_enabled=True,
+                fps=30,
+                steps_per_transition=2,
+            )
+            export = ExportConfig(
+                mode="short",
+                short_from_period=2000,
+                short_to_period=2001,
+            )
+            project_data = {
+                "name": "short_parity",
+                "chart": {
+                    "width": chart.width,
+                    "height": chart.height,
+                    "dpi": chart.dpi,
+                    "frames_dir": chart.frames_dir,
+                    "output_file": chart.output_file,
+                    "frame_output_mode": chart.frame_output_mode,
+                    "max_visible_bars": chart.max_visible_bars,
+                    "bar_vertical_layout_mode": chart.bar_vertical_layout_mode,
+                    "bar_vertical_top_padding": chart.bar_vertical_top_padding,
+                    "bar_vertical_bottom_padding": chart.bar_vertical_bottom_padding,
+                    "title_enabled": chart.title_enabled,
+                    "subtitle_enabled": chart.subtitle_enabled,
+                    "time_label_font_size": chart.time_label_font_size,
+                    "source_font_size": chart.source_font_size,
+                    "logos_enabled": chart.logos_enabled,
+                    "value_grid_enabled": chart.value_grid_enabled,
+                    "fps": chart.fps,
+                    "steps_per_transition": chart.steps_per_transition,
+                },
+                "data_source": {
+                    "source_type": "csv",
+                    "csv_path": str(csv_path),
+                    "source_label_override": "Source: browser dataset",
+                },
+                "dataset": {
+                    "year_column": "year",
+                    "name_column": "country",
+                    "value_column": "value",
+                },
+                "export": {
+                    field.name: getattr(export, field.name)
+                    for field in fields(ExportConfig)
+                },
+            }
+
+            with patch("studio.preview.BarRenderer") as preview_renderer:
+                preview_renderer.return_value.render.return_value = str(
+                    root / "preview.png"
+                )
+                render_project_preview(
+                    root / "project.json",
+                    output_dir=root / "preview",
+                    root_dir=root,
+                    project_data=project_data,
+                    year=2000,
+                )
+            preview_config = preview_renderer.call_args.kwargs["config"]
+            preview_scene = preview_renderer.return_value.render.call_args.args[0]
+
+            with patch("pipeline.render_job.BarRenderer") as render_renderer:
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        RenderJob(
+                            config=chart,
+                            data_source_config=DataSourceConfig(
+                                source_type="csv",
+                                csv_path=str(csv_path),
+                                source_label_override="Source: browser dataset",
+                            ),
+                            dataset_config=DatasetConfig(),
+                            export_config=export,
+                        ).run()
+            render_config = render_renderer.call_args.kwargs["config"]
+            render_scene = render_renderer.return_value.render.call_args_list[0].args[0]
+
+            self.assertEqual(
+                (preview_config.width, preview_config.height),
+                (render_config.width, render_config.height),
+            )
+            self.assertEqual(
+                preview_config.bar_vertical_bottom_padding,
+                render_config.bar_vertical_bottom_padding,
+            )
+            self.assertEqual(
+                [(bar.name, bar.y, bar.height) for bar in preview_scene.bars],
+                [(bar.name, bar.y, bar.height) for bar in render_scene.bars],
+            )
 
     def test_short_preview_renders_real_vertical_canvas_with_intro(self):
         with tempfile.TemporaryDirectory() as temp_dir:

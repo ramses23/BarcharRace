@@ -1,14 +1,17 @@
 from dataclasses import replace
+from math import ceil
 from pathlib import Path
 
 from config.export_config import ExportConfig
 from config.layout_config import apply_layout_preset
+from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
 from models.scene import ShortOverlay
 from utils.video_duration import estimate_video_duration
 
 
 SHORT_WIDTH = 1080
 SHORT_HEIGHT = 1920
+SHORT_ROW_TEXT_CLEARANCE = 12.0
 
 
 def resolve_export_output_path(output_file, export_config=None):
@@ -28,12 +31,17 @@ def apply_export_profile(chart_config, export_config=None):
 
     x_scale = SHORT_WIDTH / max(1, chart_config.width)
     short_config = apply_layout_preset(chart_config, "vertical_shorts")
+    bar_area_bottom = short_bar_area_bottom(short_config)
 
     def scaled_x(value):
         return None if value is None else int(round(value * x_scale))
 
     return replace(
         short_config,
+        bar_vertical_bottom_padding=max(
+            short_config.bar_vertical_bottom_padding,
+            int(ceil(short_config.height - bar_area_bottom)),
+        ),
         title_x=scaled_x(chart_config.title_x),
         subtitle_x=scaled_x(chart_config.subtitle_x),
         title_max_width=scaled_x(chart_config.title_max_width),
@@ -45,6 +53,36 @@ def apply_export_profile(chart_config, export_config=None):
             1, scaled_x(chart_config.value_label_inside_padding)
         ),
     )
+
+
+def short_bar_area_bottom(chart_config):
+    """Return the stable lower edge available to Short bar rows."""
+    limits = [
+        float(chart_config.height)
+        - max(0.0, float(chart_config.bar_vertical_bottom_padding))
+    ]
+    rank_motion_half_growth = RANK_MOTION_HEIGHT_EMPHASIS / 2.0
+
+    if chart_config.time_label_enabled:
+        limits.append(
+            _text_safe_top(
+                chart_config.time_label_y,
+                chart_config.time_label_font_size,
+                chart_config.dpi,
+            )
+            - rank_motion_half_growth
+        )
+    if chart_config.source_label_enabled:
+        limits.append(
+            _text_safe_top(
+                chart_config.source_y,
+                chart_config.source_font_size,
+                chart_config.dpi,
+            )
+            - rank_motion_half_growth
+        )
+
+    return max(0.0, min(limits))
 
 
 def resolve_export_periods(periods, export_config=None):
@@ -111,10 +149,33 @@ def short_overlay_for_frame(
     frame_index = max(0, min(int(frame_index), total_frames - 1))
     elapsed = frame_index / fps
     duration = total_frames / fps
-    intro_duration = min(duration, max(0.0, export_config.short_intro_duration))
-    outro_duration = min(duration, max(0.0, export_config.short_outro_duration))
+    intro_enabled = (
+        export_config.short_intro_enabled
+        and _has_overlay_text(export_config.short_intro_text)
+    )
+    context_enabled = (
+        export_config.short_context_enabled
+        and (
+            _has_overlay_text(export_config.short_context_title)
+            or _has_overlay_text(export_config.short_context_subtitle)
+        )
+    )
+    outro_enabled = (
+        export_config.short_outro_enabled
+        and _has_overlay_text(export_config.short_outro_text)
+    )
+    intro_duration = (
+        min(duration, max(0.0, export_config.short_intro_duration))
+        if intro_enabled
+        else 0.0
+    )
+    outro_duration = (
+        min(duration, max(0.0, export_config.short_outro_duration))
+        if outro_enabled
+        else 0.0
+    )
 
-    if export_config.short_intro_enabled and elapsed < intro_duration:
+    if intro_enabled and elapsed < intro_duration:
         return ShortOverlay(
             kind="intro",
             title=export_config.short_intro_text,
@@ -122,17 +183,17 @@ def short_overlay_for_frame(
         )
 
     outro_start = max(intro_duration, duration - outro_duration)
-    if export_config.short_outro_enabled and elapsed >= outro_start:
+    if outro_enabled and elapsed >= outro_start:
         return ShortOverlay(
             kind="outro",
             title=export_config.short_outro_text,
             opacity=_window_opacity(elapsed, outro_start, duration),
         )
 
-    if export_config.short_context_enabled:
-        context_start = intro_duration if export_config.short_intro_enabled else 0.0
+    if context_enabled:
+        context_start = intro_duration
         context_end = (
-            outro_start if export_config.short_outro_enabled else duration
+            outro_start if outro_enabled else duration
         )
         return ShortOverlay(
             kind="context",
@@ -142,6 +203,18 @@ def short_overlay_for_frame(
         )
 
     return None
+
+
+def _text_safe_top(center_y, point_size, dpi):
+    half_height = max(
+        1.0,
+        float(point_size) * float(dpi) / 144.0,
+    )
+    return float(center_y) - half_height - SHORT_ROW_TEXT_CLEARANCE
+
+
+def _has_overlay_text(value):
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _window_opacity(elapsed, start, end, fade_seconds=0.25):
