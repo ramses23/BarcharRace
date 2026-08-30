@@ -139,7 +139,7 @@ class BarStyleEditorTest(unittest.TestCase):
 
         self.assertEqual(settings["bar_logo_position"], "inside_right")
         self.assertEqual(settings["bar_logo_shape"], "circle")
-        self.assertEqual(settings["logo_size"], 160)
+        self.assertEqual(settings["logo_size"], 100)
         self.assertEqual(settings["bar_logo_padding"], 20.0)
         self.assertTrue(settings["bar_logo_border_enabled"])
         self.assertEqual(settings["bar_logo_border_color"], "#AABBCC")
@@ -264,9 +264,9 @@ class BarStyleEditorTest(unittest.TestCase):
             })
             if field["field"] == "logo_size"
         )
-        self.assertEqual(primary_size["label"], "Logo Size")
-        self.assertEqual(primary_size["minimum"], 4)
-        self.assertEqual(primary_size["maximum"], 160)
+        self.assertEqual(primary_size["label"], "Logo Size (% bar height)")
+        self.assertEqual(primary_size["minimum"], 0)
+        self.assertEqual(primary_size["maximum"], 100)
         self.assertEqual(primary_size["step"], 1)
 
     def test_frontend_has_live_preview_and_four_shape_buttons(self):

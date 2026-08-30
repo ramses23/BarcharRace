@@ -220,7 +220,7 @@ _INTEGER_BOUNDS = {
     "bar_value_shadow_offset_y": (-20, 20),
     "bar_label_offset_x": (-500, 500),
     "bar_label_offset_y": (-500, 500),
-    "logo_size": (4, 160),
+    "logo_size": (0, 100),
 }
 
 _FRAME_FIELDS = {
@@ -450,6 +450,8 @@ def _bar_style_label(field):
     }
     if field in category_text_labels:
         return category_text_labels[field]
+    if field == "logo_size":
+        return "Logo Size (% bar height)"
     return field.removeprefix("bar_").replace("_", " ").title()
 
 

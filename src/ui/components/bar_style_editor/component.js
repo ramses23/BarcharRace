@@ -107,6 +107,12 @@ function previewLogoSize(value) {
   return `${Math.max(8, Math.min(26, safeSize * 0.42))}px`
 }
 
+function previewPrimaryLogoSize(value) {
+  const percent = Number(value)
+  const safePercent = Number.isFinite(percent) ? percent : 100
+  return `${Math.max(0, Math.min(26, 26 * safePercent / 100))}px`
+}
+
 function renderPreview(state) {
   const preview = document.createElement("div")
   preview.className = "bar-preview"
@@ -138,8 +144,8 @@ function renderPreview(state) {
       const logo = document.createElement("span")
       logo.className = "bar-preview-logo primary"
       logo.textContent = "1"
-      logo.style.width = previewLogoSize(state.settings.logo_size)
-      logo.style.height = previewLogoSize(state.settings.logo_size)
+      logo.style.width = previewPrimaryLogoSize(state.settings.logo_size)
+      logo.style.height = previewPrimaryLogoSize(state.settings.logo_size)
       track.appendChild(logo)
     }
     if (state.settings.bar_secondary_logo_enabled) {

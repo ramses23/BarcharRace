@@ -3638,8 +3638,8 @@ def _bars_categories_section(
             value=min(500, max(0, int(values.get("primary_logo_min_size", 0)))),
             step=1,
             help=(
-                "The primary logo is never smaller than the bar height. "
-                "A positive value sets an additional hard minimum."
+                "Pixel floor for the primary logo after applying Logo Size. "
+                "The bar height always remains the hard maximum."
             ),
             key=_widget_key("primary_logo_min_size"),
         )

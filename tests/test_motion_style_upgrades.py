@@ -152,10 +152,10 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertAlmostEqual(midpoint["C"].y, 130 - (90 * eased))
         self.assertEqual(len(frames), configured_steps + 1)
 
-    def test_primary_logo_minimum_can_extend_beyond_a_short_bar(self):
+    def test_primary_logo_minimum_is_capped_by_bar_height(self):
         renderer = BarRenderer(config=ChartConfig(
             width=200, height=100, bar_logo_position="inside_left",
-            logo_size=20, primary_logo_min_size=36,
+            logo_size=20, primary_logo_min_size=100,
         ))
         try:
             layout = renderer._base_logo_layout(
@@ -167,7 +167,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             )
         finally:
             renderer.close()
-        self.assertGreaterEqual(layout["size"], 36)
+        self.assertEqual(layout["size"], 20)
         self.assertGreater(layout["size"], 12)
         self.assertGreaterEqual(layout["left"], 0)
         self.assertLessEqual(layout["right"], 200)
@@ -177,7 +177,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             width=800,
             height=300,
             bar_logo_position="inside_right",
-            logo_size=20,
+            logo_size=100,
             primary_logo_min_size=0,
             value_labels_enabled=True,
             bar_appearance_mode="advanced",
@@ -185,7 +185,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         ))
         try:
             layouts = []
-            for width in (500, 100, 30, 10, 0.01):
+            for width in (500, 100, 30, 10, 2):
                 item = BarSprite(
                     name="Row", value=width, color="#000000",
                     x=100, y=100, width=width, height=48,
@@ -194,7 +194,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                 layout = renderer._logo_layout(item)
                 value_layout = renderer._value_label_layout(item, "100")
                 layouts.append(layout)
-                self.assertGreaterEqual(layout["size"], 48)
+                self.assertEqual(layout["size"], 48)
                 self.assertGreaterEqual(
                     value_layout["x"],
                     layout["right"] + renderer.config.logo_label_gap,
@@ -239,6 +239,79 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         finally:
             renderer.close()
 
+    def test_primary_logo_size_is_percentage_of_bar_height(self):
+        item = BarSprite(
+            name="Row", value=1, color="#000000", x=100, y=100,
+            width=10, height=48, rank=1, logo_path="logo.png",
+        )
+        for percent, expected in ((100, 48), (75, 36), (50, 24), (25, 12)):
+            with self.subTest(percent=percent):
+                renderer = BarRenderer(config=ChartConfig(
+                    width=300,
+                    height=200,
+                    logo_size=percent,
+                    bar_logo_position="inside_right",
+                ))
+                try:
+                    layout = renderer._logo_layout(item)
+                finally:
+                    renderer.close()
+                self.assertEqual(layout["size"], expected)
+
+    def test_primary_outer_badge_contains_padding_border_and_shapes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(logo_path)
+            item = BarSprite(
+                name="Row", value=1, color="#000000", x=100, y=100,
+                width=2, height=48, rank=1, logo_path=str(logo_path),
+            )
+            for shape in ("adaptive", "circle", "square"):
+                with self.subTest(shape=shape):
+                    renderer = BarRenderer(config=ChartConfig(
+                        width=300,
+                        height=200,
+                        logo_size=100,
+                        bar_logo_position="inside_right",
+                        bar_logo_shape=shape,
+                        bar_logo_padding=7,
+                        bar_logo_background_enabled=True,
+                        bar_logo_border_enabled=True,
+                        bar_logo_border_width=4,
+                    ))
+                    try:
+                        layout = renderer._logo_layout(item)
+                        command = renderer._logo_composite_command(
+                            item, layout=layout
+                        )
+                        geometry = build_scene_geometry(
+                            renderer.config,
+                            FunFactConfig(),
+                            Scene(title="", bars=[item]),
+                        )
+                    finally:
+                        renderer.close()
+
+                    image = command[0]
+                    artwork = (
+                        (image[:, :, 0] > 180)
+                        & (image[:, :, 1] < 100)
+                        & (image[:, :, 2] < 100)
+                    )
+                    artwork_columns = artwork.any(axis=0).nonzero()[0]
+                    self.assertEqual(layout["size"], 48)
+                    self.assertLessEqual(image.shape[0], 48)
+                    self.assertLessEqual(image.shape[1], 48)
+                    self.assertLessEqual(
+                        artwork_columns[-1] - artwork_columns[0] + 1,
+                        48 - 14,
+                    )
+                    self.assertEqual(
+                        geometry["primary_logo_rects"][0]["height"],
+                        layout["size"],
+                    )
+                    self.assertEqual(image.shape[0], round(layout["size"]))
+
     def test_secondary_logo_retains_width_capped_sizing(self):
         renderer = BarRenderer(config=ChartConfig(
             width=300,
@@ -268,7 +341,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                     width=width,
                     height=height,
                     bar_logo_position="inside_right",
-                    logo_size=20,
+                    logo_size=100,
                 ))
                 item = BarSprite(
                     name="Row", value=1, color="#000000",

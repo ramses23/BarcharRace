@@ -249,16 +249,17 @@ def _logo_rects(config, sprites):
             primary_size = resolved_primary_logo_size(
                 config, sprite, config.logo_size
             )
-            primary_rect = _base_logo_rect(
-                sprite,
-                config.bar_logo_position,
-                primary_size,
-                config.bar_logo_padding,
-                config.logo_gap,
-                minimum_size=primary_size,
-                canvas_width=config.width,
-                canvas_height=config.height,
-            )
+            if primary_size > 0:
+                primary_rect = _base_logo_rect(
+                    sprite,
+                    config.bar_logo_position,
+                    primary_size,
+                    0,
+                    config.logo_gap,
+                    minimum_size=primary_size,
+                    canvas_width=config.width,
+                    canvas_height=config.height,
+                )
             if primary_rect is not None:
                 primary.append(primary_rect)
         if not config.bar_secondary_logo_enabled or not sprite.secondary_logo_path:

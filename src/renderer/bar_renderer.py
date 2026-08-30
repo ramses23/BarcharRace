@@ -2499,7 +2499,14 @@ class BarRenderer(TextCompositorMixin):
         if layout is None:
             return None
 
-        pixel_size = max(1, int(round(layout["size"])))
+        pixel_size = max(
+            1,
+            (
+                int(np.floor(layout["size"]))
+                if slot == "primary"
+                else int(round(layout["size"]))
+            ),
+        )
         image = self._load_logo(logo_path, pixel_size)
 
         if image is None:
@@ -2546,6 +2553,7 @@ class BarRenderer(TextCompositorMixin):
             bool(border_enabled),
             str(style["border_color"]).lower(),
             round(float(style["border_width"]), 3),
+            round(float(style["padding"]), 3) if slot == "primary" else 0.0,
         )
         cached = self._lru_get(self._logo_sprite_cache, cache_key)
 
@@ -2562,6 +2570,10 @@ class BarRenderer(TextCompositorMixin):
             background_opacity=style["background_opacity"],
             border_color=style["border_color"],
             border_width=style["border_width"],
+            artwork_padding=(
+                style["padding"] if slot == "primary" else 0.0
+            ),
+            contain_outer_bounds=slot == "primary",
         )
         self._lru_put(
             self._logo_sprite_cache,
@@ -2583,6 +2595,8 @@ class BarRenderer(TextCompositorMixin):
         background_opacity=1.0,
         border_color=None,
         border_width=None,
+        artwork_padding=0.0,
+        contain_outer_bounds=False,
     ):
         background_color = background_color or self.config.bar_logo_background_color
         border_color = border_color or self.config.bar_logo_border_color
@@ -2592,9 +2606,13 @@ class BarRenderer(TextCompositorMixin):
             else border_width
         ))
         padding = (
-            max(1, int(np.ceil(border_width / 2)) + 1)
-            if border_enabled
-            else 0
+            0
+            if contain_outer_bounds
+            else (
+                max(1, int(np.ceil(border_width / 2)) + 1)
+                if border_enabled
+                else 0
+            )
         )
         canvas_size = size + (padding * 2)
         canvas = Image.new(
@@ -2613,17 +2631,29 @@ class BarRenderer(TextCompositorMixin):
             )
             canvas.alpha_composite(background, (padding, padding))
 
+        artwork_padding = min(
+            max(0, int(round(float(artwork_padding)))),
+            max(0, (size - 1) // 2),
+        )
+        artwork_size = max(1, size - (artwork_padding * 2))
         logo = Image.fromarray(np.asarray(image, dtype=np.uint8)).resize(
-            (size, size),
+            (artwork_size, artwork_size),
             Image.Resampling.LANCZOS,
         )
-        logo_alpha = np.asarray(logo.getchannel("A"), dtype=np.uint16)
+        logo_layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        logo_layer.alpha_composite(
+            logo,
+            (artwork_padding, artwork_padding),
+        )
+        logo_alpha = np.asarray(
+            logo_layer.getchannel("A"), dtype=np.uint16
+        )
         shape_alpha = np.asarray(shape_mask, dtype=np.uint16)
         clipped_alpha = np.uint8(
             ((logo_alpha * shape_alpha) + 127) // 255
         )
-        logo.putalpha(Image.fromarray(clipped_alpha))
-        canvas.alpha_composite(logo, (padding, padding))
+        logo_layer.putalpha(Image.fromarray(clipped_alpha))
+        canvas.alpha_composite(logo_layer, (padding, padding))
 
         if border_enabled:
             border_mask = self._logo_border_mask(
@@ -2631,6 +2661,7 @@ class BarRenderer(TextCompositorMixin):
                 size,
                 padding,
                 border_width,
+                inside=contain_outer_bounds,
             )
             border = self._solid_advanced_layer(
                 canvas.size,
@@ -2696,12 +2727,15 @@ class BarRenderer(TextCompositorMixin):
         self._lru_put(self._logo_shape_mask_cache, cache_key, mask, limit=256)
         return mask
 
-    def _logo_border_mask(self, shape, size, padding, border_width):
+    def _logo_border_mask(
+        self, shape, size, padding, border_width, *, inside=False
+    ):
         cache_key = (
             shape,
             int(size),
             int(padding),
             round(float(border_width), 3),
+            bool(inside),
         )
         cached = self._lru_get(self._logo_border_mask_cache, cache_key)
 
@@ -2716,12 +2750,13 @@ class BarRenderer(TextCompositorMixin):
             0,
         )
         radius = self._logo_shape_radius(shape, size)
+        inset = (border_width / 2.0) if inside else 0.0
         vertices = self._rounded_rectangle_vertices(
-            padding,
-            padding,
-            max(1.0, float(size - 1)),
-            max(1.0, float(size - 1)),
-            radius,
+            padding + inset,
+            padding + inset,
+            max(1.0, float(size - 1) - (inset * 2.0)),
+            max(1.0, float(size - 1) - (inset * 2.0)),
+            max(0.0, radius - inset),
         )
         points = [
             (int(round(x * scale)), int(round(y * scale)))
@@ -2879,18 +2914,24 @@ class BarRenderer(TextCompositorMixin):
             return None
 
         protected_primary = slot == "primary"
-        requested_size = max(1.0, float(style["size"]))
+        requested_size = float(style["size"])
         if protected_primary:
             requested_size = resolved_primary_logo_size(
                 self.config, sprite, requested_size
             )
+        else:
+            requested_size = max(1.0, requested_size)
 
         if position == "outside_left":
             size = requested_size
             right = sprite.x - self.config.logo_gap
             left = right - size
         else:
-            padding = max(0.0, float(style["padding"]))
+            padding = (
+                0.0
+                if protected_primary
+                else max(0.0, float(style["padding"]))
+            )
             available_width = max(0.0, sprite.width - (padding * 2))
             available_height = max(0.0, sprite.height - (padding * 2))
 

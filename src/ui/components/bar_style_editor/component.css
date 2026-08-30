@@ -21,7 +21,7 @@
 .bar-preview-fill.lollipop { height: .5rem; top: .58rem; }
 .bar-preview-fill.lollipop::after { background: inherit; border-radius: 50%; content: ""; height: 1.65rem; position: absolute; right: -.7rem; top: -.58rem; width: 1.65rem; }
 .bar-preview-logo { align-items: center; background: #fff; border: 1px solid #aaa; border-radius: 50%; color: #222; display: flex; font-size: .65rem; height: 1.25rem; justify-content: center; position: absolute; top: .2rem; width: 1.25rem; z-index: 2; }
-.bar-preview-logo.primary { left: .2rem; }
+.bar-preview-logo.primary { left: .2rem; top: 50%; transform: translateY(-50%); }
 .bar-preview-logo.secondary { right: .2rem; }
 .bar-groups { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .bar-group { border: 1px solid rgb(127 127 127 / 25%); border-radius: .45rem; padding: .15rem .65rem .65rem; }

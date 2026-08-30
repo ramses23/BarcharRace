@@ -1370,7 +1370,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                             if layout_mode == "independent"
                             else "inside_left"
                         ),
-                        logo_size=32,
+                        logo_size=100,
                         bar_secondary_logo_enabled=True,
                         bar_secondary_logo_layout=layout_mode,
                         bar_secondary_logo_position=secondary_position,
@@ -1448,7 +1448,7 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                 bottom_margin=20,
                 bar_logo_position="outside_left",
                 bar_logo_shape="square",
-                logo_size=32,
+                logo_size=100,
                 logo_gap=8,
             ))
             sprite = BarSprite(
@@ -2046,16 +2046,16 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                 command_image, command_left, command_top = (
                     renderer._logo_composite_artist.commands[0]
                 )
-                padding = int(np.ceil(renderer.config.bar_logo_border_width / 2)) + 1
+                padding = 0
 
-                self.assertAlmostEqual(layout["right"], sprite.x + sprite.width - 3)
+                self.assertAlmostEqual(layout["right"], sprite.x + sprite.width)
                 self.assertEqual(renderer._resolved_logo_shape(), "circle")
                 self.assertEqual(len(renderer._logo_composite_artist.commands), 1)
                 self.assertEqual(
                     command_image.shape[:2],
                     (
-                        int(round(layout["size"])) + (padding * 2),
-                        int(round(layout["size"])) + (padding * 2),
+                        int(round(layout["size"])),
+                        int(round(layout["size"])),
                     ),
                 )
                 self.assertEqual(command_left, int(round(layout["left"])) - padding)
