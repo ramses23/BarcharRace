@@ -14,6 +14,13 @@ from core.layout_engine import LayoutEngine
 from core.scene_geometry import build_scene_geometry
 from core.value_axis import ValueAxisTracker, scale_bar_sprites
 from core.motion_engine import MotionEngine
+from core.rank_motion import (
+    RANK_MOTION_HEIGHT_EMPHASIS,
+    ordered_rank_motion_sprites,
+    rank_motion_depth,
+    rank_motion_effective_height,
+    visual_rank_motion_sprite,
+)
 from models.bar_data import BarData
 from models.bar_sprite import BarSprite
 from models.scene import Scene
@@ -155,6 +162,379 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertAlmostEqual(midpoint["B"].y, 70 - (30 * eased))
         self.assertAlmostEqual(midpoint["C"].y, 130 - (90 * eased))
         self.assertEqual(len(frames), configured_steps + 1)
+
+    def test_rank_motion_two_bar_swap_depth_and_thickness(self):
+        engine = MotionEngine(AnimationConfig(easing="ease_out_cubic"))
+        start = [sprite("A", 1, 40), sprite("B", 2, 80)]
+        end = [sprite("A", 2, 80), sprite("B", 1, 40)]
+        frames = engine.interpolate_sprites(start, end, steps=5)
+
+        for frame in frames:
+            self.assertEqual([item.name for item in frame], ["A", "B"])
+            self.assertEqual(frame[0].rank_motion_state, "falling")
+            self.assertEqual(frame[1].rank_motion_state, "rising")
+            self.assertLess(rank_motion_depth(frame[0]), rank_motion_depth(frame[1]))
+
+        midpoint = {item.name: item for item in frames[2]}
+        self.assertEqual(rank_motion_effective_height(midpoint["A"]), 16)
+        self.assertEqual(rank_motion_effective_height(midpoint["B"]), 24)
+        self.assertEqual(
+            visual_rank_motion_sprite(midpoint["A"]).y,
+            midpoint["A"].y,
+        )
+        self.assertEqual(
+            visual_rank_motion_sprite(midpoint["B"]).y,
+            midpoint["B"].y,
+        )
+        for endpoint in (frames[0], frames[-1]):
+            self.assertTrue(all(
+                rank_motion_effective_height(item) == item.height
+                for item in endpoint
+            ))
+
+    def test_rank_motion_multi_bar_ties_and_top_n_entry_exit_are_stable(self):
+        start = [
+            sprite("A", 1, 20),
+            sprite("B", 2, 40),
+            sprite("C", 3, 60),
+            sprite("D", 4, 80),
+        ]
+        end = [
+            sprite("A", 4, 80),
+            sprite("B", 1, 20),
+            sprite("C", 2, 40),
+            sprite("D", 3, 60),
+        ]
+        frames = MotionEngine().interpolate_sprites(start, end, steps=7)
+        for frame in frames:
+            self.assertEqual([item.name for item in frame], ["A", "B", "C", "D"])
+            self.assertEqual(
+                [item.rank_motion_state for item in frame],
+                ["falling", "rising", "rising", "rising"],
+            )
+
+        tied = [
+            replace(frames[3][2], name="Zulu", rank_motion_target=2),
+            replace(frames[3][2], name="Alpha", rank_motion_target=2),
+        ]
+        self.assertEqual(
+            [item.name for item in ordered_rank_motion_sprites(tied)],
+            ["Alpha", "Zulu"],
+        )
+
+        entry_exit = MotionEngine().interpolate_sprites(
+            [sprite("Exit", 1, 20)],
+            [sprite("Enter", 1, 20)],
+            steps=3,
+        )
+        states = {
+            item.name: item.rank_motion_state
+            for item in entry_exit[1]
+        }
+        self.assertEqual(states, {"Exit": "falling", "Enter": "rising"})
+        opacities = {item.name: item.opacity for item in entry_exit[1]}
+        self.assertGreater(opacities["Exit"], 0)
+        self.assertGreater(opacities["Enter"], 0)
+
+    def test_rank_motion_reversal_stable_and_small_height_safety(self):
+        engine = MotionEngine()
+        first = engine.interpolate_sprites(
+            [sprite("A", 3, 60)],
+            [sprite("A", 1, 20)],
+            steps=3,
+        )
+        second = engine.interpolate_sprites(
+            [sprite("A", 1, 20)],
+            [sprite("A", 2, 40)],
+            steps=3,
+        )
+        self.assertEqual(first[1][0].rank_motion_state, "rising")
+        self.assertEqual(second[1][0].rank_motion_state, "falling")
+        self.assertEqual(rank_motion_effective_height(first[-1][0]), 20)
+        self.assertEqual(rank_motion_effective_height(second[0][0]), 20)
+
+        stable = replace(
+            sprite("Stable", 1, 20),
+            rank_motion_state="stable",
+            rank_motion_progress=0.5,
+        )
+        tiny = replace(
+            sprite("Tiny", 2, 40),
+            height=2,
+            rank_motion_state="falling",
+            rank_motion_progress=0.5,
+        )
+        zero = replace(tiny, height=0, rank_motion_progress=0)
+        self.assertEqual(rank_motion_effective_height(stable), stable.height)
+        self.assertGreater(rank_motion_effective_height(tiny), 0)
+        self.assertGreater(rank_motion_effective_height(zero), 0)
+
+    def test_rank_motion_render_paths_borders_tracks_and_nominal_geometry(self):
+        falling = replace(
+            sprite("Falling", 2, 90),
+            color="#FF0000",
+            width=160,
+            rank_motion_state="falling",
+            rank_motion_progress=0.5,
+            rank_motion_target=2,
+        )
+        rising = replace(
+            sprite("Rising", 1, 90),
+            color="#0000FF",
+            width=160,
+            rank_motion_state="rising",
+            rank_motion_progress=0.5,
+            rank_motion_target=1,
+        )
+        self.assertEqual(RANK_MOTION_HEIGHT_EMPHASIS, 4)
+
+        modes = {
+            "solid": dict(
+                bar_appearance_mode="simple",
+                bar_gradient_enabled=False,
+            ),
+            "gradient": dict(
+                bar_appearance_mode="unified",
+                bar_fill_type="gradient",
+                bar_gradient_direction="horizontal",
+                bar_gradient_color_count=2,
+                bar_fill_use_category_color=True,
+                bar_edge_darkening=0,
+            ),
+            "material": dict(
+                bar_appearance_mode="advanced",
+                bar_fill_type="gradient",
+                bar_track_enabled=True,
+                bar_track_opacity=0.25,
+            ),
+        }
+        for width, height in ((320, 180), (180, 320)):
+            for mode, options in modes.items():
+                with self.subTest(width=width, height=height, mode=mode):
+                    renderer = BarRenderer(config=ChartConfig(
+                        width=width,
+                        height=height,
+                        dpi=72,
+                        left_margin=20,
+                        right_margin=20,
+                        title_enabled=False,
+                        subtitle_enabled=False,
+                        source_label_enabled=False,
+                        time_label_enabled=False,
+                        category_labels_enabled=False,
+                        value_labels_enabled=False,
+                        rank_labels_enabled=False,
+                        logos_enabled=False,
+                        bar_shadow_enabled=False,
+                        bar_border_enabled=True,
+                        bar_shape="rounded",
+                        **options,
+                    ))
+                    scene = Scene(title="", bars=[rising, falling])
+                    try:
+                        rgba = renderer.render_rgba(scene)
+                        self.assertEqual(len(rgba), width * height * 4)
+                        if mode == "material":
+                            track_heights = [
+                                path.get_extents().height
+                                for path in renderer._advanced_track_collection.get_paths()
+                            ]
+                            body_heights = [
+                                command[0].shape[0]
+                                for command in renderer._advanced_composite_artist.commands
+                            ]
+                            self.assertEqual(track_heights, [20, 20])
+                            self.assertEqual(body_heights, [16, 24])
+                            body_colors = []
+                            for command in renderer._advanced_composite_artist.commands:
+                                pixels = command[0]
+                                visible = pixels[:, :, 3] > 0
+                                body_colors.append(
+                                    pixels[:, :, :3][visible].mean(axis=0)
+                                )
+                            self.assertGreater(body_colors[0][0], body_colors[0][2])
+                            self.assertGreater(body_colors[1][2], body_colors[1][0])
+                        else:
+                            border_heights = [
+                                artists.border.get_path().get_extents().height
+                                for artists in renderer._bar_artists[:2]
+                            ]
+                            self.assertEqual(border_heights, [16, 24])
+                            if mode == "gradient":
+                                colors = renderer._gradient_artist.get_facecolors()
+                                self.assertGreater(colors[0][0], colors[0][2])
+                                self.assertGreater(colors[-1][2], colors[-1][0])
+                            else:
+                                colors = [
+                                    artists.bar.get_facecolor()
+                                    for artists in renderer._bar_artists[:2]
+                                ]
+                                self.assertGreater(colors[0][0], colors[0][2])
+                                self.assertGreater(colors[1][2], colors[1][0])
+                    finally:
+                        renderer.close()
+
+        geometry = build_scene_geometry(
+            ChartConfig(width=320, height=180),
+            FunFactConfig(),
+            Scene(title="", bars=[rising]),
+        )
+        self.assertEqual(geometry["bar_rects"][0]["height"], rising.height)
+
+    def test_rank_motion_pixel_composition_puts_rising_bar_on_top(self):
+        config = ChartConfig(
+            width=120,
+            height=80,
+            dpi=72,
+            left_margin=0,
+            right_margin=0,
+            top_margin=0,
+            bottom_margin=0,
+            title_enabled=False,
+            subtitle_enabled=False,
+            source_label_enabled=False,
+            time_label_enabled=False,
+            category_labels_enabled=False,
+            value_labels_enabled=False,
+            rank_labels_enabled=False,
+            logos_enabled=False,
+            bar_shadow_enabled=False,
+            bar_gradient_enabled=False,
+            bar_shape="rectangle",
+            background_color_override="#FFFFFF",
+        )
+        falling = BarSprite(
+            name="Falling", value=1, color="#FF0000",
+            x=10, y=40, width=100, height=20, rank=2,
+            rank_motion_state="falling", rank_motion_progress=0.5,
+            rank_motion_target=2,
+        )
+        rising = replace(
+            falling,
+            name="Rising",
+            color="#0000FF",
+            rank=1,
+            rank_motion_state="rising",
+            rank_motion_target=1,
+        )
+        renderer = BarRenderer(config=config)
+        try:
+            rgba = renderer.render_rgba(
+                Scene(title="", bars=[rising, falling])
+            )
+        finally:
+            renderer.close()
+        image = Image.frombytes("RGBA", (config.width, config.height), rgba)
+
+        self.assertEqual(image.getpixel((60, 40))[:3], (0, 0, 255))
+
+    def test_rank_motion_keeps_primary_logo_at_nominal_height(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), (20, 120, 220, 255)).save(logo_path)
+            item = BarSprite(
+                name="Rising",
+                value=100,
+                color="#123456",
+                x=40,
+                y=60,
+                width=120,
+                height=20,
+                rank=1,
+                logo_path=str(logo_path),
+                rank_motion_state="rising",
+                rank_motion_progress=0.5,
+                rank_motion_target=1,
+            )
+            renderer = BarRenderer(config=ChartConfig(
+                width=240,
+                height=120,
+                dpi=72,
+                logos_enabled=True,
+                logo_size=100,
+                bar_logo_position="inside_right",
+                bar_appearance_mode="advanced",
+                title_enabled=False,
+                subtitle_enabled=False,
+                source_label_enabled=False,
+                time_label_enabled=False,
+                category_labels_enabled=False,
+                value_labels_enabled=False,
+                rank_labels_enabled=False,
+            ))
+            try:
+                renderer.render_rgba(Scene(title="", bars=[item]))
+                logo_image = renderer._logo_composite_artist.commands[0][0]
+                bar_image = renderer._advanced_composite_artist.commands[0][0]
+            finally:
+                renderer.close()
+
+        self.assertEqual(rank_motion_effective_height(item), 24)
+        self.assertEqual(logo_image.shape[:2], (20, 20))
+        self.assertEqual(bar_image.shape[0], 24)
+
+    def test_rank_motion_swap_matches_preview_and_render_job(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "data.csv").write_text(
+                "year,name,value\n"
+                "0,A,100\n0,B,90\n"
+                "1,A,80\n1,B,110\n",
+                encoding="utf-8",
+            )
+            project_data = self._project_data(
+                steps_per_transition=4,
+                top_n=2,
+                max_visible_bars=2,
+                motion_mode="continuous",
+            )
+            project_data["chart"].update({
+                "width": 320,
+                "height": 180,
+                "frame_output_mode": "png_sequence",
+                "auto_fit_bar_count": False,
+            })
+            preset = resolve_project_preset_paths(
+                load_project_data(project_data),
+                project_root=root,
+                output_root=root,
+            )
+            with patch("pipeline.render_job.BarRenderer") as render_renderer:
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        RenderJob(
+                            config=preset.chart_config,
+                            data_source_config=preset.data_source_config,
+                            dataset_config=preset.dataset_config,
+                            fun_fact_config=preset.fun_fact_config,
+                            export_config=preset.export_config,
+                            project_root=root,
+                            output_file_is_effective=True,
+                        ).run()
+            render_scene = (
+                render_renderer.return_value.render.call_args_list[2].args[0]
+            )
+
+            with patch("studio.preview.BarRenderer") as preview_renderer:
+                preview_renderer.return_value.render.return_value = str(
+                    root / "preview.png"
+                )
+                render_project_preview(
+                    root / "project.json",
+                    output_dir=root / "previews",
+                    root_dir=root,
+                    project_data=project_data,
+                    preview_mode="transition",
+                    year=0,
+                    transition_progress=0.5,
+                )
+            preview_scene = preview_renderer.return_value.render.call_args.args[0]
+
+        self.assertEqual(render_scene.bars, preview_scene.bars)
+        self.assertEqual(
+            [rank_motion_effective_height(item) for item in render_scene.bars],
+            [rank_motion_effective_height(item) for item in preview_scene.bars],
+        )
 
     def test_primary_logo_minimum_is_capped_by_bar_height(self):
         renderer = BarRenderer(config=ChartConfig(

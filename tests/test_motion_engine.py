@@ -267,7 +267,7 @@ class MotionEngineTest(unittest.TestCase):
         self.assertIsNone(frames[0][0].rank)
         self.assertIsNone(frames[1][0].rank)
 
-    def test_sorts_frames_by_current_y_position(self):
+    def test_sorts_frames_by_stable_rank_motion_depth(self):
         start = [
             BarSprite(
                 name="A",
@@ -316,7 +316,9 @@ class MotionEngineTest(unittest.TestCase):
         frames = MotionEngine().interpolate_sprites(start, end, steps=2)
 
         self.assertEqual([sprite.name for sprite in frames[0]], ["B", "A"])
-        self.assertEqual([sprite.name for sprite in frames[1]], ["A", "B"])
+        self.assertEqual([sprite.name for sprite in frames[1]], ["B", "A"])
+        self.assertEqual(frames[0][0].rank_motion_state, "falling")
+        self.assertEqual(frames[0][1].rank_motion_state, "rising")
 
     def test_uses_configured_easing_for_motion(self):
         start = [

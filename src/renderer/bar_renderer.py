@@ -28,6 +28,10 @@ from core.logo_geometry import (
     primary_logo_horizontal_bounds,
     resolved_primary_logo_size,
 )
+from core.rank_motion import (
+    ordered_rank_motion_sprites,
+    visual_rank_motion_sprite,
+)
 from renderer.artists import (
     BarArtists,
     ImageCommandsArtist,
@@ -389,23 +393,31 @@ class BarRenderer(TextCompositorMixin):
             self._fit_source_label(scene.source_label) if scene.source_label else "",
             visible=self.config.source_label_enabled and bool(scene.source_label),
         )
-        self._update_text_composites(scene)
+        ordered_sprites = ordered_rank_motion_sprites(scene.bars)
+        visual_sprites = [
+            visual_rank_motion_sprite(sprite)
+            for sprite in ordered_sprites
+        ]
+        self._update_text_composites(replace(scene, bars=ordered_sprites))
 
-        self._ensure_bar_artist_capacity(ax, len(scene.bars))
+        self._ensure_bar_artist_capacity(ax, len(ordered_sprites))
 
         if self._uses_advanced_appearance():
-            self._update_advanced_underlay_collections(scene.bars)
-            self._update_advanced_composite(scene.bars)
+            self._update_advanced_underlay_collections(
+                ordered_sprites,
+                visual_sprites,
+            )
+            self._update_advanced_composite(visual_sprites)
 
-        self._update_logo_composite(scene.bars)
+        self._update_logo_composite(ordered_sprites)
 
-        for artists, sprite in zip(self._bar_artists, scene.bars):
+        for artists, sprite in zip(self._bar_artists, visual_sprites):
             self._update_bar_artists(artists, sprite)
 
         if self._uses_simple_gradient():
-            self._update_gradient_artist(scene.bars)
+            self._update_gradient_artist(visual_sprites)
 
-        for artists in self._bar_artists[len(scene.bars):]:
+        for artists in self._bar_artists[len(ordered_sprites):]:
             self._set_bar_artists_visible(artists, False)
 
         self._update_fun_fact_overlay(scene.fun_fact)
@@ -1526,13 +1538,22 @@ class BarRenderer(TextCompositorMixin):
 
         self._advanced_composite_artist.set_commands(commands)
 
-    def _update_advanced_underlay_collections(self, sprites):
-        visible_sprites = [
+    def _update_advanced_underlay_collections(
+        self,
+        nominal_sprites,
+        visual_sprites,
+    ):
+        nominal_sprites = [
             sprite
-            for sprite in sprites
+            for sprite in nominal_sprites
             if self._opacity(sprite) > 0 and sprite.width > 0 and sprite.height > 0
         ]
-        self._update_advanced_track_collection(visible_sprites)
+        visible_sprites = [
+            sprite
+            for sprite in visual_sprites
+            if self._opacity(sprite) > 0 and sprite.width > 0 and sprite.height > 0
+        ]
+        self._update_advanced_track_collection(nominal_sprites)
         self._update_advanced_shadow_collection(visible_sprites)
         self._update_advanced_glow_collection(visible_sprites)
 
@@ -3226,17 +3247,18 @@ class BarRenderer(TextCompositorMixin):
         return self.config.left_margin
 
     def _draw_bars(self, ax, sprites):
-        for sprite in sprites:
+        for sprite in ordered_rank_motion_sprites(sprites):
             opacity = self._opacity(sprite)
 
             if opacity <= 0:
                 continue
 
             rgba = mcolors.to_rgba(sprite.color, opacity)
+            visual_sprite = visual_rank_motion_sprite(sprite)
 
-            self._draw_bar_shadow(ax, sprite, opacity)
+            self._draw_bar_shadow(ax, visual_sprite, opacity)
 
-            self._draw_bar(ax, sprite, rgba)
+            self._draw_bar(ax, visual_sprite, rgba)
 
             self._draw_rank_label(ax, sprite, opacity)
             self._draw_logo(ax, sprite, opacity)

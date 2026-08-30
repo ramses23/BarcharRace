@@ -1,6 +1,11 @@
 from math import isfinite
 
 from config.animation_config import AnimationConfig
+from core.rank_motion import (
+    RANK_MOTION_STABLE,
+    classify_rank_motion,
+    rank_motion_sort_key,
+)
 from utils.interpolation import lerp
 from models.bar_sprite import BarSprite
 
@@ -59,6 +64,12 @@ class MotionEngine:
                     if start_rank is not None and end_rank is not None
                     else None
                 )
+                rank_motion_state = classify_rank_motion(
+                    start_rank,
+                    end_rank,
+                    start_present=a is not None,
+                    end_present=b is not None,
+                )
 
                 frame.append(
                     BarSprite(
@@ -73,10 +84,17 @@ class MotionEngine:
                         logo_path=logo_path,
                         secondary_logo_path=secondary_logo_path,
                         opacity=lerp(start_opacity, end_opacity, t),
+                        rank_motion_state=rank_motion_state,
+                        rank_motion_progress=raw_t,
+                        rank_motion_target=(
+                            None
+                            if rank_motion_state == RANK_MOTION_STABLE
+                            else end_rank
+                        ),
                     )
                 )
 
-            frame.sort(key=lambda sprite: (sprite.y, sprite.name))
+            frame.sort(key=rank_motion_sort_key)
             frames.append(frame)
 
         return frames
@@ -120,7 +138,7 @@ class MotionEngine:
 
                 frame.append(sprite)
 
-            frame.sort(key=lambda sprite: (sprite.y, sprite.name))
+            frame.sort(key=rank_motion_sort_key)
             frames.append(frame)
 
         return frames
@@ -133,6 +151,10 @@ class MotionEngine:
             lerp(start_rank, end_rank, position_t)
             if start_rank is not None and end_rank is not None
             else None
+        )
+        rank_motion_state = classify_rank_motion(
+            start_rank,
+            end_rank,
         )
 
         return BarSprite(
@@ -183,6 +205,13 @@ class MotionEngine:
                 next_sprite.opacity,
                 t,
             ))),
+            rank_motion_state=rank_motion_state,
+            rank_motion_progress=t,
+            rank_motion_target=(
+                None
+                if rank_motion_state == RANK_MOTION_STABLE
+                else end_rank
+            ),
         )
 
     def _transition_sprite(self, name, start, end, raw_t):
@@ -203,6 +232,12 @@ class MotionEngine:
         start_rank, end_rank = self._rank_bounds(start, end)
         start_opacity = self._sprite_opacity(start, fallback=0.0 if end else 1.0)
         end_opacity = self._sprite_opacity(end, fallback=0.0 if start else 1.0)
+        rank_motion_state = classify_rank_motion(
+            start_rank,
+            end_rank,
+            start_present=start is not None,
+            end_present=end is not None,
+        )
 
         return BarSprite(
             name=name,
@@ -224,6 +259,13 @@ class MotionEngine:
                 else end.secondary_logo_path
             ),
             opacity=lerp(start_opacity, end_opacity, t),
+            rank_motion_state=rank_motion_state,
+            rank_motion_progress=raw_t,
+            rank_motion_target=(
+                None
+                if rank_motion_state == RANK_MOTION_STABLE
+                else end_rank
+            ),
         )
 
     def _continuous_optional(self, p0, p1, p2, p3, t):

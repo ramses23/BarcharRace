@@ -21,3 +21,6 @@ class BarSprite:
     logo_path: str | None = None
     secondary_logo_path: str | None = None
     opacity: float = 1.0
+    rank_motion_state: str = "stable"
+    rank_motion_progress: float = 0.0
+    rank_motion_target: float | None = None
