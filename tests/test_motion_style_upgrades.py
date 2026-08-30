@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import _test_path
 from PIL import Image, ImageDraw
@@ -16,9 +17,12 @@ from core.motion_engine import MotionEngine
 from models.bar_data import BarData
 from models.bar_sprite import BarSprite
 from models.scene import Scene
+from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
 from studio.project_builder import build_project_data, project_form_values
 from config.project_file_loader import load_project_data
+from studio.preview import render_project_preview
+from studio.project_runtime import resolve_project_preset_paths
 from utils.logo_color import representative_logo_color
 
 
@@ -169,8 +173,75 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             renderer.close()
         self.assertEqual(layout["size"], 20)
         self.assertGreater(layout["size"], 12)
+        self.assertEqual(layout["left"], 20)
         self.assertGreaterEqual(layout["left"], 0)
         self.assertLessEqual(layout["right"], 200)
+
+    def test_short_primary_logo_anchors_outer_badge_at_bar_start(self):
+        item = BarSprite(
+            name="Tiny", value=1, color="#000000", x=100, y=100,
+            width=12, height=48, rank=1, logo_path="logo.png",
+        )
+        for shape in ("adaptive", "circle", "square"):
+            with self.subTest(shape=shape):
+                config = ChartConfig(
+                    width=400,
+                    height=240,
+                    bar_appearance_mode="advanced",
+                    bar_logo_position="inside_right",
+                    bar_logo_shape=shape,
+                    logo_size=100,
+                    primary_logo_min_size=36,
+                    bar_logo_padding=7,
+                    bar_logo_border_enabled=True,
+                    bar_logo_border_width=4,
+                    bar_value_position="outside",
+                )
+                renderer = BarRenderer(config=config)
+                try:
+                    layout = renderer._logo_layout(item)
+                    value_layout = renderer._value_label_layout(item, "1")
+                    geometry = build_scene_geometry(
+                        config,
+                        FunFactConfig(),
+                        Scene(title="", bars=[item]),
+                    )
+                finally:
+                    renderer.close()
+
+                logo_rect = geometry["primary_logo_rects"][0]
+                self.assertEqual(layout["left"], item.x)
+                self.assertEqual(layout["right"], item.x + layout["size"])
+                self.assertEqual(logo_rect["x"], item.x)
+                self.assertGreaterEqual(layout["left"], item.x)
+                self.assertGreaterEqual(
+                    value_layout["x"],
+                    layout["right"] + config.logo_label_gap,
+                )
+
+    def test_normal_primary_logo_keeps_inside_right_alignment(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=500,
+            height=240,
+            bar_logo_position="inside_right",
+            logo_size=100,
+            primary_logo_min_size=36,
+        ))
+        try:
+            long_bar = BarSprite(
+                name="Long", value=100, color="#000000", x=100, y=80,
+                width=220, height=48, rank=1, logo_path="logo.png",
+            )
+            medium_bar = replace(long_bar, name="Medium", width=48, y=150)
+            long_layout = renderer._logo_layout(long_bar)
+            medium_layout = renderer._logo_layout(medium_bar)
+        finally:
+            renderer.close()
+
+        self.assertEqual(long_layout["right"], long_bar.x + long_bar.width)
+        self.assertEqual(long_layout["left"], 272)
+        self.assertEqual(medium_layout["left"], medium_bar.x)
+        self.assertEqual(medium_layout["right"], medium_bar.x + medium_bar.width)
 
     def test_primary_logo_size_depends_on_row_height_not_bar_width(self):
         renderer = BarRenderer(config=ChartConfig(
@@ -355,9 +426,86 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                     renderer.close()
 
                 self.assertEqual(layout["size"], 48)
+                self.assertEqual(layout["left"], item.x)
                 self.assertGreaterEqual(layout["left"], 0)
                 self.assertLessEqual(layout["right"], width)
                 self.assertEqual(len(rgba), width * height * 4)
+
+    def test_small_primary_logo_matches_preview_and_render_job(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            logo_path = root / "logo.png"
+            csv_path = root / "data.csv"
+            Image.new("RGBA", (32, 32), (20, 120, 220, 255)).save(logo_path)
+            csv_path.write_text(
+                "year,name,value\n"
+                "0,Leader,1000\n0,Tiny,1\n"
+                "1,Leader,1100\n1,Tiny,2\n",
+                encoding="utf-8",
+            )
+            project_data = self._project_data(
+                csv_path="data.csv",
+                steps_per_transition=2,
+                top_n=2,
+                max_visible_bars=2,
+                category_styles={
+                    "Leader": {"logo": "logo.png"},
+                    "Tiny": {"logo": "logo.png"},
+                },
+            )
+            project_data["chart"].update({
+                "width": 640,
+                "height": 360,
+                "frame_output_mode": "png_sequence",
+                "auto_fit_bar_count": False,
+                "bar_logo_position": "inside_right",
+                "logo_size": 100,
+                "primary_logo_min_size": 36,
+            })
+            preset = resolve_project_preset_paths(
+                load_project_data(project_data),
+                project_root=root,
+                output_root=root,
+            )
+
+            with patch("pipeline.render_job.BarRenderer") as render_renderer:
+                with patch("pipeline.render_job.VideoExporter"):
+                    with patch("builtins.print"):
+                        RenderJob(
+                            config=preset.chart_config,
+                            data_source_config=preset.data_source_config,
+                            dataset_config=preset.dataset_config,
+                            fun_fact_config=preset.fun_fact_config,
+                            export_config=preset.export_config,
+                            project_root=root,
+                            output_file_is_effective=True,
+                        ).run()
+            render_scene = render_renderer.return_value.render.call_args_list[0].args[0]
+
+            with patch("studio.preview.BarRenderer") as preview_renderer:
+                preview_renderer.return_value.render.return_value = str(
+                    root / "preview.png"
+                )
+                render_project_preview(
+                    root / "project.json",
+                    output_dir=root / "previews",
+                    root_dir=root,
+                    project_data=project_data,
+                    year=0,
+                )
+            preview_scene = preview_renderer.return_value.render.call_args.args[0]
+            render_bar = next(bar for bar in render_scene.bars if bar.name == "Tiny")
+            preview_bar = next(bar for bar in preview_scene.bars if bar.name == "Tiny")
+            renderer = BarRenderer(config=preset.chart_config)
+            try:
+                render_layout = renderer._logo_layout(render_bar)
+                preview_layout = renderer._logo_layout(preview_bar)
+            finally:
+                renderer.close()
+
+            self.assertEqual(render_bar, preview_bar)
+            self.assertEqual(render_layout, preview_layout)
+            self.assertEqual(render_layout["left"], render_bar.x)
 
     def _project_data(self, **overrides):
         defaults = dict(

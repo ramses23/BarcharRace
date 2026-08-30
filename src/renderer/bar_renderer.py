@@ -24,7 +24,10 @@ from core.bar_appearance import (
     uses_material_bar_renderer,
     uses_vector_bar_gradient,
 )
-from core.logo_geometry import resolved_primary_logo_size
+from core.logo_geometry import (
+    primary_logo_horizontal_bounds,
+    resolved_primary_logo_size,
+)
 from renderer.artists import (
     BarArtists,
     ImageCommandsArtist,
@@ -2926,6 +2929,13 @@ class BarRenderer(TextCompositorMixin):
             size = requested_size
             right = sprite.x - self.config.logo_gap
             left = right - size
+        elif protected_primary:
+            size = requested_size
+            left, right = primary_logo_horizontal_bounds(
+                sprite,
+                position,
+                size,
+            )
         else:
             padding = (
                 0.0

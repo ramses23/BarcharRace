@@ -10,3 +10,17 @@ def resolved_primary_logo_size(config, sprite, requested_size):
         float(config.width),
         float(config.height),
     )
+
+
+def primary_logo_horizontal_bounds(sprite, position, size):
+    """Return primary outer-badge bounds without crossing the bar origin."""
+    position = {"inside": "inside_left"}.get(position, position)
+    size = max(0.0, float(size))
+    bar_start = float(sprite.x)
+    available_width = max(0.0, float(sprite.width))
+
+    if position == "inside_right" and size < available_width:
+        right = bar_start + available_width
+        return right - size, right
+
+    return bar_start, bar_start + size

@@ -1,6 +1,9 @@
 from dataclasses import asdict, dataclass
 
-from core.logo_geometry import resolved_primary_logo_size
+from core.logo_geometry import (
+    primary_logo_horizontal_bounds,
+    resolved_primary_logo_size,
+)
 from studio.fun_fact_layout import editorial_geometry
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_value
@@ -307,6 +310,12 @@ def _base_logo_rect(
     if position == "outside_left":
         right = sprite.x - max(0.0, float(gap))
         left = right - size
+    elif protected:
+        left, _ = primary_logo_horizontal_bounds(
+            sprite,
+            position,
+            size,
+        )
     else:
         padding = max(0.0, float(padding))
         if not protected:
