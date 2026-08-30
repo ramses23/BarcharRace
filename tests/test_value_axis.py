@@ -175,6 +175,59 @@ class ValueAxisTest(unittest.TestCase):
             "$20,000 USD",
         )
 
+    def test_tick_value_formats_support_same_full_and_compact(self):
+        compact_bars = ValueFormatConfig(
+            decimal_places=1,
+            compact=True,
+            prefix="$",
+            suffix=" USD",
+        )
+        self.assertEqual(
+            format_axis_tick(250_000_000, 250_000_000, compact_bars),
+            "$250M USD",
+        )
+        self.assertEqual(
+            format_axis_tick(
+                250_000_000, 250_000_000, compact_bars, "full"
+            ),
+            "$250,000,000 USD",
+        )
+        examples = {
+            1_000: "1K",
+            2_500: "2.5K",
+            250_000_000: "250M",
+            500_000_000: "500M",
+            1_000_000_000: "1B",
+            1_250_000_000: "1.25B",
+            2_500_000_000_000: "2.5T",
+        }
+        plain = ValueFormatConfig(decimal_places=0)
+        for value, expected in examples.items():
+            with self.subTest(value=value):
+                self.assertEqual(
+                    format_axis_tick(value, value, plain, "compact"),
+                    expected,
+                )
+
+    def test_compact_format_allows_more_non_overlapping_ticks_than_full(self):
+        options = dict(
+            axis_width=500,
+            requested_count=12,
+            tick_font_size=16,
+            domain_max=2_500_000_000,
+            value_format=ValueFormatConfig(decimal_places=0),
+            font_family="DejaVu Sans",
+            dpi=72,
+        )
+        full_count = adaptive_tick_count(
+            **options, tick_value_format="full"
+        )
+        compact_count = adaptive_tick_count(
+            **options, tick_value_format="compact"
+        )
+
+        self.assertGreater(compact_count, full_count)
+
     def test_vertical_ratio_reduces_tick_count_and_both_ratios_render(self):
         count_options = dict(
             domain_max=1_500_000_000,
@@ -208,19 +261,12 @@ class ValueAxisTest(unittest.TestCase):
                 subtitle_enabled=False,
                 source_label_enabled=False,
                 time_label_enabled=False,
+                value_grid_tick_value_format="compact",
             )
             bars = [sprite("A", 40_000, width=width - 70, x=40, y=110)]
             tracker = ValueAxisTracker.from_config(config, [bars])
             state = tracker.next(bars)
-            labeled_ticks = [tick for tick in state.ticks if tick.label]
-            self.assertTrue(all(
-                current.x - previous.x
-                >= config.value_grid_tick_font_size * 3
-                for previous, current in zip(
-                    labeled_ticks,
-                    labeled_ticks[1:],
-                )
-            ))
+            self._assert_tick_labels_do_not_overlap(config, state)
             scene = Scene(
                 title="",
                 bars=scale_bar_sprites(bars, state.scale),
@@ -496,6 +542,7 @@ class ValueAxisTest(unittest.TestCase):
 
     def test_legacy_default_is_off_and_builder_loader_preserve_axis_settings(self):
         self.assertFalse(ChartConfig().value_grid_enabled)
+        self.assertEqual(ChartConfig().value_grid_tick_value_format, "same")
         data = self._project_data(
             value_grid_enabled=True,
             value_grid_mode="static",
@@ -509,6 +556,7 @@ class ValueAxisTest(unittest.TestCase):
             value_grid_tick_font_weight="bold",
             value_grid_tick_font_style="italic",
             value_grid_target_tick_count=6,
+            value_grid_tick_value_format="compact",
         )
         config = load_project_data(data).chart_config
         values = project_form_values(data)
@@ -517,7 +565,9 @@ class ValueAxisTest(unittest.TestCase):
         self.assertEqual(config.value_grid_mode, "static")
         self.assertEqual(config.value_grid_line_thickness, 2.5)
         self.assertEqual(config.value_grid_tick_font_weight, "bold")
+        self.assertEqual(config.value_grid_tick_value_format, "compact")
         self.assertEqual(values["value_grid_target_tick_count"], 6)
+        self.assertEqual(values["value_grid_tick_value_format"], "compact")
 
     def test_preview_and_render_job_replay_identical_dynamic_axis(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -536,6 +586,7 @@ class ValueAxisTest(unittest.TestCase):
                 steps_per_transition=4,
                 value_grid_enabled=True,
                 value_grid_mode="dynamic",
+                value_grid_tick_value_format="compact",
                 animation=AnimationConfig(easing="ease_out_cubic"),
             )
             with patch("pipeline.render_job.BarRenderer") as renderer_class:
@@ -559,6 +610,7 @@ class ValueAxisTest(unittest.TestCase):
                 steps_per_transition=4,
                 value_grid_enabled=True,
                 value_grid_mode="dynamic",
+                value_grid_tick_value_format="compact",
             )
             with patch("studio.preview.BarRenderer") as preview_renderer:
                 preview_renderer.return_value.render.return_value = str(
@@ -583,8 +635,14 @@ class ValueAxisTest(unittest.TestCase):
                 render_axis.scale.domain_max,
             )
             self.assertEqual(
-                [(tick.value, tick.x, tick.opacity) for tick in preview_axis.ticks],
-                [(tick.value, tick.x, tick.opacity) for tick in render_axis.ticks],
+                [
+                    (tick.value, tick.x, tick.label, tick.opacity)
+                    for tick in preview_axis.ticks
+                ],
+                [
+                    (tick.value, tick.x, tick.label, tick.opacity)
+                    for tick in render_axis.ticks
+                ],
             )
             self.assertEqual(
                 [(bar.name, bar.value, bar.x, bar.width) for bar in preview_scene.bars],

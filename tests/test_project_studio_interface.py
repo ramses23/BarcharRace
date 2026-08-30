@@ -817,6 +817,10 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         grid_mode.set_value("static")
         next(
+            control for control in app.get("button_group")
+            if control.label == "Tick value format"
+        ).set_value("compact")
+        next(
             control for control in app.color_picker
             if control.label == "Grid line color"
         ).set_value("#123456")
@@ -843,6 +847,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self.assertTrue(chart["value_grid_enabled"])
         self.assertEqual(chart["value_grid_mode"], "static")
         self.assertTrue(chart["value_grid_tick_labels_enabled"])
+        self.assertEqual(chart["value_grid_tick_value_format"], "compact")
         self.assertEqual(chart["value_grid_line_color"], "#123456")
         self.assertEqual(chart["value_grid_line_opacity"], 0.4)
         self.assertEqual(chart["value_grid_line_thickness"], 2.5)

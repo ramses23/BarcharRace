@@ -194,6 +194,7 @@ def build_project_data(
     value_grid_enabled=False,
     value_grid_mode="dynamic",
     value_grid_tick_labels_enabled=True,
+    value_grid_tick_value_format="same",
     value_grid_line_color="#FFFFFF",
     value_grid_line_opacity=0.18,
     value_grid_line_thickness=1.0,
@@ -361,6 +362,7 @@ def build_project_data(
             "value_grid_tick_labels_enabled": (
                 value_grid_tick_labels_enabled
             ),
+            "value_grid_tick_value_format": value_grid_tick_value_format,
             "value_grid_line_color": value_grid_line_color,
             "value_grid_line_opacity": value_grid_line_opacity,
             "value_grid_line_thickness": value_grid_line_thickness,
@@ -599,6 +601,9 @@ def project_form_values(project_data=None):
         "value_grid_mode": chart.get("value_grid_mode", "dynamic"),
         "value_grid_tick_labels_enabled": chart.get(
             "value_grid_tick_labels_enabled", True
+        ),
+        "value_grid_tick_value_format": chart.get(
+            "value_grid_tick_value_format", "same"
         ),
         "value_grid_line_color": chart.get(
             "value_grid_line_color", "#FFFFFF"

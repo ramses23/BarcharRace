@@ -1287,6 +1287,9 @@ def _project_form(
         value_grid_enabled=canvas_settings["value_axis"]["enabled"],
         value_grid_mode=canvas_settings["value_axis"]["mode"],
         value_grid_tick_labels_enabled=canvas_settings["value_axis"]["show_labels"],
+        value_grid_tick_value_format=(
+            canvas_settings["value_axis"]["tick_value_format"]
+        ),
         value_grid_line_color=canvas_settings["value_axis"]["line_color"],
         value_grid_line_opacity=canvas_settings["value_axis"]["line_opacity"],
         value_grid_line_thickness=canvas_settings["value_axis"]["line_thickness"],
@@ -1807,6 +1810,9 @@ def _canvas_settings_from_values(
             "show_labels": bool(values.get(
                 "value_grid_tick_labels_enabled", True
             )),
+            "tick_value_format": values.get(
+                "value_grid_tick_value_format", "same"
+            ),
             "line_color": _color_or_default(
                 values.get("value_grid_line_color"), "#FFFFFF"
             ),
@@ -3631,7 +3637,10 @@ def _bars_categories_section(
             max_value=500,
             value=min(500, max(0, int(values.get("primary_logo_min_size", 0)))),
             step=1,
-            help="0 preserves legacy sizing; positive values may extend beyond a short bar.",
+            help=(
+                "The primary logo is never smaller than the bar height. "
+                "A positive value sets an additional hard minimum."
+            ),
             key=_widget_key("primary_logo_min_size"),
         )
 
@@ -4685,6 +4694,23 @@ def _value_axis_panel(values, theme_settings):
             disabled=not enabled,
             key=_widget_key("value_grid_tick_labels_enabled"),
         )
+        tick_value_format = values.get(
+            "value_grid_tick_value_format", "same"
+        )
+        if tick_value_format not in ("same", "full", "compact"):
+            tick_value_format = "same"
+        tick_value_format = st.segmented_control(
+            "Tick value format",
+            options=("same", "full", "compact"),
+            default=tick_value_format,
+            format_func=lambda value: {
+                "same": "Same as bar values",
+                "full": "Full",
+                "compact": "Compact",
+            }[value],
+            disabled=not (enabled and show_labels),
+            key=_widget_key("value_grid_tick_value_format"),
+        ) or tick_value_format
 
         line_columns = st.columns(3)
         line_color = line_columns[0].color_picker(
@@ -4780,6 +4806,7 @@ def _value_axis_panel(values, theme_settings):
         "enabled": bool(enabled),
         "mode": mode,
         "show_labels": bool(show_labels),
+        "tick_value_format": tick_value_format,
         "line_color": line_color,
         "line_opacity": float(line_opacity),
         "line_thickness": float(line_thickness),

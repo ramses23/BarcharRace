@@ -394,6 +394,19 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertTrue(loaded.canvas["value_grid_tick_labels_enabled"])
         self.assertEqual(loaded.canvas["value_grid_target_tick_count"], 5)
 
+    def test_loads_v7_preset_with_same_tick_format_default(self):
+        current = build_appearance_preset("Before tick format", self.project_data())
+        data = current.to_dict()
+        data["schema_version"] = 7
+        del data["canvas"]["value_grid_tick_value_format"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "schema_7.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertEqual(loaded.canvas["value_grid_tick_value_format"], "same")
+
     def test_rejects_unknown_missing_and_invalid_visual_fields(self):
         preset = build_appearance_preset("Strict preset", self.project_data())
         cases = []

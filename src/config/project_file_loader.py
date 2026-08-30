@@ -416,6 +416,7 @@ def _convert_chart_value(key, value):
         "background_image_fit": ("cover", "contain", "stretch"),
         "background_motion": ("off", "forward_motion"),
         "value_grid_mode": ("static", "dynamic"),
+        "value_grid_tick_value_format": ("same", "full", "compact"),
     }
 
     if key in bar_enum_options:

@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 7
+APPEARANCE_PRESET_SCHEMA_VERSION = 8
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -29,6 +29,7 @@ CANVAS_APPEARANCE_FIELDS = (
     "value_grid_enabled",
     "value_grid_mode",
     "value_grid_tick_labels_enabled",
+    "value_grid_tick_value_format",
     "value_grid_line_color",
     "value_grid_line_opacity",
     "value_grid_line_thickness",
@@ -158,6 +159,7 @@ _ROOT_FIELDS_BY_VERSION = {
     5: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     6: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     7: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+    8: {"schema_version", "name", "canvas", "bars", "fun_facts"},
 }
 _MAX_NAME_LENGTH = 80
 
@@ -421,6 +423,8 @@ def _validated_preset(data):
         )
     name = _validated_name(data["name"])
     canvas_defaults = {}
+    if schema_version <= 7:
+        canvas_defaults["value_grid_tick_value_format"] = "same"
     if schema_version <= 6:
         canvas_defaults.update({
             "value_grid_enabled": False,

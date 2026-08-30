@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
 
+from core.logo_geometry import resolved_primary_logo_size
 from studio.fun_fact_layout import editorial_geometry
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_value
@@ -245,13 +246,16 @@ def _logo_rects(config, sprites):
     for sprite in sprites:
         primary_rect = None
         if sprite.logo_path:
+            primary_size = resolved_primary_logo_size(
+                config, sprite, config.logo_size
+            )
             primary_rect = _base_logo_rect(
                 sprite,
                 config.bar_logo_position,
-                config.logo_size,
+                primary_size,
                 config.bar_logo_padding,
                 config.logo_gap,
-                minimum_size=config.primary_logo_min_size,
+                minimum_size=primary_size,
                 canvas_width=config.width,
                 canvas_height=config.height,
             )

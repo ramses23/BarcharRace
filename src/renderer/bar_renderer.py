@@ -24,6 +24,7 @@ from core.bar_appearance import (
     uses_material_bar_renderer,
     uses_vector_bar_gradient,
 )
+from core.logo_geometry import resolved_primary_logo_size
 from renderer.artists import (
     BarArtists,
     ImageCommandsArtist,
@@ -2877,14 +2878,12 @@ class BarRenderer(TextCompositorMixin):
         if position == "hidden":
             return None
 
-        protected_primary = slot == "primary" and self.config.primary_logo_min_size > 0
+        protected_primary = slot == "primary"
         requested_size = max(1.0, float(style["size"]))
         if protected_primary:
-            requested_size = max(
-                requested_size,
-                float(self.config.primary_logo_min_size),
+            requested_size = resolved_primary_logo_size(
+                self.config, sprite, requested_size
             )
-            requested_size = min(requested_size, float(self.config.height))
 
         if position == "outside_left":
             size = requested_size
@@ -3524,6 +3523,12 @@ class BarRenderer(TextCompositorMixin):
         text_width = self._value_label_text_width(text)
         max_right = self.config.width - self.config.value_label_edge_padding
         outside_x = sprite.x + sprite.width + self.config.value_label_gap
+        right_logos = self._logo_group_extent(sprite, "inside_right")
+        if right_logos:
+            outside_x = max(
+                outside_x,
+                right_logos[1] + self.config.logo_label_gap,
+            )
 
         if self._uses_configurable_content():
             position = self.config.bar_value_position
@@ -3536,7 +3541,6 @@ class BarRenderer(TextCompositorMixin):
             if position == "inside":
                 inside_x = sprite.x + sprite.width - self.config.value_label_gap
 
-                right_logos = self._logo_group_extent(sprite, "inside_right")
                 if right_logos:
                     inside_x = min(
                         inside_x,

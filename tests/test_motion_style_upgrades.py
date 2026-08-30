@@ -8,10 +8,14 @@ from PIL import Image, ImageDraw
 
 from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
+from config.fun_fact_config import FunFactConfig
 from core.layout_engine import LayoutEngine
+from core.scene_geometry import build_scene_geometry
+from core.value_axis import ValueAxisTracker, scale_bar_sprites
 from core.motion_engine import MotionEngine
 from models.bar_data import BarData
 from models.bar_sprite import BarSprite
+from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
 from studio.project_builder import build_project_data, project_form_values
 from config.project_file_loader import load_project_data
@@ -167,6 +171,120 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertGreater(layout["size"], 12)
         self.assertGreaterEqual(layout["left"], 0)
         self.assertLessEqual(layout["right"], 200)
+
+    def test_primary_logo_size_depends_on_row_height_not_bar_width(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=800,
+            height=300,
+            bar_logo_position="inside_right",
+            logo_size=20,
+            primary_logo_min_size=0,
+            value_labels_enabled=True,
+            bar_appearance_mode="advanced",
+            bar_value_position="outside",
+        ))
+        try:
+            layouts = []
+            for width in (500, 100, 30, 10, 0.01):
+                item = BarSprite(
+                    name="Row", value=width, color="#000000",
+                    x=100, y=100, width=width, height=48,
+                    rank=1, logo_path="logo.png",
+                )
+                layout = renderer._logo_layout(item)
+                value_layout = renderer._value_label_layout(item, "100")
+                layouts.append(layout)
+                self.assertGreaterEqual(layout["size"], 48)
+                self.assertGreaterEqual(
+                    value_layout["x"],
+                    layout["right"] + renderer.config.logo_label_gap,
+                )
+            self.assertEqual(
+                {round(layout["size"], 6) for layout in layouts},
+                {48.0},
+            )
+
+            original = BarSprite(
+                name="Row", value=100, color="#000000", x=100, y=100,
+                width=500, height=48, rank=1, logo_path="logo.png",
+            )
+            scaled = None
+            for mode in ("static", "dynamic"):
+                axis_config = replace(
+                    renderer.config,
+                    value_grid_enabled=True,
+                    value_grid_mode=mode,
+                )
+                tracker = ValueAxisTracker.from_config(
+                    axis_config, [[original]]
+                )
+                scaled = scale_bar_sprites(
+                    [replace(original, width=10)],
+                    tracker.next([replace(original, width=10)]).scale,
+                )[0]
+                self.assertEqual(
+                    renderer._logo_layout(original)["size"],
+                    renderer._logo_layout(scaled)["size"],
+                )
+
+            geometry = build_scene_geometry(
+                renderer.config,
+                FunFactConfig(),
+                Scene(title="", subtitle="", bars=[scaled]),
+            )
+            self.assertEqual(
+                geometry["primary_logo_rects"][0]["width"],
+                renderer._logo_layout(scaled)["size"],
+            )
+        finally:
+            renderer.close()
+
+    def test_secondary_logo_retains_width_capped_sizing(self):
+        renderer = BarRenderer(config=ChartConfig(
+            width=300,
+            height=200,
+            bar_secondary_logo_enabled=True,
+            bar_secondary_logo_layout="independent",
+            bar_secondary_logo_position="inside_left",
+            bar_secondary_logo_size=40,
+            bar_secondary_logo_padding=3,
+        ))
+        try:
+            item = BarSprite(
+                name="Row", value=1, color="#000000", x=50, y=80,
+                width=10, height=48, rank=1,
+                secondary_logo_path="secondary.png",
+            )
+            secondary = renderer._base_logo_layout(item, slot="secondary")
+        finally:
+            renderer.close()
+
+        self.assertEqual(secondary["size"], 4)
+
+    def test_primary_logo_height_floor_renders_in_both_aspect_ratios(self):
+        for width, height in ((320, 180), (180, 320)):
+            with self.subTest(width=width, height=height):
+                renderer = BarRenderer(config=ChartConfig(
+                    width=width,
+                    height=height,
+                    bar_logo_position="inside_right",
+                    logo_size=20,
+                ))
+                item = BarSprite(
+                    name="Row", value=1, color="#000000",
+                    x=20, y=90, width=10, height=48,
+                    rank=1, logo_path="logo.png",
+                )
+                try:
+                    layout = renderer._logo_layout(item)
+                    rgba = renderer.render_rgba(Scene(title="", bars=[item]))
+                finally:
+                    renderer.close()
+
+                self.assertEqual(layout["size"], 48)
+                self.assertGreaterEqual(layout["left"], 0)
+                self.assertLessEqual(layout["right"], width)
+                self.assertEqual(len(rgba), width * height * 4)
 
     def _project_data(self, **overrides):
         defaults = dict(

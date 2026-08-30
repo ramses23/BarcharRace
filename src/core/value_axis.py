@@ -3,7 +3,7 @@ from math import ceil, floor, isclose, isfinite, log10
 
 from models.value_axis import ValueAxisState, ValueAxisTick, ValueScale
 from utils.text_fit import measure_text_width, measurement_font
-from utils.value_formatter import format_value
+from utils.value_formatter import format_adaptive_compact_value, format_value
 
 
 VALUE_AXIS_HEADROOM = 1.12
@@ -56,6 +56,7 @@ def adaptive_tick_count(
     dpi,
     font_weight="normal",
     font_style="normal",
+    tick_value_format="same",
 ):
     width = max(1.0, _finite(axis_width, default=1.0))
     requested = max(2, min(12, int(requested_count)))
@@ -78,7 +79,9 @@ def adaptive_tick_count(
             (
                 (value / domain) * width,
                 measure_text_width(
-                    format_axis_tick(value, step, value_format),
+                    format_axis_tick(
+                        value, step, value_format, tick_value_format
+                    ),
                     font,
                 ),
             )
@@ -156,6 +159,12 @@ class ValueAxisTracker:
         self.target_tick_count = max(2, min(12, int(target_tick_count)))
         self.tick_font_size = max(1, int(tick_font_size))
         self.value_format = value_format
+        self.tick_value_format = (
+            chart_config.value_grid_tick_value_format
+            if chart_config.value_grid_tick_value_format
+            in ("same", "full", "compact")
+            else "same"
+        )
         self.chart_config = chart_config
         self.headroom = max(1.0, float(headroom))
         self.expansion_smoothing = _unit_interval(
@@ -241,6 +250,7 @@ class ValueAxisTracker:
             dpi=self.chart_config.dpi,
             font_weight=self.chart_config.value_grid_tick_font_weight,
             font_style=self.chart_config.value_grid_tick_font_style,
+            tick_value_format=self.tick_value_format,
         )
         tick_step, desired_ticks = nice_ticks(
             scale.domain_max,
@@ -262,6 +272,7 @@ class ValueAxisTracker:
                         value,
                         tick_step,
                         self.value_format,
+                        self.tick_value_format,
                     )
                 ),
                 opacity=opacity,
@@ -297,10 +308,14 @@ class ValueAxisTracker:
         self._tick_opacities = updated
 
 
-def format_axis_tick(value, tick_step, value_format):
+def format_axis_tick(value, tick_step, value_format, tick_value_format="same"):
     decimal_places = _tick_decimal_places(
         tick_step * float(value_format.multiplier)
     )
+    if tick_value_format == "compact":
+        return format_adaptive_compact_value(value, value_format)
+    if tick_value_format == "full":
+        value_format = replace(value_format, compact=False)
     return format_value(
         value,
         replace(value_format, decimal_places=decimal_places),

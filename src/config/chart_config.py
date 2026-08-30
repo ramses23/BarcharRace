@@ -141,6 +141,7 @@ class ChartConfig:
     value_grid_enabled: bool = False
     value_grid_mode: str = "dynamic"
     value_grid_tick_labels_enabled: bool = True
+    value_grid_tick_value_format: str = "same"
     value_grid_line_color: str = "#FFFFFF"
     value_grid_line_opacity: float = 0.18
     value_grid_line_thickness: float = 1.0
