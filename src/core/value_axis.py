@@ -2,6 +2,7 @@ from dataclasses import replace
 from math import ceil, floor, isclose, isfinite, log10
 
 from models.value_axis import ValueAxisState, ValueAxisTick, ValueScale
+from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_value
 
 
@@ -44,16 +45,59 @@ def nice_ticks(domain_max, target_tick_count=5):
     )
 
 
-def adaptive_tick_count(axis_width, requested_count, tick_font_size):
+def adaptive_tick_count(
+    axis_width,
+    requested_count,
+    tick_font_size,
+    *,
+    domain_max,
+    value_format,
+    font_family,
+    dpi,
+    font_weight="normal",
+    font_style="normal",
+):
     width = max(1.0, _finite(axis_width, default=1.0))
     requested = max(2, min(12, int(requested_count)))
-    minimum_spacing = max(72.0, float(tick_font_size) * 5.5)
-    available = max(1, int(width // minimum_spacing))
-    return min(requested, available)
+    domain = _positive_finite(domain_max, default=1.0)
+    font = measurement_font(
+        tick_font_size,
+        dpi,
+        font_family,
+        font_weight,
+        font_style,
+    )
+    minimum_gap = max(
+        8.0,
+        float(tick_font_size) * float(dpi) / 144.0,
+    )
+
+    for candidate in range(requested, 0, -1):
+        step, ticks = nice_ticks(domain, candidate)
+        labeled = [
+            (
+                (value / domain) * width,
+                measure_text_width(
+                    format_axis_tick(value, step, value_format),
+                    font,
+                ),
+            )
+            for value in ticks
+            if value > 0.0
+        ]
+        if len(labeled) <= requested and all(
+            (current_x - (current_width / 2.0))
+            - (previous_x + (previous_width / 2.0))
+            >= minimum_gap
+            for (previous_x, previous_width), (current_x, current_width)
+            in zip(labeled, labeled[1:])
+        ):
+            return candidate
+
+    return 1
 
 
 def value_axis_extent(sprite_sets, *, fallback_width):
-    widths = []
     static_max = 0.0
     for sprites in sprite_sets:
         visible = [
@@ -63,13 +107,20 @@ def value_axis_extent(sprite_sets, *, fallback_width):
         ]
         if not visible:
             continue
-        widths.append(max(0.0, max(float(sprite.width) for sprite in visible)))
         static_max = max(
             static_max,
             max(float(sprite.value) for sprite in visible),
         )
-    width = min(widths) if widths else max(0.0, float(fallback_width))
-    return width, static_max
+    return max(0.0, float(fallback_width)), static_max
+
+
+def current_value_axis_width(sprites, *, fallback_width):
+    widths = [
+        max(0.0, float(sprite.width))
+        for sprite in sprites
+        if _visible_positive_value(sprite) is not None
+    ]
+    return max(widths) if widths else max(0.0, float(fallback_width))
 
 
 def scale_bar_sprites(sprites, scale):
@@ -102,11 +153,7 @@ class ValueAxisTracker:
         self.mode = mode if mode in ("static", "dynamic") else "dynamic"
         self.origin_x = float(origin_x)
         self.axis_width = max(0.0, float(axis_width))
-        self.target_tick_count = adaptive_tick_count(
-            self.axis_width,
-            target_tick_count,
-            tick_font_size,
-        )
+        self.target_tick_count = max(2, min(12, int(target_tick_count)))
         self.tick_font_size = max(1, int(tick_font_size))
         self.value_format = value_format
         self.chart_config = chart_config
@@ -145,6 +192,10 @@ class ValueAxisTracker:
         )
 
     def next(self, sprites):
+        self.axis_width = current_value_axis_width(
+            sprites,
+            fallback_width=self.axis_width,
+        )
         visible_max = max(
             (
                 value
@@ -177,9 +228,23 @@ class ValueAxisTracker:
             width=self.axis_width,
             domain_max=max(MIN_AXIS_DOMAIN, self.domain),
         )
+        effective_tick_count = adaptive_tick_count(
+            scale.width,
+            self.target_tick_count,
+            self.tick_font_size,
+            domain_max=scale.domain_max,
+            value_format=self.value_format,
+            font_family=(
+                self.chart_config.value_font_family
+                or self.chart_config.font_family
+            ),
+            dpi=self.chart_config.dpi,
+            font_weight=self.chart_config.value_grid_tick_font_weight,
+            font_style=self.chart_config.value_grid_tick_font_style,
+        )
         tick_step, desired_ticks = nice_ticks(
             scale.domain_max,
-            self.target_tick_count,
+            effective_tick_count,
         )
         self._update_tick_opacities(desired_ticks)
         line_top, line_bottom, label_y = _vertical_geometry(

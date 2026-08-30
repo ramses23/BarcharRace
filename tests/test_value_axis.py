@@ -31,6 +31,7 @@ from renderer.bar_renderer import BarRenderer
 from studio.preview import render_project_preview
 from studio.layout_preview import build_studio_layout_preview
 from studio.project_builder import build_project_data, project_form_values
+from utils.text_fit import measure_text_width, measurement_font
 
 
 def sprite(name, value, *, width=600, x=200, y=200, opacity=1.0):
@@ -146,17 +147,19 @@ class ValueAxisTest(unittest.TestCase):
         self.assertLess(second_by_value[30_000].opacity, 1.0)
         self.assertLess(second_by_value[20_000].x, first_by_value[20_000].x)
 
-    def test_static_mode_keeps_domain_and_tick_positions_fixed(self):
+    def test_static_mode_keeps_domain_fixed_and_uses_current_frame_width(self):
         config = self._config(value_grid_mode="static")
         tracker = ValueAxisTracker.from_config(
             config,
             [[sprite("A", 35_000)], [sprite("A", 70_000)]],
         )
-        low = tracker.next([sprite("A", 35_000)])
-        high = tracker.next([sprite("A", 70_000)])
+        low = tracker.next([sprite("A", 35_000, width=600)])
+        high = tracker.next([sprite("A", 70_000, width=300)])
 
         self.assertEqual(low.scale.domain_max, high.scale.domain_max)
-        self.assertEqual(
+        self.assertEqual(low.scale.width, 600)
+        self.assertEqual(high.scale.width, 300)
+        self.assertNotEqual(
             [(tick.value, tick.x) for tick in low.ticks],
             [(tick.value, tick.x) for tick in high.ticks],
         )
@@ -173,8 +176,24 @@ class ValueAxisTest(unittest.TestCase):
         )
 
     def test_vertical_ratio_reduces_tick_count_and_both_ratios_render(self):
-        landscape_count = adaptive_tick_count(1_400, 8, 16)
-        vertical_count = adaptive_tick_count(520, 8, 16)
+        count_options = dict(
+            domain_max=1_500_000_000,
+            value_format=ValueFormatConfig(decimal_places=0),
+            font_family="DejaVu Sans",
+            dpi=72,
+        )
+        landscape_count = adaptive_tick_count(
+            1_400,
+            8,
+            16,
+            **count_options,
+        )
+        vertical_count = adaptive_tick_count(
+            520,
+            8,
+            16,
+            **count_options,
+        )
         self.assertLess(vertical_count, landscape_count)
 
         for width, height in ((320, 180), (180, 320)):
@@ -213,6 +232,116 @@ class ValueAxisTest(unittest.TestCase):
             finally:
                 renderer.close()
             self.assertEqual(len(rgba), width * height * 4)
+
+    def test_browser_geometry_uses_current_width_and_preserves_fun_fact_limit(self):
+        config = self._browser_config(value_grid_mode="dynamic")
+        fun_fact = self._browser_fun_fact()
+        layout = LayoutEngine(config=config, fun_fact_config=fun_fact)
+        wide = layout.build(self._browser_bars_2009())
+        constrained = layout.build(self._browser_bars_2012())
+        tracker = ValueAxisTracker.from_config(config, [wide, constrained])
+
+        wide_state = tracker.next(wide)
+        wide_scaled = scale_bar_sprites(wide, wide_state.scale)
+        ie = next(bar for bar in wide_scaled if bar.name == "IE")
+
+        self.assertAlmostEqual(max(bar.width for bar in wide), 1462.0)
+        self.assertAlmostEqual(wide_state.scale.width, 1462.0)
+        self.assertAlmostEqual(wide_state.scale.domain_max, 1_500_000_000)
+        self.assertAlmostEqual(ie.width, 1093.6070918666667)
+
+        constrained_state = tracker.next(constrained)
+        constrained_scaled = scale_bar_sprites(
+            constrained,
+            constrained_state.scale,
+        )
+        self.assertAlmostEqual(
+            max(bar.width for bar in constrained),
+            704.0143603133159,
+        )
+        self.assertAlmostEqual(
+            constrained_state.scale.width,
+            704.0143603133159,
+        )
+        self.assertAlmostEqual(
+            constrained_state.scale.right_x,
+            config.left_margin + 704.0143603133159,
+        )
+        required_value_lane = layout._required_value_lane(constrained)
+        collision_right = (
+            fun_fact.editorial_card_x
+            - fun_fact.editorial_collision_gap
+        )
+        scaled_by_name = {bar.name: bar for bar in constrained_scaled}
+        for bar in constrained:
+            row_top = bar.y - (bar.height / 2.0)
+            row_bottom = bar.y + (bar.height / 2.0)
+            if (
+                row_bottom > fun_fact.editorial_card_y
+                and row_top
+                < fun_fact.editorial_card_y + fun_fact.editorial_card_height
+            ):
+                scaled = scaled_by_name[bar.name]
+                self.assertLessEqual(
+                    scaled.x + scaled.width + required_value_lane,
+                    collision_right,
+                )
+
+    def test_browser_static_domain_is_global_but_width_is_per_frame(self):
+        config = self._browser_config(value_grid_mode="static")
+        layout = LayoutEngine(
+            config=config,
+            fun_fact_config=self._browser_fun_fact(),
+        )
+        wide = layout.build(self._browser_bars_2009())
+        constrained = layout.build(self._browser_bars_2012())
+        tracker = ValueAxisTracker.from_config(config, [wide, constrained])
+
+        wide_state = tracker.next(wide)
+        constrained_state = tracker.next(constrained)
+
+        self.assertEqual(
+            wide_state.scale.domain_max,
+            constrained_state.scale.domain_max,
+        )
+        self.assertAlmostEqual(wide_state.scale.width, 1462.0)
+        self.assertAlmostEqual(
+            constrained_state.scale.width,
+            704.0143603133159,
+        )
+
+    def test_real_tick_labels_do_not_overlap_for_targets_and_aspect_ratios(self):
+        for width, height in ((1920, 1080), (1080, 1920)):
+            for target_count in (3, 5, 8):
+                with self.subTest(
+                    width=width,
+                    height=height,
+                    target_count=target_count,
+                ):
+                    config = self._browser_config(
+                        width=width,
+                        height=height,
+                        right_margin=190,
+                        value_grid_target_tick_count=target_count,
+                    )
+                    bars = [
+                        sprite(
+                            "IE",
+                            1_122_031_900,
+                            width=config.max_bar_width,
+                            x=config.left_margin,
+                        )
+                    ]
+                    state = ValueAxisTracker.from_config(
+                        config,
+                        [bars],
+                    ).next(bars)
+
+                    self.assertLessEqual(
+                        len([tick for tick in state.ticks if tick.label]),
+                        target_count,
+                    )
+                    self._assert_tick_labels_do_not_overlap(config, state)
 
     def test_grid_layer_is_behind_bars_text_and_logos(self):
         config = self._config(
@@ -466,6 +595,111 @@ class ValueAxisTest(unittest.TestCase):
                     bar.x + bar.width,
                     preview_axis.scale.x_for_value(bar.value),
                 )
+
+    def _assert_tick_labels_do_not_overlap(self, config, state):
+        font = measurement_font(
+            config.value_grid_tick_font_size,
+            config.dpi,
+            config.value_font_family or config.font_family,
+            config.value_grid_tick_font_weight,
+            config.value_grid_tick_font_style,
+        )
+        bounds = [
+            (
+                tick.x - (measure_text_width(tick.label, font) / 2.0),
+                tick.x + (measure_text_width(tick.label, font) / 2.0),
+            )
+            for tick in state.ticks
+            if tick.label
+        ]
+        self.assertTrue(all(
+            previous_right <= current_left
+            for (_, previous_right), (current_left, _)
+            in zip(bounds, bounds[1:])
+        ))
+
+    @staticmethod
+    def _browser_config(**overrides):
+        defaults = dict(
+            width=1920,
+            height=1080,
+            dpi=150,
+            left_margin=20,
+            right_margin=190,
+            max_visible_bars=10,
+            auto_fit_bar_count=True,
+            bar_vertical_layout_mode="fill_available",
+            bar_vertical_top_padding=18,
+            bar_vertical_bottom_padding=18,
+            title_enabled=False,
+            subtitle_enabled=False,
+            source_label_enabled=True,
+            source_y=1050,
+            source_font_size=13,
+            logos_enabled=False,
+            value_labels_enabled=True,
+            value_font_size=26,
+            value_font_family="Comic Sans MS",
+            value_label_gap=12,
+            bar_appearance_mode="unified",
+            bar_fill_type="solid",
+            bar_value_position="outside",
+            value_format=ValueFormatConfig(decimal_places=0),
+            value_grid_enabled=True,
+            value_grid_mode="dynamic",
+            value_grid_tick_labels_enabled=True,
+            value_grid_tick_font_size=16,
+            value_grid_target_tick_count=5,
+        )
+        defaults.update(overrides)
+        return ChartConfig(**defaults)
+
+    @staticmethod
+    def _browser_fun_fact():
+        return FunFactConfig(
+            enabled=True,
+            layout="editorial_floating",
+            panel_width=525,
+            panel_margin=24,
+            panel_padding=22,
+            editorial_card_x=992,
+            editorial_card_y=280,
+            editorial_card_width=917,
+            editorial_card_height=725,
+            editorial_collision_gap=24,
+        )
+
+    @staticmethod
+    def _browser_bars_2009():
+        values = (
+            ("IE", 1_122_031_900),
+            ("Firefox", 463_699_500),
+            ("Opera", 53_006_500),
+            ("Safari", 48_166_400),
+            ("Chrome", 23_659_900),
+            ("AOL", 4_662_900),
+            ("Mozilla", 2_590_500),
+            ("Nokia", 2_072_700),
+            ("BlackBerry", 518_100),
+            ("NetFront", 172_700),
+        )
+        return [sprite(name, value) for name, value in values]
+
+    @staticmethod
+    def _browser_bars_2012():
+        values = (
+            ("Chrome", 685_462_250),
+            ("IE", 678_878_050),
+            ("Firefox", 540_374_700),
+            ("Safari", 204_110_200),
+            ("Opera", 89_592_150),
+            ("Android", 56_671_150),
+            ("Nokia", 27_512_550),
+            ("UC Browser", 20_222_900),
+            ("BlackBerry", 13_403_550),
+            ("NetFront", 9_406_000),
+        )
+        return [sprite(name, value) for name, value in values]
 
     @staticmethod
     def _config(**overrides):
