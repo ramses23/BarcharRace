@@ -11,6 +11,7 @@ class BarValueScale:
     domain_max: float
     timeline_progress: float = 0.0
     growth_envelope: float = 1.0
+    leader_occupancy: float = 1.0
 
     @property
     def right_x(self):

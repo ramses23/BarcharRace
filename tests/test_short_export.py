@@ -13,7 +13,7 @@ from config.fun_fact_config import FunFactConfig
 from config.project_file_loader import ProjectFileError, load_project_data
 from config.project_preset import ProjectPreset
 from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
-from core.bar_value_scale import BarValueScaleResolver
+from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.scene_geometry import build_scene_geometry
 from core.layout_engine import LayoutEngine
 from models.bar_data import BarData
@@ -54,6 +54,7 @@ class ShortExportTest(unittest.TestCase):
         ]
         chart = ChartConfig(
             steps_per_transition=10,
+            start_bars_at_zero=True,
             leader_full_width_point=0.5,
         )
         short_periods = resolve_export_periods(
@@ -76,6 +77,23 @@ class ShortExportTest(unittest.TestCase):
         self.assertEqual(standard.domain_max, 30)
         self.assertEqual(short.domain_max, 40)
         self.assertNotEqual(standard.domain_max, short.domain_max)
+
+        final_short = [
+            replace(selected_sets[-1][0], value=50),
+            replace(
+                selected_sets[-1][0],
+                name="Second",
+                value=40,
+                y=160,
+            ),
+        ]
+        short_scale = short.for_sprites(
+            final_short,
+            timeline_progress=1.0,
+        )
+        bars = scale_bar_sprites(final_short, short_scale)
+        self.assertEqual(bars[0].width, short_scale.width)
+        self.assertAlmostEqual(bars[1].width / bars[0].width, 40 / 50)
 
     def test_effective_output_path_preserves_standard_and_suffixes_short_once(self):
         standard = ExportConfig(mode="standard")

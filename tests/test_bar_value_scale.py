@@ -131,8 +131,9 @@ class BarValueScaleTest(unittest.TestCase):
                     leader_full_width_point=point,
                 )
                 resolver = BarValueScaleResolver.from_config(config, endpoints)
+                target_sprites = endpoints[int(point * 4)]
                 scale = resolver.for_sprites(
-                    endpoints[0], timeline_progress=point,
+                    target_sprites, timeline_progress=point,
                 )
 
                 self.assertEqual(resolver.domain_max, expected_reference)
@@ -161,9 +162,136 @@ class BarValueScaleTest(unittest.TestCase):
         target = resolver.for_sprites(endpoints[1], timeline_progress=0.5)
 
         self.assertGreater(first.width_for_value(50), 0.0)
-        self.assertEqual(first.growth_envelope, 1.0)
+        self.assertEqual(first.growth_envelope, 0.5)
+        self.assertEqual(first.width_for_value(50), 300)
         self.assertAlmostEqual(
             target.width_for_value(resolver.domain_max), target.width
+        )
+
+    def test_post_target_bars_remain_relative_above_historical_reference(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        endpoints = [
+            [sprite("China", 800), sprite("India", 700, y=160)],
+            [sprite("China", 1_115), sprite("India", 900, y=160)],
+            [
+                sprite("China", 1_400),
+                sprite("India", 1_300, y=160),
+                sprite("Third", 1_200, y=220),
+            ],
+        ]
+        resolver = BarValueScaleResolver.from_config(config, endpoints)
+        scale = resolver.for_sprites(endpoints[-1], timeline_progress=1.0)
+        scaled = {
+            bar.name: bar
+            for bar in scale_bar_sprites(endpoints[-1], scale)
+        }
+
+        self.assertEqual(resolver.domain_max, 1_115)
+        self.assertEqual(scaled["China"].width, scale.width)
+        self.assertAlmostEqual(scaled["India"].width / scale.width, 1_300 / 1_400)
+        self.assertAlmostEqual(scaled["Third"].width / scale.width, 1_200 / 1_400)
+        self.assertLess(scaled["India"].width, scaled["China"].width)
+        self.assertLess(scaled["Third"].width, scaled["India"].width)
+
+    def test_population_ratios_2002_2003_2012_and_2026(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        cases = (
+            ("2002", 1_286_866_835, 1_097_600_380, "China"),
+            ("2003", 1_294_517_323, 1_116_803_000, "China"),
+            ("2012", 1_369_668_277, 1_278_946_261, "China"),
+            ("2026", 1_412_914_090, 1_476_625_571, "India"),
+        )
+        for period, china, india, leader_name in cases:
+            with self.subTest(period=period):
+                current = [
+                    sprite("China", china, bar_available_width=600),
+                    sprite("India", india, y=160, bar_available_width=600),
+                ]
+                resolver = BarValueScaleResolver.from_config(
+                    config,
+                    [[sprite("China", 500)], [sprite("China", 1_115)], current],
+                )
+                scale = resolver.for_sprites(current, timeline_progress=1.0)
+                bars = {
+                    bar.name: bar
+                    for bar in scale_bar_sprites(current, scale)
+                }
+                leader = bars[leader_name]
+                other_name = "India" if leader_name == "China" else "China"
+                other = bars[other_name]
+
+                self.assertEqual(leader.width, scale.width)
+                self.assertAlmostEqual(
+                    other.width / leader.width,
+                    other.value / leader.value,
+                )
+                self.assertLess(other.width, leader.width)
+
+    def test_leader_switch_and_exact_tie_are_stable(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        china_leads = [sprite("China", 120), sprite("India", 110, y=160)]
+        india_leads = [sprite("China", 125), sprite("India", 130, y=160)]
+        tie = [sprite("China", 140), sprite("India", 140, y=160)]
+        resolver = BarValueScaleResolver.from_config(
+            config, [china_leads, india_leads, tie]
+        )
+
+        for sprites, leader_name in (
+            (china_leads, "China"),
+            (india_leads, "India"),
+        ):
+            scale = resolver.for_sprites(sprites, timeline_progress=0.75)
+            bars = {
+                bar.name: bar
+                for bar in scale_bar_sprites(sprites, scale)
+            }
+            self.assertEqual(bars[leader_name].width, scale.width)
+            self.assertEqual(max(bar.width for bar in bars.values()), scale.width)
+
+        tie_scale = resolver.for_sprites(tie, timeline_progress=1.0)
+        tie_bars = scale_bar_sprites(tie, tie_scale)
+        self.assertEqual([bar.width for bar in tie_bars], [600, 600])
+
+    def test_reveal_preserves_relative_proportions(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        current = [sprite("Leader", 600), sprite("Other", 450, y=160)]
+        resolver = BarValueScaleResolver.from_config(config, [current, current])
+        scale = resolver.for_sprites(current, timeline_progress=0.25)
+        bars = {
+            bar.name: bar
+            for bar in scale_bar_sprites(current, scale)
+        }
+
+        self.assertEqual(scale.leader_occupancy, 0.5)
+        self.assertEqual(bars["Leader"].width, 300)
+        self.assertEqual(bars["Other"].width, 225)
+        self.assertEqual(
+            bars["Other"].width / bars["Leader"].width,
+            450 / 600,
         )
 
     def test_stable_value_grows_during_reveal_and_decrease_returns_afterward(self):
@@ -249,6 +377,55 @@ class BarValueScaleTest(unittest.TestCase):
             self.assertGreaterEqual(value["x"], bar.x + bar.width)
             self.assertGreater(logo["size"], 0.0)
 
+    def test_logo_and_value_label_follow_each_bars_relative_endpoint(self):
+        config = ChartConfig(
+            width=1000,
+            height=400,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+            bar_logo_position="inside_right",
+            logo_size=36,
+            bar_value_position="outside",
+            logos_enabled=True,
+        )
+        current = [
+            sprite(
+                "Leader", 100, width=800, logo_path="leader.png",
+                bar_available_width=800,
+            ),
+            sprite(
+                "Other", 75, width=600, y=160, logo_path="other.png",
+                bar_available_width=800,
+            ),
+        ]
+        resolver = BarValueScaleResolver.from_config(config, [current, current])
+        scale = resolver.for_sprites(current, timeline_progress=0.75)
+        bars = scale_bar_sprites(current, scale)
+        renderer = BarRenderer(config=config)
+        try:
+            layouts = {
+                bar.name: (
+                    bar,
+                    renderer._logo_layout(bar),
+                    renderer._value_label_layout(bar, str(bar.value)),
+                )
+                for bar in bars
+            }
+        finally:
+            renderer.close()
+
+        leader, leader_logo, leader_value = layouts["Leader"]
+        other, other_logo, other_value = layouts["Other"]
+        self.assertEqual(other.width / leader.width, 0.75)
+        self.assertEqual(leader_logo["right"], leader.x + leader.width)
+        self.assertEqual(other_logo["right"], other.x + other.width)
+        self.assertGreaterEqual(other_value["x"], other.x + other.width)
+        self.assertLess(other_logo["right"], leader_logo["right"])
+        self.assertLess(other_value["x"], leader_value["x"])
+        self.assertEqual(leader_value["ha"], "right")
+
     def test_progression_uses_reserved_structural_width_not_canvas_width(self):
         config = ChartConfig(
             width=1920,
@@ -279,6 +456,8 @@ class BarValueScaleTest(unittest.TestCase):
             bottom_margin=60,
             value_grid_enabled=True,
             value_grid_tick_labels_enabled=True,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
             bar_appearance_mode="unified",
             bar_fill_type="solid",
             bar_track_enabled=True,
@@ -292,14 +471,24 @@ class BarValueScaleTest(unittest.TestCase):
             source_label_enabled=False,
             time_label_enabled=False,
         )
-        raw = [sprite("Leader", 80, width=800, logo_path="logo.png")]
+        raw = [
+            sprite(
+                "Leader", 80, width=800, logo_path="logo.png",
+                bar_available_width=800,
+            ),
+            sprite(
+                "Other", 60, width=600, y=160,
+                bar_available_width=800,
+            ),
+        ]
         bar_scale = BarValueScaleResolver.from_config(
             config, [raw]
-        ).for_sprites(raw)
+        ).for_sprites(raw, timeline_progress=1.0)
         bars = scale_bar_sprites(raw, bar_scale)
         compressed = grid_state(width=600, domain=120)
         expanded = grid_state(width=800, domain=100)
         bar = bars[0]
+        other_bar = bars[1]
 
         renderer = BarRenderer(config=config)
         try:
@@ -327,6 +516,7 @@ class BarValueScaleTest(unittest.TestCase):
 
         self.assertEqual(bar.x, bar_scale.origin_x)
         self.assertEqual(bar.x + bar.width, bar_scale.x_for_value(bar.value))
+        self.assertEqual(other_bar.width / bar.width, 60 / 80)
         self.assertEqual(logo_before, logo_after)
         self.assertEqual(value_before["x"], value_after["x"])
         self.assertEqual(track_right, [bar_scale.right_x, bar_scale.right_x])

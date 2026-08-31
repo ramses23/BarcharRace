@@ -233,6 +233,7 @@ def _bar_value_scale_geometry(scale):
         "domain_max": round(float(scale.domain_max), 6),
         "timeline_progress": round(float(scale.timeline_progress), 6),
         "growth_envelope": round(float(scale.growth_envelope), 6),
+        "leader_occupancy": round(float(scale.leader_occupancy), 6),
     }
 
 

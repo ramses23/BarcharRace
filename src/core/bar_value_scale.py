@@ -19,6 +19,8 @@ class BarValueScaleResolver:
     project_max: float
     start_bars_at_zero: bool
     full_width_point: float
+    initial_leader_occupancy: float
+    legacy_mode: bool
     frame_count: int
 
     @classmethod
@@ -59,6 +61,12 @@ class BarValueScaleResolver:
             )
             if sampled_leader > 0.0 and isfinite(sampled_leader):
                 reference_value = sampled_leader
+        initial_leader = _leader_value(sprite_sets[0] if sprite_sets else ())
+        initial_leader_occupancy = (
+            1.0
+            if legacy_scale
+            else _safe_ratio(initial_leader, reference_value)
+        )
         duration = estimate_video_duration(
             period_count=len(sprite_sets),
             steps_per_transition=config.steps_per_transition,
@@ -72,6 +80,8 @@ class BarValueScaleResolver:
             project_max=project_max,
             start_bars_at_zero=start_bars_at_zero,
             full_width_point=full_width_point,
+            initial_leader_occupancy=initial_leader_occupancy,
+            legacy_mode=legacy_scale,
             frame_count=duration.frame_count,
         )
 
@@ -83,20 +93,41 @@ class BarValueScaleResolver:
             )
         else:
             timeline_progress = _unit_interval(timeline_progress, default=0.0)
-        growth_envelope = progressive_growth_envelope(
-            timeline_progress,
-            self.full_width_point,
-            enabled=self.start_bars_at_zero,
-        )
+        current_leader_value = _leader_value(sprites)
+        if self.legacy_mode:
+            # Preserve ba2914a exactly: values remain divided by the fixed
+            # project maximum and no progressive multiplier is applied.
+            scale_domain = self.project_max
+            width_multiplier = 1.0
+            leader_occupancy = _safe_ratio(
+                current_leader_value,
+                self.project_max,
+            )
+        else:
+            # Progressive mode separates the leader's temporal occupancy from
+            # every category's value ratio against that same frame leader.
+            scale_domain = (
+                current_leader_value
+                if current_leader_value > 0.0
+                else self.domain_max
+            )
+            leader_occupancy = progressive_leader_occupancy(
+                timeline_progress,
+                self.full_width_point,
+                start_bars_at_zero=self.start_bars_at_zero,
+                initial_occupancy=self.initial_leader_occupancy,
+            )
+            width_multiplier = leader_occupancy
         return BarValueScale(
             origin_x=self.origin_x,
             width=structural_bar_width(
                 sprites,
                 fallback_width=self.fallback_width,
             ),
-            domain_max=self.domain_max,
+            domain_max=scale_domain,
             timeline_progress=timeline_progress,
-            growth_envelope=growth_envelope,
+            growth_envelope=width_multiplier,
+            leader_occupancy=leader_occupancy,
         )
 
 
@@ -124,6 +155,24 @@ def progressive_growth_envelope(progress, full_width_point, *, enabled):
     if x >= 1.0:
         return 1.0
     return x * x * (3.0 - (2.0 * x))
+
+
+def progressive_leader_occupancy(
+    progress,
+    full_width_point,
+    *,
+    start_bars_at_zero,
+    initial_occupancy,
+):
+    growth = progressive_growth_envelope(
+        progress,
+        full_width_point,
+        enabled=True,
+    )
+    if start_bars_at_zero:
+        return growth
+    initial_occupancy = _unit_interval(initial_occupancy, default=0.0)
+    return initial_occupancy + ((1.0 - initial_occupancy) * growth)
 
 
 def structural_bar_width(sprites, *, fallback_width):
@@ -169,6 +218,17 @@ def _visible_positive_value(sprite):
     return value
 
 
+def _leader_value(sprites):
+    return max(
+        (
+            value
+            for sprite in sprites
+            if (value := _visible_positive_value(sprite)) is not None
+        ),
+        default=0.0,
+    )
+
+
 def _finite(value, *, default):
     try:
         value = float(value)
@@ -187,6 +247,14 @@ def _valid_full_width_point(value):
 def _unit_interval(value, *, default):
     value = _finite(value, default=default)
     return max(0.0, min(1.0, value))
+
+
+def _safe_ratio(numerator, denominator):
+    numerator = _finite(numerator, default=0.0)
+    denominator = _finite(denominator, default=0.0)
+    if numerator <= 0.0 or denominator <= 0.0:
+        return 0.0
+    return max(0.0, min(1.0, numerator / denominator))
 
 
 def _sprites_at_effective_progress(config, sprite_sets, progress):
