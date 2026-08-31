@@ -8,6 +8,36 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_progressive_bar_scale_defaults_roundtrip_and_validation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy = root / "legacy.json"
+            legacy.write_text(json.dumps({"chart": {}}), encoding="utf-8")
+            legacy_config = load_project_file(legacy).chart_config
+            self.assertFalse(legacy_config.start_bars_at_zero)
+            self.assertEqual(legacy_config.leader_full_width_point, 1.0)
+
+            configured = root / "configured.json"
+            configured.write_text(json.dumps({
+                "chart": {
+                    "start_bars_at_zero": True,
+                    "leader_full_width_point": 0.5,
+                }
+            }), encoding="utf-8")
+            configured_config = load_project_file(configured).chart_config
+            self.assertTrue(configured_config.start_bars_at_zero)
+            self.assertEqual(configured_config.leader_full_width_point, 0.5)
+
+            for invalid in (True, 0.0, 1.01, "0.5"):
+                path = root / f"invalid_{invalid}.json"
+                path.write_text(json.dumps({
+                    "chart": {"leader_full_width_point": invalid}
+                }), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    ProjectFileError, "leader_full_width_point.*0.1 to 1"
+                ):
+                    load_project_file(path)
+
     def test_all_text_opacities_default_validate_and_roundtrip(self):
         fields = {
             "title_text_opacity": 1.0,

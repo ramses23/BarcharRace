@@ -216,6 +216,8 @@ def build_project_data(
     bar_gap=None,
     bar_color_source="manual",
     primary_logo_min_size=0,
+    start_bars_at_zero=False,
+    leader_full_width_point=1.0,
     png_compress_level=1,
     frame_output_mode="ffmpeg_stream",
     bar_shape=None,
@@ -389,6 +391,8 @@ def build_project_data(
             "bar_vertical_bottom_padding": bar_vertical_bottom_padding,
             "bar_color_source": bar_color_source,
             "primary_logo_min_size": primary_logo_min_size,
+            "start_bars_at_zero": bool(start_bars_at_zero),
+            "leader_full_width_point": float(leader_full_width_point),
             "frame_output_mode": frame_output_mode,
             "png_compress_level": _bounded_int_or_default(
                 png_compress_level,
@@ -715,6 +719,10 @@ def project_form_values(project_data=None):
         "bar_gap": chart.get("bar_gap", layout_settings.bar_gap),
         "bar_color_source": chart.get("bar_color_source", "manual"),
         "primary_logo_min_size": chart.get("primary_logo_min_size", 0),
+        "start_bars_at_zero": chart.get("start_bars_at_zero", False),
+        "leader_full_width_point": chart.get(
+            "leader_full_width_point", 1.0
+        ),
         "png_compress_level": chart.get("png_compress_level", 1),
         "frame_output_mode": chart.get("frame_output_mode", "ffmpeg_stream"),
         **{

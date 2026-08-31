@@ -29,6 +29,8 @@ class ChartConfig:
     bar_border_color: str = "#FFFFFF"
     bar_border_width: float = 1.5
     bar_appearance_mode: str = "simple"
+    start_bars_at_zero: bool = False
+    leader_full_width_point: float = 1.0
     bar_fill_type: str = "gradient"
     bar_gradient_direction: str = "horizontal"
     bar_gradient_color_count: int = 3

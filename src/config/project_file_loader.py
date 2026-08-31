@@ -445,6 +445,7 @@ def _convert_chart_value(key, value):
         "bar_value_use_theme_color",
         "bar_value_border_enabled",
         "bar_value_shadow_enabled",
+        "start_bars_at_zero",
         "title_enabled",
         "subtitle_enabled",
         "time_label_enabled",
@@ -458,6 +459,17 @@ def _convert_chart_value(key, value):
         if not isinstance(value, bool):
             raise ProjectFileError(f"Chart field '{key}' must be boolean.")
         return value
+
+    if key == "leader_full_width_point":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0.1 <= value <= 1.0
+        ):
+            raise ProjectFileError(
+                "Chart field 'leader_full_width_point' must be from 0.1 to 1."
+            )
+        return float(value)
 
     if key in (
         "bar_border_color",

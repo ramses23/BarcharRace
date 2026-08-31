@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 8
+APPEARANCE_PRESET_SCHEMA_VERSION = 9
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -106,6 +106,8 @@ BAR_APPEARANCE_FIELDS = (
     "bar_gap",
     "bar_color_source",
     "primary_logo_min_size",
+    "start_bars_at_zero",
+    "leader_full_width_point",
     *BAR_STYLE_FIELDS,
 )
 FUN_FACT_APPEARANCE_FIELDS = (
@@ -160,6 +162,7 @@ _ROOT_FIELDS_BY_VERSION = {
     6: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     7: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     8: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+    9: {"schema_version", "name", "canvas", "bars", "fun_facts"},
 }
 _MAX_NAME_LENGTH = 80
 
@@ -477,13 +480,18 @@ def _validated_preset(data):
         section_name="canvas",
         missing_defaults=canvas_defaults or None,
     )
-    bar_defaults = None
+    bar_defaults = {}
+    if schema_version <= 8:
+        bar_defaults.update({
+            "start_bars_at_zero": False,
+            "leader_full_width_point": 1.0,
+        })
     if schema_version <= 5:
-        bar_defaults = {
+        bar_defaults.update({
             "bar_gap": _legacy_bar_gap(data["canvas"]),
             "bar_color_source": "manual",
             "primary_logo_min_size": 0,
-        }
+        })
         if schema_version == 1:
             bar_defaults.update({
                 "bar_label_offset_x": 0,
@@ -493,7 +501,7 @@ def _validated_preset(data):
         data["bars"],
         expected_fields=BAR_APPEARANCE_FIELDS,
         section_name="bars",
-        missing_defaults=bar_defaults,
+        missing_defaults=bar_defaults or None,
     )
     fun_facts = None
     if schema_version >= 2:

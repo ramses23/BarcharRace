@@ -50,6 +50,36 @@ class MotionEngineTest(unittest.TestCase):
         else:
             self.assertTrue(all(value == start for value in values))
 
+    def test_single_transition_samples_match_rendered_frames(self):
+        engine = MotionEngine(AnimationConfig(easing="ease_in_out"))
+        start = [self._sprite(10, y=20, rank=2)]
+        end = [self._sprite(90, y=120, rank=1)]
+        frames = engine.interpolate_sprites(start, end, steps=9)
+
+        for index, frame in enumerate(frames):
+            self.assertEqual(
+                engine.interpolate_sprites_at(start, end, index / 8),
+                frame,
+            )
+
+    def test_single_continuous_samples_match_rendered_frames(self):
+        engine = MotionEngine(AnimationConfig(motion_mode="continuous"))
+        previous = [self._sprite(10, y=0, rank=2)]
+        start = [self._sprite(30, y=20, rank=2)]
+        end = [self._sprite(90, y=120, rank=1)]
+        following = [self._sprite(110, y=160, rank=1)]
+        frames = engine.interpolate_sprites_continuous(
+            previous, start, end, following, steps=8,
+        )
+
+        for index, frame in enumerate(frames):
+            self.assertEqual(
+                engine.interpolate_sprites_continuous_at(
+                    previous, start, end, following, index / 8,
+                ),
+                frame,
+            )
+
     def test_real_ie_values_start_moving_immediately_without_overshoot(self):
         values = self._continuous_values(
             (1_012_073_100, 999_017_500, 999_188_800, 1_009_314_166)

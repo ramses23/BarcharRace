@@ -13,9 +13,11 @@ from config.fun_fact_config import FunFactConfig
 from config.project_file_loader import ProjectFileError, load_project_data
 from config.project_preset import ProjectPreset
 from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
+from core.bar_value_scale import BarValueScaleResolver
 from core.scene_geometry import build_scene_geometry
 from core.layout_engine import LayoutEngine
 from models.bar_data import BarData
+from models.bar_sprite import BarSprite
 from models.scene import Scene
 from PIL import Image
 from pipeline.render_job import RenderJob
@@ -35,6 +37,46 @@ from studio.short_export import (
 
 
 class ShortExportTest(unittest.TestCase):
+    def test_progression_reference_uses_effective_short_range(self):
+        periods = (2000, 2001, 2002, 2003, 2004)
+        all_sets = [
+            [BarSprite(
+                name="Leader",
+                value=value,
+                color="#123456",
+                x=100,
+                y=100,
+                width=600,
+                height=40,
+                bar_available_width=600,
+            )]
+            for value in (10, 20, 30, 40, 50)
+        ]
+        chart = ChartConfig(
+            steps_per_transition=10,
+            leader_full_width_point=0.5,
+        )
+        short_periods = resolve_export_periods(
+            periods,
+            ExportConfig(
+                mode="short",
+                short_from_period=2002,
+                short_to_period=2004,
+            ),
+        )
+        selected_sets = [
+            all_sets[periods.index(period)]
+            for period in short_periods
+        ]
+
+        standard = BarValueScaleResolver.from_config(chart, all_sets)
+        short = BarValueScaleResolver.from_config(chart, selected_sets)
+
+        self.assertEqual(short_periods, (2002, 2003, 2004))
+        self.assertEqual(standard.domain_max, 30)
+        self.assertEqual(short.domain_max, 40)
+        self.assertNotEqual(standard.domain_max, short.domain_max)
+
     def test_effective_output_path_preserves_standard_and_suffixes_short_once(self):
         standard = ExportConfig(mode="standard")
         short = ExportConfig(mode="short")

@@ -3,7 +3,12 @@ import unittest
 
 import _test_path
 from config.chart_config import ChartConfig
-from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
+from core.bar_value_scale import (
+    BarValueScaleResolver,
+    normalized_effective_timeline_progress,
+    progressive_growth_envelope,
+    scale_bar_sprites,
+)
 from core.motion_engine import MotionEngine
 from core.value_axis import ValueAxisTracker
 from models.bar_sprite import BarSprite
@@ -54,6 +59,216 @@ def grid_state(*, width, domain, tick_value=50):
 
 
 class BarValueScaleTest(unittest.TestCase):
+    def test_default_config_preserves_fixed_project_max_widths_exactly(self):
+        config = ChartConfig(width=800, left_margin=100, right_margin=100)
+        endpoint_sets = [
+            [sprite("A", 25, bar_available_width=600)],
+            [sprite("A", 50, bar_available_width=600)],
+            [sprite("A", 100, bar_available_width=600)],
+        ]
+        resolver = BarValueScaleResolver.from_config(config, endpoint_sets)
+
+        self.assertEqual(resolver.domain_max, 100)
+        for sprites in endpoint_sets:
+            scale = resolver.for_sprites(sprites)
+            self.assertEqual(
+                scale.width_for_value(sprites[0].value),
+                sprites[0].value / 100 * 600,
+            )
+
+    def test_smoothstep_growth_is_exact_monotone_and_stops_at_target(self):
+        observed = [
+            progressive_growth_envelope(point, 1.0, enabled=True)
+            for point in (0.0, 0.25, 0.5, 0.75, 1.0)
+        ]
+
+        self.assertEqual(observed, [0.0, 0.15625, 0.5, 0.84375, 1.0])
+        self.assertTrue(all(a <= b for a, b in zip(observed, observed[1:])))
+        self.assertEqual(
+            progressive_growth_envelope(0.75, 0.5, enabled=True),
+            1.0,
+        )
+
+    def test_first_effective_frame_has_zero_bodies_but_real_values(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        raw = [
+            sprite("A", 80, bar_available_width=600),
+            sprite("B", 40, y=160, bar_available_width=600),
+        ]
+        resolver = BarValueScaleResolver.from_config(config, [raw, raw])
+        scaled = scale_bar_sprites(
+            raw,
+            resolver.for_sprites(raw, timeline_progress=0.0),
+        )
+
+        self.assertEqual([bar.width for bar in scaled], [0.0, 0.0])
+        self.assertEqual([bar.value for bar in scaled], [80, 40])
+        self.assertEqual([bar.rank for bar in scaled], [None, None])
+
+    def test_full_width_reference_supports_25_50_and_75_percent(self):
+        endpoints = [
+            [sprite("Leader", value, bar_available_width=600)]
+            for value in (20, 40, 60, 80, 100)
+        ]
+        for point, expected_reference in (
+            (0.25, 40),
+            (0.5, 60),
+            (0.75, 80),
+        ):
+            with self.subTest(point=point):
+                config = ChartConfig(
+                    width=800,
+                    left_margin=100,
+                    right_margin=100,
+                    steps_per_transition=20,
+                    start_bars_at_zero=True,
+                    leader_full_width_point=point,
+                )
+                resolver = BarValueScaleResolver.from_config(config, endpoints)
+                scale = resolver.for_sprites(
+                    endpoints[0], timeline_progress=point,
+                )
+
+                self.assertEqual(resolver.domain_max, expected_reference)
+                self.assertAlmostEqual(
+                    scale.width_for_value(resolver.domain_max),
+                    scale.width,
+                )
+                self.assertEqual(scale.growth_envelope, 1.0)
+
+    def test_start_zero_off_keeps_first_frame_visible_with_early_reference(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            steps_per_transition=9,
+            start_bars_at_zero=False,
+            leader_full_width_point=0.5,
+        )
+        endpoints = [
+            [sprite("Leader", 50, bar_available_width=600)],
+            [sprite("Leader", 100, bar_available_width=600)],
+            [sprite("Leader", 150, bar_available_width=600)],
+        ]
+        resolver = BarValueScaleResolver.from_config(config, endpoints)
+        first = resolver.for_sprites(endpoints[0], timeline_progress=0.0)
+        target = resolver.for_sprites(endpoints[1], timeline_progress=0.5)
+
+        self.assertGreater(first.width_for_value(50), 0.0)
+        self.assertEqual(first.growth_envelope, 1.0)
+        self.assertAlmostEqual(
+            target.width_for_value(resolver.domain_max), target.width
+        )
+
+    def test_stable_value_grows_during_reveal_and_decrease_returns_afterward(self):
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        endpoints = [
+            [sprite("A", 100, bar_available_width=600)],
+            [sprite("A", 100, bar_available_width=600)],
+        ]
+        resolver = BarValueScaleResolver.from_config(config, endpoints)
+        reveal_widths = [
+            resolver.for_sprites(
+                endpoints[0], timeline_progress=point
+            ).width_for_value(100)
+            for point in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5)
+        ]
+        after_target = resolver.for_sprites(
+            endpoints[0], timeline_progress=0.75
+        )
+
+        self.assertTrue(all(
+            before < after
+            for before, after in zip(reveal_widths, reveal_widths[1:])
+        ))
+        self.assertLess(
+            after_target.width_for_value(70),
+            after_target.width_for_value(100),
+        )
+
+    def test_progress_and_width_cap_are_safe_and_deterministic(self):
+        self.assertEqual(normalized_effective_timeline_progress(0, 11), 0.0)
+        self.assertEqual(normalized_effective_timeline_progress(5, 11), 0.5)
+        self.assertEqual(normalized_effective_timeline_progress(10, 11), 1.0)
+        self.assertEqual(normalized_effective_timeline_progress(99, 11), 1.0)
+
+        config = ChartConfig(
+            width=800,
+            left_margin=100,
+            right_margin=100,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        raw = [sprite("A", 100, bar_available_width=600)]
+        resolver = BarValueScaleResolver.from_config(config, [raw, raw])
+        scale_a = resolver.for_sprites(raw, timeline_progress=1.0)
+        scale_b = resolver.for_sprites(raw, timeline_progress=1.0)
+        self.assertEqual(scale_a, scale_b)
+        self.assertEqual(scale_a.width_for_value(10_000), 600)
+
+    def test_zero_tiny_and_normal_width_keep_logo_and_value_geometry_finite(self):
+        config = ChartConfig(
+            width=800,
+            height=400,
+            left_margin=100,
+            right_margin=100,
+            bar_logo_position="inside_right",
+            logo_size=36,
+            primary_logo_min_size=24,
+            bar_value_position="outside",
+            logos_enabled=True,
+        )
+        renderer = BarRenderer(config=config)
+        try:
+            layouts = []
+            for width in (0.0, 0.25, 300.0):
+                bar = sprite(
+                    "A", 50, width=width, logo_path="logo.png",
+                    bar_available_width=600,
+                )
+                logo = renderer._logo_layout(bar)
+                value = renderer._value_label_layout(bar, "50")
+                layouts.append((bar, logo, value))
+        finally:
+            renderer.close()
+
+        for bar, logo, value in layouts:
+            self.assertGreaterEqual(logo["left"], bar.x)
+            self.assertGreaterEqual(value["x"], bar.x + bar.width)
+            self.assertGreater(logo["size"], 0.0)
+
+    def test_progression_uses_reserved_structural_width_not_canvas_width(self):
+        config = ChartConfig(
+            width=1920,
+            left_margin=210,
+            right_margin=235,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        reserved_width = 777
+        raw = [sprite(
+            "Leader", 100, width=reserved_width,
+            bar_available_width=reserved_width,
+        )]
+        resolver = BarValueScaleResolver.from_config(config, [raw, raw])
+        scale = resolver.for_sprites(raw, timeline_progress=0.5)
+
+        self.assertEqual(scale.width, reserved_width)
+        self.assertEqual(scale.width_for_value(resolver.domain_max), reserved_width)
+        self.assertLess(scale.right_x, config.width - config.right_margin)
+
     def test_grid_only_change_preserves_bar_logo_value_and_track_geometry(self):
         config = ChartConfig(
             width=1000,

@@ -741,6 +741,8 @@ class ValueAxisTest(unittest.TestCase):
                 value_grid_enabled=True,
                 value_grid_mode="dynamic",
                 value_grid_tick_value_format="compact",
+                start_bars_at_zero=True,
+                leader_full_width_point=0.5,
                 animation=AnimationConfig(easing="ease_out_cubic"),
             )
             with patch("pipeline.render_job.BarRenderer") as renderer_class:
@@ -765,6 +767,8 @@ class ValueAxisTest(unittest.TestCase):
                 value_grid_enabled=True,
                 value_grid_mode="dynamic",
                 value_grid_tick_value_format="compact",
+                start_bars_at_zero=True,
+                leader_full_width_point=0.5,
             )
             with patch("studio.preview.BarRenderer") as preview_renderer:
                 preview_renderer.return_value.render.return_value = str(

@@ -382,7 +382,7 @@ def _preview_value_scales(
     bar_value_scale = BarValueScaleResolver.from_config(
         chart_config,
         sprites_by_year.values(),
-    ).for_sprites(target_sprites)
+    ).for_sprites(target_sprites, frame_index=target_frame_index)
     if not chart_config.value_grid_enabled:
         return bar_value_scale, None
 

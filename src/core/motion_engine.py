@@ -154,6 +154,57 @@ class MotionEngine:
 
         return frames
 
+    def interpolate_sprites_at(self, start_sprites, end_sprites, progress):
+        """Sample transition easing at one normalized transition position."""
+
+        start_map = {sprite.name: sprite for sprite in start_sprites}
+        end_map = {sprite.name: sprite for sprite in end_sprites}
+        raw_t = self._clamped_progress(progress)
+        frame = [
+            self._transition_sprite(
+                name,
+                start_map.get(name),
+                end_map.get(name),
+                raw_t,
+            )
+            for name in sorted(set(start_map) | set(end_map))
+        ]
+        frame.sort(key=rank_motion_sort_key)
+        return frame
+
+    def interpolate_sprites_continuous_at(
+        self,
+        previous_sprites,
+        start_sprites,
+        end_sprites,
+        next_sprites,
+        progress,
+    ):
+        """Sample continuous motion at one normalized transition position."""
+
+        previous_map = {sprite.name: sprite for sprite in previous_sprites}
+        start_map = {sprite.name: sprite for sprite in start_sprites}
+        end_map = {sprite.name: sprite for sprite in end_sprites}
+        next_map = {sprite.name: sprite for sprite in next_sprites}
+        raw_t = self._clamped_progress(progress)
+        frame = []
+        for name in sorted(set(start_map) | set(end_map)):
+            start = start_map.get(name)
+            end = end_map.get(name)
+            if start is not None and end is not None:
+                sprite = self._continuous_sprite(
+                    previous_map.get(name) or start,
+                    start,
+                    end,
+                    next_map.get(name) or end,
+                    raw_t,
+                )
+            else:
+                sprite = self._transition_sprite(name, start, end, raw_t)
+            frame.append(sprite)
+        frame.sort(key=rank_motion_sort_key)
+        return frame
+
     def _continuous_sprite(self, previous, start, end, next_sprite, t):
         value_t = t if not self.animation_config.value_smoothing else None
         position_t = self.animation_config.easing_function()(t)
@@ -409,3 +460,13 @@ class MotionEngine:
         if sprite is None:
             return None
         return sprite.bar_available_width
+
+    @staticmethod
+    def _clamped_progress(progress):
+        try:
+            progress = float(progress)
+        except (TypeError, ValueError):
+            return 0.0
+        if not isfinite(progress):
+            return 0.0
+        return max(0.0, min(1.0, progress))

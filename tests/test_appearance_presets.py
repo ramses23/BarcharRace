@@ -58,6 +58,8 @@ class AppearancePresetsTest(unittest.TestCase):
                 "bar_secondary_logo_size": 19,
                 "logo_size": 42,
                 "value_format": "compact",
+                "start_bars_at_zero": True,
+                "leader_full_width_point": 0.5,
             },
             "selection": {
                 "top_n": 5,
@@ -124,6 +126,8 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.bars["bar_shape"], "capsule")
         self.assertEqual(preset.bars["logo_size"], 42)
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
+        self.assertTrue(preset.bars["start_bars_at_zero"])
+        self.assertEqual(preset.bars["leader_full_width_point"], 0.5)
         self.assertEqual(preset.fun_facts["layout"], "editorial_right")
         self.assertEqual(
             preset.fun_facts["editorial_background_mode"],
@@ -166,6 +170,21 @@ class AppearancePresetsTest(unittest.TestCase):
                 load_appearance_preset(stored.path).canvas["title_font_size"],
                 58,
             )
+
+    def test_v8_preset_defaults_progression_without_breaking_legacy_visuals(self):
+        current = build_appearance_preset("Legacy v8", self.project_data())
+        legacy = current.to_dict()
+        legacy["schema_version"] = 8
+        del legacy["bars"]["start_bars_at_zero"]
+        del legacy["bars"]["leader_full_width_point"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "legacy_v8.json"
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertFalse(loaded.bars["start_bars_at_zero"])
+        self.assertEqual(loaded.bars["leader_full_width_point"], 1.0)
 
     def test_applies_visual_fields_without_mutating_or_copying_project_content(self):
         source = self.project_data()

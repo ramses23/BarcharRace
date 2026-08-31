@@ -1311,6 +1311,8 @@ def _project_form(
         bar_gap=bars_settings["bar_gap"],
         bar_color_source=bars_settings["bar_color_source"],
         primary_logo_min_size=bars_settings["primary_logo_min_size"],
+        start_bars_at_zero=bars_settings["start_bars_at_zero"],
+        leader_full_width_point=bars_settings["leader_full_width_point"],
         png_compress_level=render_settings["png_compress_level"],
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
@@ -2038,6 +2040,10 @@ def _bars_settings_from_values(values):
         "bar_color_source": values.get("bar_color_source", "manual"),
         "primary_logo_min_size": max(
             0, int(values.get("primary_logo_min_size", 0))
+        ),
+        "start_bars_at_zero": bool(values.get("start_bars_at_zero", False)),
+        "leader_full_width_point": _float_in_range_or_default(
+            values.get("leader_full_width_point"), 1.0, 0.1, 1.0,
         ),
         "bar_style": _bar_style_settings(values),
         "category_styles": _clean_category_style_mapping(
@@ -3644,6 +3650,40 @@ def _bars_categories_section(
             key=_widget_key("primary_logo_min_size"),
         )
 
+    progression_panel = st.container(border=True)
+    progression_panel.markdown("**Bar scale progression**")
+    progression_panel.caption(
+        "Control when bars occupy their full structural width without changing "
+        "the Value Grid scale."
+    )
+    progression_start_column, progression_point_column = progression_panel.columns(2)
+    with progression_start_column:
+        start_bars_at_zero = st.checkbox(
+            "Start bars at zero",
+            value=bool(values.get("start_bars_at_zero", False)),
+            help=(
+                "Begin the effective export timeline with zero-width bar bodies "
+                "and reveal them smoothly."
+            ),
+            key=_widget_key("start_bars_at_zero"),
+        )
+    with progression_point_column:
+        leader_full_width_point = st.slider(
+            "Leader full width point",
+            min_value=10,
+            max_value=100,
+            value=int(round(_float_in_range_or_default(
+                values.get("leader_full_width_point"), 1.0, 0.1, 1.0,
+            ) * 100)),
+            step=5,
+            format="%d%%",
+            help=(
+                "Effective video point whose interpolated leader defines full "
+                "bar width; Short exports use their selected frame range."
+            ),
+            key=_widget_key("leader_full_width_point"),
+        ) / 100.0
+
     text_panel = st.container(border=True)
     text_panel.markdown("**Bar text colors and opacity**")
     text_panel.caption(
@@ -3713,6 +3753,8 @@ def _bars_categories_section(
         "bar_gap": int(bar_gap),
         "bar_color_source": bar_color_source,
         "primary_logo_min_size": int(primary_logo_min_size),
+        "start_bars_at_zero": bool(start_bars_at_zero),
+        "leader_full_width_point": float(leader_full_width_point),
         "bar_style": bar_style,
         "category_styles": category_styles,
     }
@@ -5635,6 +5677,15 @@ def _int_in_range_or_default(value, default, minimum, maximum):
         return default
 
     return min(maximum, max(minimum, value))
+
+
+def _float_in_range_or_default(value, default, minimum, maximum):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+    return min(float(maximum), max(float(minimum), value))
 
 
 if __name__ == "__main__":

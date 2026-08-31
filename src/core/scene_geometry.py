@@ -231,6 +231,8 @@ def _bar_value_scale_geometry(scale):
         "right_x": round(float(scale.right_x), 3),
         "width": round(float(scale.width), 3),
         "domain_max": round(float(scale.domain_max), 6),
+        "timeline_progress": round(float(scale.timeline_progress), 6),
+        "growth_envelope": round(float(scale.growth_envelope), 6),
     }
 
 

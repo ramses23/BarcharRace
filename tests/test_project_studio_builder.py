@@ -88,6 +88,8 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             steps_per_transition=24,
             top_n=8,
             max_visible_bars=8,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
             png_compress_level=0,
             bar_shape="lollipop",
             bar_gradient_enabled=False,
@@ -216,6 +218,11 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["label_min_x"], 72)
         self.assertEqual(loaded["chart"]["left_margin"], 360)
         self.assertEqual(loaded["chart"]["rank_label_gap"], 340)
+        self.assertTrue(loaded["chart"]["start_bars_at_zero"])
+        self.assertEqual(loaded["chart"]["leader_full_width_point"], 0.5)
+        form_values = project_form_values(loaded)
+        self.assertTrue(form_values["start_bars_at_zero"])
+        self.assertEqual(form_values["leader_full_width_point"], 0.5)
         self.assertEqual(loaded["animation"]["motion_mode"], "continuous")
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")

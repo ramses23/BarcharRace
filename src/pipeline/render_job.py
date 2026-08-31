@@ -271,7 +271,8 @@ class RenderJob:
                     if value_axis_tracker is not None:
                         value_axis = value_axis_tracker.next(frame_sprites)
                     bar_value_scale = bar_scale_resolver.for_sprites(
-                        frame_sprites
+                        frame_sprites,
+                        frame_index=frame_id,
                     )
                     frame_sprites = scale_bar_sprites(
                         frame_sprites,
