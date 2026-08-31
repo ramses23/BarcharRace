@@ -14,6 +14,7 @@ from config.project_file_loader import ProjectFileError, load_project_data
 from config.project_preset import ProjectPreset
 from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
+from core.value_axis import ValueAxisTracker
 from core.scene_geometry import build_scene_geometry
 from core.layout_engine import LayoutEngine
 from models.bar_data import BarData
@@ -37,6 +38,51 @@ from studio.short_export import (
 
 
 class ShortExportTest(unittest.TestCase):
+    def test_short_progressive_dynamic_grid_uses_short_structural_scale(self):
+        chart = apply_export_profile(
+            ChartConfig(
+                value_grid_enabled=True,
+                value_grid_mode="dynamic",
+                start_bars_at_zero=True,
+                leader_full_width_point=0.5,
+            ),
+            ExportConfig(mode="short"),
+        )
+        available = chart.max_bar_width
+        bars = [
+            BarSprite(
+                name="Leader",
+                value=100,
+                color="#123456",
+                x=chart.left_margin,
+                y=300,
+                width=available,
+                height=40,
+                bar_available_width=available,
+            ),
+            BarSprite(
+                name="Other",
+                value=75,
+                color="#654321",
+                x=chart.left_margin,
+                y=360,
+                width=available * 0.75,
+                height=40,
+                bar_available_width=available,
+            ),
+        ]
+        grid = ValueAxisTracker.from_config(chart, [bars]).next(bars)
+        resolver = BarValueScaleResolver.from_config(chart, [bars, bars])
+        bar_scale = resolver.for_sprites(bars, timeline_progress=0.5)
+
+        self.assertEqual(grid.scale.width, available)
+        self.assertEqual(bar_scale.width, available)
+        for value in (25, 50, 75, 100):
+            self.assertAlmostEqual(
+                grid.scale.x_for_value(value),
+                bar_scale.x_for_value(value),
+            )
+
     def test_progression_reference_uses_effective_short_range(self):
         periods = (2000, 2001, 2002, 2003, 2004)
         all_sets = [

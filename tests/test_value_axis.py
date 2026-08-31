@@ -27,6 +27,7 @@ from core.value_axis import (
 from models.bar_sprite import BarSprite
 from models.fun_fact import ActiveFunFact, FunFact
 from models.scene import Scene
+from models.value_axis import SemanticDataScale
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
 from studio.preview import render_project_preview
@@ -49,6 +50,178 @@ def sprite(name, value, *, width=600, x=200, y=200, opacity=1.0):
 
 
 class ValueAxisTest(unittest.TestCase):
+    def test_progressive_dynamic_grid_uses_current_leader_semantic_scale(self):
+        config = self._config(
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        bars = [
+            sprite("China", 1_370_000_000, width=600),
+            sprite("India", 1_280_000_000, width=560, y=260),
+        ]
+        state = ValueAxisTracker.from_config(config, [bars]).next(bars)
+        ticks = {tick.value: tick for tick in state.ticks}
+
+        self.assertIsInstance(state.scale, SemanticDataScale)
+        self.assertEqual(state.scale.domain_max, 1_370_000_000)
+        self.assertEqual(state.scale.width, 600)
+        self.assertAlmostEqual(
+            ticks[500_000_000].x,
+            config.left_margin + (600 * 500 / 1_370),
+        )
+        self.assertAlmostEqual(
+            ticks[1_000_000_000].x,
+            config.left_margin + (600 * 1_000 / 1_370),
+        )
+        self.assertNotIn(1_500_000_000, ticks)
+        self.assertNotIn(2_000_000_000, ticks)
+        self.assertGreater(
+            state.scale.x_for_value(2_000_000_000),
+            state.scale.right_x,
+        )
+
+    def test_population_2026_semantic_positions_and_hidden_upper_ticks(self):
+        config = self._config(
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        leader = 1_476_625_571
+        bars = [
+            sprite("India", leader, width=600),
+            sprite("China", 1_412_914_090, width=574, y=260),
+        ]
+        state = ValueAxisTracker.from_config(config, [bars]).next(bars)
+        ticks = {tick.value: tick for tick in state.ticks}
+
+        for value, ratio in (
+            (500_000_000, 500_000_000 / leader),
+            (1_000_000_000, 1_000_000_000 / leader),
+            (1_250_000_000, 1_250_000_000 / leader),
+        ):
+            self.assertAlmostEqual(
+                state.scale.x_for_value(value),
+                config.left_margin + (600 * ratio),
+            )
+        self.assertTrue(all(value <= leader for value in ticks))
+        self.assertNotIn(1_500_000_000, ticks)
+        self.assertNotIn(2_000_000_000, ticks)
+
+    def test_grid_and_bars_align_after_target_but_not_during_reveal(self):
+        config = self._config(
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        bars = [
+            sprite("Leader", 1_000_000_000, width=600),
+            sprite("Half", 500_000_000, width=300, y=260),
+        ]
+        tracker = ValueAxisTracker.from_config(config, [bars])
+        grid = tracker.next(bars)
+        resolver = BarValueScaleResolver.from_config(config, [bars, bars])
+        full = resolver.for_sprites(bars, timeline_progress=0.5)
+        reveal = resolver.for_sprites(bars, timeline_progress=0.25)
+
+        for value in (250_000_000, 500_000_000, 1_000_000_000):
+            self.assertAlmostEqual(
+                grid.scale.x_for_value(value),
+                full.x_for_value(value),
+            )
+        self.assertEqual(reveal.leader_occupancy, 0.5)
+        self.assertGreater(
+            grid.scale.x_for_value(500_000_000),
+            reveal.x_for_value(500_000_000),
+        )
+
+    def test_start_zero_keeps_full_semantic_grid_with_zero_bar_bodies(self):
+        config = self._config(
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        bars = [
+            sprite("Leader", 1_000_000_000, width=600),
+            sprite("Half", 500_000_000, width=300, y=260),
+        ]
+        grid = ValueAxisTracker.from_config(config, [bars]).next(bars)
+        resolver = BarValueScaleResolver.from_config(config, [bars, bars])
+        first_scale = resolver.for_sprites(bars, timeline_progress=0.0)
+        first_bars = scale_bar_sprites(bars, first_scale)
+
+        self.assertEqual([bar.width for bar in first_bars], [0.0, 0.0])
+        self.assertGreater(grid.scale.x_for_value(500_000_000), config.left_margin)
+        self.assertEqual(
+            grid.scale.x_for_value(1_000_000_000),
+            grid.scale.right_x,
+        )
+
+    def test_progressive_dynamic_direction_follows_interpolated_leader(self):
+        config = self._config(
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        tracker = ValueAxisTracker.from_config(
+            config,
+            [[sprite("Leader", 1_000_000_000)]],
+        )
+        initial = tracker.next([sprite("Leader", 1_000_000_000)])
+        rising = tracker.next([sprite("Leader", 1_250_000_000)])
+        falling = tracker.next([sprite("Leader", 1_100_000_000)])
+        initial_x = {tick.value: tick.x for tick in initial.ticks}
+        rising_x = {tick.value: tick.x for tick in rising.ticks}
+        falling_x = {tick.value: tick.x for tick in falling.ticks}
+
+        self.assertLess(rising_x[1_000_000_000], initial_x[1_000_000_000])
+        self.assertGreater(falling_x[1_000_000_000], rising_x[1_000_000_000])
+
+    def test_progressive_tick_identity_fades_at_semantic_positions(self):
+        config = self._config(
+            value_grid_target_tick_count=5,
+            start_bars_at_zero=True,
+            leader_full_width_point=0.5,
+        )
+        tracker = ValueAxisTracker.from_config(
+            config,
+            [[sprite("Leader", 1_000_000_000)]],
+        )
+        tracker.next([sprite("Leader", 1_000_000_000)])
+        changed = tracker.next([sprite("Leader", 1_370_000_000)])
+        by_value = {tick.value: tick for tick in changed.ticks}
+
+        self.assertGreater(by_value[500_000_000].opacity, 0.0)
+        self.assertLess(by_value[500_000_000].opacity, 1.0)
+        self.assertAlmostEqual(
+            by_value[500_000_000].x,
+            changed.scale.x_for_value(500_000_000),
+        )
+
+    def test_grid_style_changes_do_not_change_progressive_bar_geometry(self):
+        bars = [
+            sprite("Leader", 100, width=600),
+            sprite("Other", 75, width=450, y=260),
+        ]
+        scales = []
+        for target, opacity, tick_format in (
+            (3, 0.1, "full"),
+            (10, 0.9, "compact"),
+        ):
+            config = self._config(
+                start_bars_at_zero=True,
+                leader_full_width_point=0.5,
+                value_grid_target_tick_count=target,
+                value_grid_line_opacity=opacity,
+                value_grid_tick_value_format=tick_format,
+            )
+            ValueAxisTracker.from_config(config, [bars]).next(bars)
+            scales.append(
+                BarValueScaleResolver.from_config(config, [bars, bars])
+                .for_sprites(bars, timeline_progress=0.75)
+            )
+
+        self.assertEqual(scales[0], scales[1])
+        self.assertEqual(
+            [scales[0].width_for_value(value) for value in (100, 75)],
+            [600, 450],
+        )
+
     def test_static_grid_and_stable_bar_scale_are_both_value_monotone(self):
         config = self._config(value_grid_mode="static")
         source = [sprite("A", 40_000), sprite("B", 20_000, width=300)]

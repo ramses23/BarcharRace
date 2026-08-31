@@ -27,6 +27,32 @@ class GridDisplayScale:
 
 
 @dataclass(frozen=True)
+class SemanticDataScale:
+    """Map frame values to the full structural race width without capping."""
+
+    origin_x: float
+    width: float
+    domain_max: float
+
+    @property
+    def right_x(self):
+        return self.origin_x + self.width
+
+    def x_for_value(self, value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = 0.0
+        if not isfinite(value) or self.domain_max <= 0.0:
+            value = 0.0
+        value = max(0.0, value)
+        return self.origin_x + ((value / self.domain_max) * self.width)
+
+    def width_for_value(self, value):
+        return self.x_for_value(value) - self.origin_x
+
+
+@dataclass(frozen=True)
 class ValueAxisTick:
     value: float
     x: float
@@ -36,7 +62,7 @@ class ValueAxisTick:
 
 @dataclass(frozen=True)
 class ValueAxisState:
-    scale: GridDisplayScale
+    scale: GridDisplayScale | SemanticDataScale
     ticks: tuple[ValueAxisTick, ...]
     tick_step: float
     line_top: float

@@ -43,7 +43,7 @@ class BarValueScaleResolver:
         start_bars_at_zero = bool(
             getattr(config, "start_bars_at_zero", False)
         )
-        legacy_scale = not start_bars_at_zero and full_width_point == 1.0
+        legacy_scale = not progressive_bar_scale_active(config)
         reference_value = project_max
         if not legacy_scale and configured_point is not None:
             sampled_sprites = _sprites_at_effective_progress(
@@ -140,6 +140,14 @@ def normalized_effective_timeline_progress(frame_index, frame_count):
     if frame_count <= 1:
         return 0.0
     return max(0.0, min(1.0, frame_index / (frame_count - 1)))
+
+
+def progressive_bar_scale_active(config):
+    point = _valid_full_width_point(
+        getattr(config, "leader_full_width_point", 1.0)
+    )
+    point = point or 1.0
+    return bool(getattr(config, "start_bars_at_zero", False)) or point < 1.0
 
 
 def progressive_growth_envelope(progress, full_width_point, *, enabled):

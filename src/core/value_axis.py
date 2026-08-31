@@ -1,7 +1,16 @@
 from dataclasses import replace
 from math import ceil, floor, isclose, isfinite, log10
 
-from models.value_axis import GridDisplayScale, ValueAxisState, ValueAxisTick
+from core.bar_value_scale import (
+    progressive_bar_scale_active,
+    structural_bar_width,
+)
+from models.value_axis import (
+    GridDisplayScale,
+    SemanticDataScale,
+    ValueAxisState,
+    ValueAxisTick,
+)
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_adaptive_compact_value, format_value
 
@@ -155,6 +164,10 @@ class ValueAxisTracker:
             else "same"
         )
         self.chart_config = chart_config
+        self.semantic_dynamic = (
+            self.mode == "dynamic"
+            and progressive_bar_scale_active(chart_config)
+        )
         self.headroom = max(1.0, float(headroom))
         self.expansion_smoothing = _unit_interval(
             expansion_smoothing,
@@ -192,9 +205,13 @@ class ValueAxisTracker:
         )
 
     def next(self, sprites):
-        self.axis_width = current_value_axis_width(
-            sprites,
-            fallback_width=self.axis_width,
+        self.axis_width = (
+            structural_bar_width(sprites, fallback_width=self.axis_width)
+            if self.semantic_dynamic
+            else current_value_axis_width(
+                sprites,
+                fallback_width=self.axis_width,
+            )
         )
         visible_max = max(
             (
@@ -204,56 +221,67 @@ class ValueAxisTracker:
             ),
             default=0.0,
         )
-        target_domain = (
-            self.static_domain
-            if self.mode == "static"
-            else nice_axis_max(
-                max(MIN_AXIS_DOMAIN, visible_max) * self.headroom,
-                self.target_tick_count,
+        if self.semantic_dynamic:
+            # MotionEngine already supplies a smooth interpolated leader. Use
+            # it directly so tick X remains numerically exact; smoothing is
+            # retained only for tick identity and opacity lifecycle.
+            self.domain = max(MIN_AXIS_DOMAIN, visible_max)
+            self._effective_scale = self.axis_width / self.domain
+            scale = SemanticDataScale(
+                origin_x=self.origin_x,
+                width=self.axis_width,
+                domain_max=self.domain,
             )
-        )
-        if self.domain is None or self.mode == "static":
-            self.domain = target_domain
         else:
-            smoothing = (
-                self.expansion_smoothing
-                if target_domain > self.domain
-                else self.contraction_smoothing
-            )
-            self.domain += (target_domain - self.domain) * smoothing
-            self.domain = max(self.domain, visible_max * 1.015)
-
-        domain = max(MIN_AXIS_DOMAIN, self.domain)
-        desired_scale = self.axis_width / domain
-        effective_axis_width = self.axis_width
-        if self.mode == "dynamic":
-            if self._effective_scale is None:
-                self._effective_scale = desired_scale
-            elif visible_max >= self._previous_visible_max:
-                # Rising/equal maxima must not move persistent ticks right.
-                self._effective_scale = min(
-                    self._effective_scale,
-                    desired_scale,
+            target_domain = (
+                self.static_domain
+                if self.mode == "static"
+                else nice_axis_max(
+                    max(MIN_AXIS_DOMAIN, visible_max) * self.headroom,
+                    self.target_tick_count,
                 )
-            elif desired_scale > self._effective_scale:
-                self._effective_scale += (
-                    desired_scale - self._effective_scale
-                ) * self.contraction_smoothing
+            )
+            if self.domain is None or self.mode == "static":
+                self.domain = target_domain
+            else:
+                smoothing = (
+                    self.expansion_smoothing
+                    if target_domain > self.domain
+                    else self.contraction_smoothing
+                )
+                self.domain += (target_domain - self.domain) * smoothing
+                self.domain = max(self.domain, visible_max * 1.015)
+
+            domain = max(MIN_AXIS_DOMAIN, self.domain)
+            desired_scale = self.axis_width / domain
+            effective_axis_width = self.axis_width
+            if self.mode == "dynamic":
+                if self._effective_scale is None:
+                    self._effective_scale = desired_scale
+                elif visible_max >= self._previous_visible_max:
+                    # Rising/equal maxima must not move persistent ticks right.
+                    self._effective_scale = min(
+                        self._effective_scale,
+                        desired_scale,
+                    )
+                elif desired_scale > self._effective_scale:
+                    self._effective_scale += (
+                        desired_scale - self._effective_scale
+                    ) * self.contraction_smoothing
+                else:
+                    self._effective_scale = desired_scale
+                effective_axis_width = min(
+                    self.axis_width,
+                    max(0.0, self._effective_scale * domain),
+                )
             else:
                 self._effective_scale = desired_scale
-            effective_axis_width = min(
-                self.axis_width,
-                max(0.0, self._effective_scale * domain),
+            scale = GridDisplayScale(
+                origin_x=self.origin_x,
+                width=effective_axis_width,
+                domain_max=domain,
             )
-        else:
-            self._effective_scale = desired_scale
         self._previous_visible_max = visible_max
-
-        scale = GridDisplayScale(
-            origin_x=self.origin_x,
-            width=effective_axis_width,
-            domain_max=domain,
-        )
         effective_tick_count = adaptive_tick_count(
             scale.width,
             self.target_tick_count,
@@ -278,10 +306,24 @@ class ValueAxisTracker:
             self.chart_config,
             sprites,
         )
-        ticks = tuple(
-            ValueAxisTick(
+        tick_tolerance = max(1e-6, scale.width * 1e-9)
+        ticks = []
+        for value, opacity in sorted(self._tick_opacities.items()):
+            tick_x = scale.x_for_value(value)
+            if opacity <= 0.0:
+                continue
+            if self.semantic_dynamic:
+                if not (
+                    scale.origin_x - tick_tolerance
+                    <= tick_x
+                    <= scale.right_x + tick_tolerance
+                ):
+                    continue
+            elif value > scale.domain_max + (tick_step * 1e-9):
+                continue
+            ticks.append(ValueAxisTick(
                 value=value,
-                x=scale.x_for_value(value),
+                x=tick_x,
                 label=(
                     ""
                     if value == 0.0
@@ -293,14 +335,11 @@ class ValueAxisTracker:
                     )
                 ),
                 opacity=opacity,
-            )
-            for value, opacity in sorted(self._tick_opacities.items())
-            if opacity > 0.0 and value <= scale.domain_max + (tick_step * 1e-9)
-        )
+            ))
         self._started = True
         return ValueAxisState(
             scale=scale,
-            ticks=ticks,
+            ticks=tuple(ticks),
             tick_step=tick_step,
             line_top=line_top,
             line_bottom=line_bottom,
