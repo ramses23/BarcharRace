@@ -7,10 +7,11 @@ from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
+from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
-from core.value_axis import ValueAxisTracker, scale_bar_sprites
+from core.value_axis import ValueAxisTracker
 from utils.video_duration import estimate_video_duration
 from exporters.video_exporter import VideoExporter
 from importers.data_source_loader import DataSourceLoader
@@ -201,6 +202,10 @@ class RenderJob:
             if chart_config.value_grid_enabled
             else None
         )
+        bar_scale_resolver = BarValueScaleResolver.from_config(
+            chart_config,
+            sprites_by_year.values(),
+        )
 
         frame_id = 0
         transitions_rendered = 0
@@ -265,10 +270,13 @@ class RenderJob:
                     value_axis = None
                     if value_axis_tracker is not None:
                         value_axis = value_axis_tracker.next(frame_sprites)
-                        frame_sprites = scale_bar_sprites(
-                            frame_sprites,
-                            value_axis.scale,
-                        )
+                    bar_value_scale = bar_scale_resolver.for_sprites(
+                        frame_sprites
+                    )
+                    frame_sprites = scale_bar_sprites(
+                        frame_sprites,
+                        bar_value_scale,
+                    )
 
                     scene = self._build_scene(
                         year_a=year_a,
@@ -282,6 +290,7 @@ class RenderJob:
                     )
                     scene.frame_index = frame_id
                     scene.value_axis = value_axis
+                    scene.bar_value_scale = bar_value_scale
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
                         frame_index=frame_id,

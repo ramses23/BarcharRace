@@ -174,6 +174,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         "category_lane": category_lane.to_dict(),
         "value_lane": value_lane.to_dict(),
         "value_axis": _value_axis_geometry(scene.value_axis),
+        "bar_value_scale": _bar_value_scale_geometry(scene.bar_value_scale),
         "primary_logo_rects": [rect.to_dict() for rect in primary_logos],
         "secondary_logo_rects": [rect.to_dict() for rect in secondary_logos],
         "text_bounds": {
@@ -219,6 +220,17 @@ def _value_axis_geometry(value_axis):
             }
             for tick in value_axis.ticks
         ],
+    }
+
+
+def _bar_value_scale_geometry(scale):
+    if scale is None:
+        return None
+    return {
+        "origin_x": round(float(scale.origin_x), 3),
+        "right_x": round(float(scale.right_x), 3),
+        "width": round(float(scale.width), 3),
+        "domain_max": round(float(scale.domain_max), 6),
     }
 
 

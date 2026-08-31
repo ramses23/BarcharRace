@@ -3,7 +3,7 @@ from math import isfinite
 
 
 @dataclass(frozen=True)
-class ValueScale:
+class GridDisplayScale:
     origin_x: float
     width: float
     domain_max: float
@@ -36,9 +36,13 @@ class ValueAxisTick:
 
 @dataclass(frozen=True)
 class ValueAxisState:
-    scale: ValueScale
+    scale: GridDisplayScale
     ticks: tuple[ValueAxisTick, ...]
     tick_step: float
     line_top: float
     line_bottom: float
     label_y: float
+
+
+# Compatibility name for callers that construct display-axis fixtures.
+ValueScale = GridDisplayScale

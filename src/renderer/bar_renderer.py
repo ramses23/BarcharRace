@@ -62,7 +62,7 @@ class BarRenderer(TextCompositorMixin):
         self._background_motion_artist = None
         self._value_grid_collection = None
         self._value_tick_artists = []
-        self._current_value_axis_width = self.config.max_bar_width
+        self._current_bar_track_width = self.config.max_bar_width
         self._background_motion_cache = OrderedDict()
         self._background_image_cache = None
         self._gradient_artist = None
@@ -143,7 +143,7 @@ class BarRenderer(TextCompositorMixin):
             self._background_motion_artist = None
             self._value_grid_collection = None
             self._value_tick_artists = []
-            self._current_value_axis_width = self.config.max_bar_width
+            self._current_bar_track_width = self.config.max_bar_width
             self._background_image_cache = None
             self._gradient_artist = None
             self._advanced_composite_artist = None
@@ -373,6 +373,11 @@ class BarRenderer(TextCompositorMixin):
     def _update_scene_artists(self, ax, scene):
         self._update_background_motion(scene)
         self._update_value_axis(ax, scene.value_axis)
+        self._current_bar_track_width = (
+            scene.bar_value_scale.width
+            if scene.bar_value_scale is not None
+            else self.config.max_bar_width
+        )
         self._set_text_artist(
             self._title_artist,
             self._fit_title(scene.title),
@@ -427,14 +432,12 @@ class BarRenderer(TextCompositorMixin):
         if self._value_grid_collection is None:
             return
         if value_axis is None or not self.config.value_grid_enabled:
-            self._current_value_axis_width = self.config.max_bar_width
             self._value_grid_collection.set_visible(False)
             self._value_grid_collection.set_segments([])
             for artist in self._value_tick_artists:
                 artist.set_visible(False)
             return
 
-        self._current_value_axis_width = value_axis.scale.width
         ticks = tuple(value_axis.ticks)
         self._value_grid_collection.set_visible(bool(ticks))
         segments = [
@@ -1575,7 +1578,7 @@ class BarRenderer(TextCompositorMixin):
         for sprite in sprites:
             track_sprite = replace(
                 sprite,
-                width=self._current_value_axis_width,
+                width=self._current_bar_track_width,
             )
             vertices.append(self._bar_shape_path(track_sprite).vertices)
             colors.append(mcolors.to_rgba(

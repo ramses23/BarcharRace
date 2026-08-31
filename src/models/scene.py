@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from models.bar_sprite import BarSprite
+from models.bar_value_scale import BarValueScale
 from models.fun_fact import ActiveFunFact
 from models.value_axis import ValueAxisState
 
@@ -28,3 +29,4 @@ class Scene:
     short_overlay: ShortOverlay | None = None
     frame_index: int = 0
     value_axis: ValueAxisState | None = None
+    bar_value_scale: BarValueScale | None = None

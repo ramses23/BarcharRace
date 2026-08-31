@@ -12,7 +12,8 @@ from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
 from core.layout_engine import LayoutEngine
 from core.scene_geometry import build_scene_geometry
-from core.value_axis import ValueAxisTracker, scale_bar_sprites
+from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
+from core.value_axis import ValueAxisTracker
 from core.motion_engine import MotionEngine
 from core.rank_motion import (
     RANK_MOTION_HEIGHT_EMPHASIS,
@@ -666,12 +667,13 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                     value_grid_enabled=True,
                     value_grid_mode=mode,
                 )
-                tracker = ValueAxisTracker.from_config(
+                raw = [replace(original, width=10)]
+                bar_scale = BarValueScaleResolver.from_config(
                     axis_config, [[original]]
-                )
+                ).for_sprites(raw)
                 scaled = scale_bar_sprites(
-                    [replace(original, width=10)],
-                    tracker.next([replace(original, width=10)]).scale,
+                    raw,
+                    bar_scale,
                 )[0]
                 self.assertEqual(
                     renderer._logo_layout(original)["size"],

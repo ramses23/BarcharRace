@@ -1,7 +1,7 @@
 from dataclasses import replace
 from math import ceil, floor, isclose, isfinite, log10
 
-from models.value_axis import ValueAxisState, ValueAxisTick, ValueScale
+from models.value_axis import GridDisplayScale, ValueAxisState, ValueAxisTick
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_adaptive_compact_value, format_value
 
@@ -124,17 +124,6 @@ def current_value_axis_width(sprites, *, fallback_width):
         if _visible_positive_value(sprite) is not None
     ]
     return max(widths) if widths else max(0.0, float(fallback_width))
-
-
-def scale_bar_sprites(sprites, scale):
-    return [
-        replace(
-            sprite,
-            x=scale.origin_x,
-            width=scale.width_for_value(sprite.value),
-        )
-        for sprite in sprites
-    ]
 
 
 class ValueAxisTracker:
@@ -260,7 +249,7 @@ class ValueAxisTracker:
             self._effective_scale = desired_scale
         self._previous_visible_max = visible_max
 
-        scale = ValueScale(
+        scale = GridDisplayScale(
             origin_x=self.origin_x,
             width=effective_axis_width,
             domain_max=domain,

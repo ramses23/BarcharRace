@@ -2,10 +2,11 @@ from dataclasses import replace
 
 from config.project_file_loader import load_project_data, load_project_file
 from core.bar_selector import BarSelector
+from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
-from core.value_axis import ValueAxisTracker, scale_bar_sprites
+from core.value_axis import ValueAxisTracker
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
@@ -144,16 +145,16 @@ def render_project_preview(
         else:
             active_fact = fun_fact_scheduler.force(force_fun_fact_id)
 
-    value_axis = _preview_value_axis_state(
+    bar_value_scale, value_axis = _preview_value_scales(
         timeline=timeline,
         selector=selector,
         layout=layout,
         chart_config=chart_config,
         years=years,
         target_frame_index=frame_index,
+        target_sprites=sprites,
     )
-    if value_axis is not None:
-        sprites = scale_bar_sprites(sprites, value_axis.scale)
+    sprites = scale_bar_sprites(sprites, bar_value_scale)
 
     scene = Scene(
         title=chart_config.title,
@@ -164,6 +165,7 @@ def render_project_preview(
         fun_fact=active_fact,
         frame_index=frame_index,
         value_axis=value_axis,
+        bar_value_scale=bar_value_scale,
     )
     duration = estimate_export_duration(
         timeline.get_years(),
@@ -363,7 +365,7 @@ def _transition_frame_index(chart_config, transition_index, progress):
     )
 
 
-def _preview_value_axis_state(
+def _preview_value_scales(
     *,
     timeline,
     selector,
@@ -371,20 +373,25 @@ def _preview_value_axis_state(
     chart_config,
     years,
     target_frame_index,
+    target_sprites,
 ):
-    if not chart_config.value_grid_enabled:
-        return None
-
     sprites_by_year = {
         year: _sprites_for_year(timeline, selector, layout, year)
         for year in years
     }
+    bar_value_scale = BarValueScaleResolver.from_config(
+        chart_config,
+        sprites_by_year.values(),
+    ).for_sprites(target_sprites)
+    if not chart_config.value_grid_enabled:
+        return bar_value_scale, None
+
     tracker = ValueAxisTracker.from_config(
         chart_config,
         sprites_by_year.values(),
     )
     if len(years) < 2:
-        return tracker.next(sprites_by_year[years[0]])
+        return bar_value_scale, tracker.next(sprites_by_year[years[0]])
 
     motion = MotionEngine(animation_config=chart_config.animation)
     current_frame_index = 0
@@ -419,10 +426,10 @@ def _preview_value_axis_state(
         for frame_sprites in frames:
             latest_state = tracker.next(frame_sprites)
             if current_frame_index >= target_frame_index:
-                return latest_state
+                return bar_value_scale, latest_state
             current_frame_index += 1
 
-    return latest_state
+    return bar_value_scale, latest_state
 
 
 def _sprites_for_year(timeline, selector, layout, year):

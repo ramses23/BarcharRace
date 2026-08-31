@@ -24,3 +24,4 @@ class BarSprite:
     rank_motion_state: str = "stable"
     rank_motion_progress: float = 0.0
     rank_motion_target: float | None = None
+    bar_available_width: float | None = None

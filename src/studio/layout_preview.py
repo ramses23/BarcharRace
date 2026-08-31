@@ -2,14 +2,14 @@ from dataclasses import dataclass
 
 from config.project_file_loader import load_project_data
 from core.bar_selector import BarSelector
+from core.bar_value_scale import scale_bar_sprites
 from core.layout_engine import LayoutEngine
 from core.timeline import Timeline
-from core.value_axis import scale_bar_sprites
 from models.scene import Scene
 from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.preview import (
     _preview_mode,
-    _preview_value_axis_state,
+    _preview_value_scales,
     _selected_transition_years,
     _selected_year,
     _sprites_for_year,
@@ -74,16 +74,16 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
         time_label = subtitle
         frame_index = years.index(selected_year) * chart_config.steps_per_transition
 
-    value_axis = _preview_value_axis_state(
+    bar_value_scale, value_axis = _preview_value_scales(
         timeline=timeline,
         selector=selector,
         layout=layout,
         chart_config=chart_config,
         years=years,
         target_frame_index=frame_index,
+        target_sprites=sprites,
     )
-    if value_axis is not None:
-        sprites = scale_bar_sprites(sprites, value_axis.scale)
+    sprites = scale_bar_sprites(sprites, bar_value_scale)
 
     return StudioLayoutPreview(
         chart_config=chart_config,
@@ -97,5 +97,6 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
             bars=sprites,
             frame_index=frame_index,
             value_axis=value_axis,
+            bar_value_scale=bar_value_scale,
         ),
     )

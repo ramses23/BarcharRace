@@ -47,6 +47,12 @@ class MotionEngine:
 
                 start_width = a.width if a else 0
                 end_width = b.width if b else 0
+                start_available_width = self._sprite_bar_available_width(a)
+                end_available_width = self._sprite_bar_available_width(b)
+                if start_available_width is None:
+                    start_available_width = end_available_width
+                if end_available_width is None:
+                    end_available_width = start_available_width
 
                 start_height = a.height if a else (b.height if b else 40)
                 end_height = b.height if b else (a.height if a else 40)
@@ -90,6 +96,11 @@ class MotionEngine:
                             None
                             if rank_motion_state == RANK_MOTION_STABLE
                             else end_rank
+                        ),
+                        bar_available_width=(
+                            None
+                            if start_available_width is None
+                            else lerp(start_available_width, end_available_width, t)
                         ),
                     )
                 )
@@ -212,6 +223,13 @@ class MotionEngine:
                 if rank_motion_state == RANK_MOTION_STABLE
                 else end_rank
             ),
+            bar_available_width=self._continuous_optional(
+                self._sprite_bar_available_width(previous),
+                self._sprite_bar_available_width(start),
+                self._sprite_bar_available_width(end),
+                self._sprite_bar_available_width(next_sprite),
+                t,
+            ),
         )
 
     def _transition_sprite(self, name, start, end, raw_t):
@@ -227,6 +245,12 @@ class MotionEngine:
         end_y = end.y if end else start.y
         start_width = start.width if start else 0
         end_width = end.width if end else 0
+        start_available_width = self._sprite_bar_available_width(start)
+        end_available_width = self._sprite_bar_available_width(end)
+        if start_available_width is None:
+            start_available_width = end_available_width
+        if end_available_width is None:
+            end_available_width = start_available_width
         start_height = start.height if start else end.height
         end_height = end.height if end else start.height
         start_rank, end_rank = self._rank_bounds(start, end)
@@ -265,6 +289,11 @@ class MotionEngine:
                 None
                 if rank_motion_state == RANK_MOTION_STABLE
                 else end_rank
+            ),
+            bar_available_width=(
+                None
+                if start_available_width is None
+                else lerp(start_available_width, end_available_width, t)
             ),
         )
 
@@ -375,3 +404,8 @@ class MotionEngine:
             return fallback
 
         return 1.0
+
+    def _sprite_bar_available_width(self, sprite):
+        if sprite is None:
+            return None
+        return sprite.bar_available_width

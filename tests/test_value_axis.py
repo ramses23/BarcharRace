@@ -15,6 +15,7 @@ from config.fun_fact_config import FunFactConfig
 from config.project_file_loader import load_project_data
 from config.value_format_config import ValueFormatConfig
 from core.layout_engine import LayoutEngine
+from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.scene_geometry import build_scene_geometry
 from core.value_axis import (
     NICE_TICK_FAMILY,
@@ -22,7 +23,6 @@ from core.value_axis import (
     adaptive_tick_count,
     format_axis_tick,
     nice_ticks,
-    scale_bar_sprites,
 )
 from models.bar_sprite import BarSprite
 from models.fun_fact import ActiveFunFact, FunFact
@@ -49,19 +49,23 @@ def sprite(name, value, *, width=600, x=200, y=200, opacity=1.0):
 
 
 class ValueAxisTest(unittest.TestCase):
-    def test_value_scale_aligns_bar_endpoint_and_gridline_exactly(self):
+    def test_static_grid_and_stable_bar_scale_are_both_value_monotone(self):
         config = self._config(value_grid_mode="static")
         source = [sprite("A", 40_000), sprite("B", 20_000, width=300)]
         tracker = ValueAxisTracker.from_config(config, [source])
         state = tracker.next(source)
-        scaled = scale_bar_sprites(source, state.scale)
+        bar_scale = BarValueScaleResolver.from_config(
+            config, [source]
+        ).for_sprites(source)
+        scaled = scale_bar_sprites(source, bar_scale)
         tick = next(tick for tick in state.ticks if tick.value == 20_000)
         bar = next(item for item in scaled if item.value == 20_000)
 
-        self.assertAlmostEqual(bar.x + bar.width, tick.x)
+        self.assertGreater(bar.x + bar.width, bar.x)
+        self.assertGreater(tick.x, state.scale.origin_x)
         self.assertAlmostEqual(
             bar.width,
-            state.scale.width_for_value(bar.value),
+            bar_scale.width_for_value(bar.value),
         )
         self.assertEqual(state.scale.x_for_value(0), config.left_margin)
 
@@ -348,11 +352,15 @@ class ValueAxisTest(unittest.TestCase):
             bars = [sprite("A", 40_000, width=width - 70, x=40, y=110)]
             tracker = ValueAxisTracker.from_config(config, [bars])
             state = tracker.next(bars)
+            bar_scale = BarValueScaleResolver.from_config(
+                config, [bars]
+            ).for_sprites(bars)
             self._assert_tick_labels_do_not_overlap(config, state)
             scene = Scene(
                 title="",
-                bars=scale_bar_sprites(bars, state.scale),
+                bars=scale_bar_sprites(bars, bar_scale),
                 value_axis=state,
+                bar_value_scale=bar_scale,
             )
             renderer = BarRenderer(config=config)
             try:
@@ -368,20 +376,25 @@ class ValueAxisTest(unittest.TestCase):
         wide = layout.build(self._browser_bars_2009())
         constrained = layout.build(self._browser_bars_2012())
         tracker = ValueAxisTracker.from_config(config, [wide, constrained])
+        bar_resolver = BarValueScaleResolver.from_config(
+            config, [wide, constrained]
+        )
 
         wide_state = tracker.next(wide)
-        wide_scaled = scale_bar_sprites(wide, wide_state.scale)
+        wide_bar_scale = bar_resolver.for_sprites(wide)
+        wide_scaled = scale_bar_sprites(wide, wide_bar_scale)
         ie = next(bar for bar in wide_scaled if bar.name == "IE")
 
         self.assertAlmostEqual(max(bar.width for bar in wide), 1462.0)
         self.assertAlmostEqual(wide_state.scale.width, 1462.0)
         self.assertAlmostEqual(wide_state.scale.domain_max, 1_500_000_000)
-        self.assertAlmostEqual(ie.width, 1093.6070918666667)
+        self.assertAlmostEqual(ie.width, 1462.0)
 
         constrained_state = tracker.next(constrained)
+        constrained_bar_scale = bar_resolver.for_sprites(constrained)
         constrained_scaled = scale_bar_sprites(
             constrained,
-            constrained_state.scale,
+            constrained_bar_scale,
         )
         self.assertAlmostEqual(
             max(bar.width for bar in constrained),
@@ -423,7 +436,10 @@ class ValueAxisTest(unittest.TestCase):
             fun_fact_config=fun_fact_config,
         ).build(self._browser_bars_2009())
         state = ValueAxisTracker.from_config(config, [bars]).next(bars)
-        scaled = scale_bar_sprites(bars, state.scale)
+        bar_scale = BarValueScaleResolver.from_config(
+            config, [bars]
+        ).for_sprites(bars)
+        scaled = scale_bar_sprites(bars, bar_scale)
         active = ActiveFunFact(
             FunFact(
                 id="audit",
@@ -434,14 +450,21 @@ class ValueAxisTest(unittest.TestCase):
             opacity=1.0,
         )
         scenes = (
-            Scene(title="", bars=scaled, value_axis=state),
+            Scene(
+                title="", bars=scaled, value_axis=state,
+                bar_value_scale=bar_scale,
+            ),
             Scene(
                 title="",
                 bars=scaled,
                 value_axis=state,
                 fun_fact=active,
+                bar_value_scale=bar_scale,
             ),
-            Scene(title="", bars=scaled, value_axis=state),
+            Scene(
+                title="", bars=scaled, value_axis=state,
+                bar_value_scale=bar_scale,
+            ),
         )
         geometries = [
             build_scene_geometry(config, fun_fact_config, scene)
@@ -521,10 +544,14 @@ class ValueAxisTest(unittest.TestCase):
         )
         bars = [sprite("A", 40_000, width=440, x=120, y=180)]
         state = ValueAxisTracker.from_config(config, [bars]).next(bars)
+        bar_scale = BarValueScaleResolver.from_config(
+            config, [bars]
+        ).for_sprites(bars)
         scene = Scene(
             title="",
-            bars=scale_bar_sprites(bars, state.scale),
+            bars=scale_bar_sprites(bars, bar_scale),
             value_axis=state,
+            bar_value_scale=bar_scale,
         )
         renderer = BarRenderer(config=config)
         try:
@@ -542,17 +569,21 @@ class ValueAxisTest(unittest.TestCase):
         self.assertLess(grid_zorder, logo_zorder)
         self.assertLess(grid_zorder, text_zorder)
 
-    def test_advanced_bar_track_uses_value_axis_extent(self):
+    def test_advanced_bar_track_uses_structural_bar_extent(self):
         config = self._config(
             bar_appearance_mode="unified",
             bar_track_enabled=True,
         )
         bars = [sprite("A", 40_000)]
         state = ValueAxisTracker.from_config(config, [bars]).next(bars)
+        bar_scale = BarValueScaleResolver.from_config(
+            config, [bars]
+        ).for_sprites(bars)
         scene = Scene(
             title="",
-            bars=scale_bar_sprites(bars, state.scale),
+            bars=scale_bar_sprites(bars, bar_scale),
             value_axis=state,
+            bar_value_scale=bar_scale,
         )
         renderer = BarRenderer(config=config)
         try:
@@ -562,7 +593,7 @@ class ValueAxisTest(unittest.TestCase):
             )
             self.assertAlmostEqual(
                 max(track_vertices[:, 0]),
-                state.scale.right_x,
+                bar_scale.right_x,
             )
         finally:
             renderer.close()
@@ -601,11 +632,15 @@ class ValueAxisTest(unittest.TestCase):
         ])
         tracker = ValueAxisTracker.from_config(config, [bars])
         state = tracker.next(bars)
+        bar_scale = BarValueScaleResolver.from_config(
+            config, [bars]
+        ).for_sprites(bars)
         scene = Scene(
             title="Title",
             subtitle="Period",
-            bars=scale_bar_sprites(bars, state.scale),
+            bars=scale_bar_sprites(bars, bar_scale),
             value_axis=state,
+            bar_value_scale=bar_scale,
         )
         geometry = build_scene_geometry(config, FunFactConfig(), scene)
 
@@ -656,7 +691,7 @@ class ValueAxisTest(unittest.TestCase):
         for bar in preview.scene.bars:
             self.assertAlmostEqual(
                 bar.x + bar.width,
-                preview.scene.value_axis.scale.x_for_value(bar.value),
+                preview.scene.bar_value_scale.x_for_value(bar.value),
             )
 
     def test_legacy_default_is_off_and_builder_loader_preserve_axis_settings(self):
@@ -767,10 +802,14 @@ class ValueAxisTest(unittest.TestCase):
                 [(bar.name, bar.value, bar.x, bar.width) for bar in preview_scene.bars],
                 [(bar.name, bar.value, bar.x, bar.width) for bar in render_scene.bars],
             )
+            self.assertEqual(
+                preview_scene.bar_value_scale,
+                render_scene.bar_value_scale,
+            )
             for bar in preview_scene.bars:
                 self.assertAlmostEqual(
                     bar.x + bar.width,
-                    preview_axis.scale.x_for_value(bar.value),
+                    preview_scene.bar_value_scale.x_for_value(bar.value),
                 )
 
     def test_monotone_values_match_preview_render_job_and_value_axis(self):
@@ -847,15 +886,19 @@ class ValueAxisTest(unittest.TestCase):
                     self.assertEqual(preview_bar.value, render_bar.value)
                     self.assertEqual(
                         preview_bar.width,
-                        preview_scene.value_axis.scale.width_for_value(
+                        preview_scene.bar_value_scale.width_for_value(
                             preview_bar.value
                         ),
                     )
                     self.assertEqual(
                         render_bar.width,
-                        render_scene.value_axis.scale.width_for_value(
+                        render_scene.bar_value_scale.width_for_value(
                             render_bar.value
                         ),
+                    )
+                    self.assertEqual(
+                        preview_scene.bar_value_scale,
+                        render_scene.bar_value_scale,
                     )
 
             self.assertGreater(render_scenes[steps + 1].bars[0].value, 999_017_500)

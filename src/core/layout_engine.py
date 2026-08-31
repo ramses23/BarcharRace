@@ -75,6 +75,7 @@ class LayoutEngine:
                         if self.config.logos_enabled
                         else None
                     ),
+                    bar_available_width=max_bar_width,
                 )
             )
 
