@@ -5,6 +5,7 @@ from pathlib import Path
 from config.export_config import ExportConfig
 from config.layout_config import apply_layout_preset
 from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
+from core.display_calendar import flip_calendar_dimensions
 from models.scene import ShortOverlay
 from utils.video_duration import estimate_video_duration
 
@@ -64,14 +65,25 @@ def short_bar_area_bottom(chart_config):
     rank_motion_half_growth = RANK_MOTION_HEIGHT_EMPHASIS / 2.0
 
     if chart_config.time_label_enabled:
-        limits.append(
-            _text_safe_top(
-                chart_config.time_label_y,
-                chart_config.time_label_font_size,
-                chart_config.dpi,
+        if chart_config.date_style == "flip_calendar":
+            _, calendar_height = flip_calendar_dimensions(
+                chart_config.flip_calendar_scale
             )
-            - rank_motion_half_growth
-        )
+            limits.append(
+                chart_config.time_label_y
+                - (calendar_height / 2.0)
+                - SHORT_ROW_TEXT_CLEARANCE
+                - rank_motion_half_growth
+            )
+        else:
+            limits.append(
+                _text_safe_top(
+                    chart_config.time_label_y,
+                    chart_config.time_label_font_size,
+                    chart_config.dpi,
+                )
+                - rank_motion_half_growth
+            )
     if chart_config.source_label_enabled:
         limits.append(
             _text_safe_top(

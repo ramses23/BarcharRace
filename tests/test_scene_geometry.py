@@ -1,15 +1,45 @@
 import unittest
+from datetime import datetime
 
 import _test_path
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
 from core.scene_geometry import build_scene_geometry
 from models.bar_sprite import BarSprite
+from models.display_calendar import DisplayCalendarState, FlipModuleState
 from models.scene import Scene
 from studio.fun_fact_layout import apply_fun_fact_layout, editorial_geometry
 
 
 class SceneGeometryTest(unittest.TestCase):
+    def test_flip_calendar_date_geometry_uses_component_bounds(self):
+        moment = datetime(2024, 2, 29)
+        calendar_state = DisplayCalendarState(
+            display_datetime=moment,
+            display_date=moment.date(),
+            year=FlipModuleState("2024", "2024"),
+            month=FlipModuleState("FEB", "FEB"),
+            day=FlipModuleState("29", "29"),
+            frame_index=0,
+        )
+        config = ChartConfig(
+            date_style="flip_calendar",
+            flip_calendar_scale=0.5,
+            time_label_x=900,
+            time_label_y=500,
+        )
+
+        geometry = build_scene_geometry(
+            config,
+            FunFactConfig(),
+            Scene(title="", display_calendar=calendar_state),
+        )
+
+        self.assertEqual(
+            geometry["text_bounds"]["date"],
+            {"x": 720.0, "y": 441.0, "width": 180.0, "height": 118.0},
+        )
+
     def test_uses_real_sprite_rows_bars_lanes_and_logos(self):
         config = ChartConfig(
             width=800,

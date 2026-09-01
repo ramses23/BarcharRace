@@ -3,6 +3,7 @@ from dataclasses import replace
 from config.project_file_loader import load_project_data, load_project_file
 from core.bar_selector import BarSelector
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
+from core.display_calendar import DisplayCalendarResolver
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
@@ -83,6 +84,11 @@ def render_project_preview(
     )
     chart_config = apply_export_profile(chart_config, preset.export_config)
     chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
+    calendar_resolver = _display_calendar_resolver(
+        timeline,
+        years,
+        chart_config,
+    )
     selector = BarSelector(config=chart_config.selection)
     layout = LayoutEngine(
         config=chart_config,
@@ -160,6 +166,11 @@ def render_project_preview(
         title=chart_config.title,
         subtitle=subtitle,
         time_label=time_label,
+        display_calendar=(
+            calendar_resolver.state_at(frame_index)
+            if calendar_resolver is not None
+            else None
+        ),
         source_label=source_label,
         bars=sprites,
         fun_fact=active_fact,
@@ -209,6 +220,20 @@ def _project_root(root_dir):
         project_root=DEFAULT_PROJECT_ROOT,
         required=True,
         field_name="project root",
+    )
+
+
+def _display_calendar_resolver(timeline, periods, chart_config):
+    if chart_config.date_style != "flip_calendar":
+        return None
+    return DisplayCalendarResolver.from_timeline(
+        timeline,
+        periods,
+        steps_per_transition=chart_config.steps_per_transition,
+        continuous_motion=chart_config.animation.continuous_motion,
+        flip_duration_frames=(
+            chart_config.flip_calendar_flip_duration_frames
+        ),
     )
 
 

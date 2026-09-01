@@ -1335,6 +1335,26 @@ def _project_form(
         value_text_opacity=bars_settings["value_text_opacity"],
         time_label_text_color=canvas_settings["time_label_text_color"],
         time_label_opacity=canvas_settings["time_label_opacity"],
+        date_style=canvas_settings["date_style"],
+        flip_calendar_scale=canvas_settings["flip_calendar_scale"],
+        flip_calendar_card_background=(
+            canvas_settings["flip_calendar_card_background"]
+        ),
+        flip_calendar_text_color=(
+            canvas_settings["flip_calendar_text_color"]
+        ),
+        flip_calendar_border_color=(
+            canvas_settings["flip_calendar_border_color"]
+        ),
+        flip_calendar_shadow_opacity=(
+            canvas_settings["flip_calendar_shadow_opacity"]
+        ),
+        flip_calendar_corner_radius=(
+            canvas_settings["flip_calendar_corner_radius"]
+        ),
+        flip_calendar_flip_duration_frames=(
+            canvas_settings["flip_calendar_flip_duration_frames"]
+        ),
         source_text_color=canvas_settings["source_text_color"],
         source_text_opacity=canvas_settings["source_text_opacity"],
         rank_label_text_color=bars_settings["rank_label_text_color"],
@@ -1899,6 +1919,32 @@ def _canvas_settings_from_values(
         "time_label_opacity": _opacity_or_default(
             values.get("time_label_opacity"),
             0.22,
+        ),
+        "date_style": (
+            values.get("date_style")
+            if values.get("date_style") in ("standard", "flip_calendar")
+            else "standard"
+        ),
+        "flip_calendar_scale": _float_in_range_or_default(
+            values.get("flip_calendar_scale"), 1.0, 0.4, 2.0,
+        ),
+        "flip_calendar_card_background": _color_or_default(
+            values.get("flip_calendar_card_background"), "#20252B"
+        ),
+        "flip_calendar_text_color": _color_or_default(
+            values.get("flip_calendar_text_color"), "#F5F4EF"
+        ),
+        "flip_calendar_border_color": _color_or_default(
+            values.get("flip_calendar_border_color"), "#4B5159"
+        ),
+        "flip_calendar_shadow_opacity": _opacity_or_default(
+            values.get("flip_calendar_shadow_opacity"), 0.32
+        ),
+        "flip_calendar_corner_radius": _float_in_range_or_default(
+            values.get("flip_calendar_corner_radius"), 12.0, 0.0, 40.0,
+        ),
+        "flip_calendar_flip_duration_frames": _int_in_range_or_default(
+            values.get("flip_calendar_flip_duration_frames"), 4, 1, 12,
         ),
         "source_text_color": _color_or_default(
             values.get("source_text_color"),
@@ -3095,6 +3141,107 @@ def _canvas_text_section(
                 key=_widget_key("source_label_enabled"),
             )
 
+    with st.expander("Date style", expanded=True, icon=":material/calendar_month:"):
+        date_style_label = st.selectbox(
+            "Date Style",
+            options=("Standard", "Flip Calendar"),
+            index=(
+                1 if values.get("date_style") == "flip_calendar" else 0
+            ),
+            help=(
+                "Flip Calendar interpolates Gregorian display time between "
+                "real checkpoints; it does not create daily observations."
+            ),
+            key=_widget_key("date_style"),
+        )
+        date_style = (
+            "flip_calendar"
+            if date_style_label == "Flip Calendar"
+            else "standard"
+        )
+        flip_calendar_scale = _float_in_range_or_default(
+            values.get("flip_calendar_scale"), 1.0, 0.4, 2.0
+        )
+        flip_calendar_card_background = _color_or_default(
+            values.get("flip_calendar_card_background"), "#20252B"
+        )
+        flip_calendar_text_color = _color_or_default(
+            values.get("flip_calendar_text_color"), "#F5F4EF"
+        )
+        flip_calendar_border_color = _color_or_default(
+            values.get("flip_calendar_border_color"), "#4B5159"
+        )
+        flip_calendar_shadow_opacity = _opacity_or_default(
+            values.get("flip_calendar_shadow_opacity"), 0.32
+        )
+        flip_calendar_corner_radius = _float_in_range_or_default(
+            values.get("flip_calendar_corner_radius"), 12.0, 0.0, 40.0
+        )
+        flip_calendar_flip_duration_frames = _int_in_range_or_default(
+            values.get("flip_calendar_flip_duration_frames"), 4, 1, 12
+        )
+        if date_style == "flip_calendar":
+            st.caption(
+                "YEAR, MONTH, and DAY are always visible. Position uses the "
+                "existing Date X/Y controls; Date opacity affects the whole unit."
+            )
+            scale_column, duration_column, radius_column = st.columns(3)
+            with scale_column:
+                flip_calendar_scale = st.slider(
+                    "Scale",
+                    min_value=40,
+                    max_value=200,
+                    value=int(round(flip_calendar_scale * 100)),
+                    step=5,
+                    format="%d%%",
+                    key=_widget_key("flip_calendar_scale"),
+                ) / 100.0
+            with duration_column:
+                flip_calendar_flip_duration_frames = st.slider(
+                    "Flip duration (frames)",
+                    min_value=1,
+                    max_value=12,
+                    value=int(flip_calendar_flip_duration_frames),
+                    step=1,
+                    help="Visual phase only; frame count and video duration do not change.",
+                    key=_widget_key("flip_calendar_flip_duration_frames"),
+                )
+            with radius_column:
+                flip_calendar_corner_radius = st.slider(
+                    "Corner radius",
+                    min_value=0,
+                    max_value=40,
+                    value=int(round(flip_calendar_corner_radius)),
+                    step=1,
+                    key=_widget_key("flip_calendar_corner_radius"),
+                )
+            card_column, flip_text_column, border_column, shadow_column = st.columns(4)
+            with card_column:
+                flip_calendar_card_background = st.color_picker(
+                    "Card background",
+                    value=flip_calendar_card_background,
+                    key=_widget_key("flip_calendar_card_background"),
+                )
+            with flip_text_column:
+                flip_calendar_text_color = st.color_picker(
+                    "Flip text color",
+                    value=flip_calendar_text_color,
+                    key=_widget_key("flip_calendar_text_color"),
+                )
+            with border_column:
+                flip_calendar_border_color = st.color_picker(
+                    "Border color",
+                    value=flip_calendar_border_color,
+                    key=_widget_key("flip_calendar_border_color"),
+                )
+            with shadow_column:
+                flip_calendar_shadow_opacity = _opacity_percent_slider(
+                    "Shadow opacity",
+                    flip_calendar_shadow_opacity,
+                    0.32,
+                    _widget_key("flip_calendar_shadow_opacity"),
+                )
+
     with st.expander("Fonts", icon=":material/font_download:"):
         st.caption("Project default inherits the base font; each element can override it.")
         font_column_a, font_column_b, font_column_c = st.columns(3)
@@ -3385,6 +3532,20 @@ def _canvas_text_section(
         "value_text_opacity": value_text_opacity,
         "time_label_text_color": time_label_text_color,
         "time_label_opacity": time_label_opacity,
+        "date_style": date_style,
+        "flip_calendar_scale": float(flip_calendar_scale),
+        "flip_calendar_card_background": flip_calendar_card_background,
+        "flip_calendar_text_color": flip_calendar_text_color,
+        "flip_calendar_border_color": flip_calendar_border_color,
+        "flip_calendar_shadow_opacity": float(
+            flip_calendar_shadow_opacity
+        ),
+        "flip_calendar_corner_radius": float(
+            flip_calendar_corner_radius
+        ),
+        "flip_calendar_flip_duration_frames": int(
+            flip_calendar_flip_duration_frames
+        ),
         "source_text_color": source_text_color,
         "source_text_opacity": source_text_opacity,
         "rank_label_text_color": rank_label_text_color,

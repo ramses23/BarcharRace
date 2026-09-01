@@ -567,6 +567,8 @@ class ShortExportTest(unittest.TestCase):
                 source_font_size=13,
                 logos_enabled=False,
                 value_grid_enabled=True,
+                date_style="flip_calendar",
+                flip_calendar_scale=0.8,
                 fps=30,
                 steps_per_transition=2,
             )
@@ -594,6 +596,8 @@ class ShortExportTest(unittest.TestCase):
                     "source_font_size": chart.source_font_size,
                     "logos_enabled": chart.logos_enabled,
                     "value_grid_enabled": chart.value_grid_enabled,
+                    "date_style": chart.date_style,
+                    "flip_calendar_scale": chart.flip_calendar_scale,
                     "fps": chart.fps,
                     "steps_per_transition": chart.steps_per_transition,
                 },
@@ -655,6 +659,15 @@ class ShortExportTest(unittest.TestCase):
                 [(bar.name, bar.y, bar.height) for bar in preview_scene.bars],
                 [(bar.name, bar.y, bar.height) for bar in render_scene.bars],
             )
+            self.assertEqual(
+                preview_scene.display_calendar,
+                render_scene.display_calendar,
+            )
+            self.assertEqual(
+                preview_scene.display_calendar.display_date.isoformat(),
+                "2000-01-01",
+            )
+            self.assertEqual(preview_config.date_style, "flip_calendar")
 
     def test_short_preview_renders_real_vertical_canvas_with_intro(self):
         with tempfile.TemporaryDirectory() as temp_dir:

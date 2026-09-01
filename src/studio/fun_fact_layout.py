@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+from core.display_calendar import flip_calendar_dimensions
+
 
 DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO = 0.28
 DEFAULT_FLOATING_CARD_WIDTH_RATIO = 0.46
@@ -94,9 +96,7 @@ def apply_fun_fact_layout(chart_config, fun_fact_config):
             chart_config.width,
             left + width - fun_fact_config.panel_padding,
         )
-        date_half_height = (
-            chart_config.time_label_font_size * chart_config.dpi / 144.0
-        )
+        date_half_height = _date_half_height(chart_config)
         if top > date_half_height + fun_fact_config.panel_padding:
             time_label_y = top - fun_fact_config.panel_padding - date_half_height
         else:
@@ -132,7 +132,7 @@ def apply_fun_fact_layout(chart_config, fun_fact_config):
         time_label_y = (
             fun_fact_config.panel_margin
             + fun_fact_config.panel_padding
-            + (chart_config.time_label_font_size * chart_config.dpi / 144.0)
+            + _date_half_height(chart_config)
         )
     value_label_edge_padding = max(
         chart_config.value_label_edge_padding,
@@ -148,6 +148,13 @@ def apply_fun_fact_layout(chart_config, fun_fact_config):
         time_label_y=time_label_y,
         value_label_edge_padding=value_label_edge_padding,
     )
+
+
+def _date_half_height(chart_config):
+    if chart_config.date_style == "flip_calendar":
+        _, height = flip_calendar_dimensions(chart_config.flip_calendar_scale)
+        return height / 2.0
+    return chart_config.time_label_font_size * chart_config.dpi / 144.0
 
 
 def validate_fun_fact_layout(chart_config, fun_fact_config):

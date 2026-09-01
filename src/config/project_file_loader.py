@@ -417,6 +417,7 @@ def _convert_chart_value(key, value):
         "background_motion": ("off", "forward_motion"),
         "value_grid_mode": ("static", "dynamic"),
         "value_grid_tick_value_format": ("same", "full", "compact"),
+        "date_style": ("standard", "flip_calendar"),
     }
 
     if key in bar_enum_options:
@@ -495,8 +496,20 @@ def _convert_chart_value(key, value):
         "rank_label_text_color",
         "value_grid_line_color",
         "value_grid_tick_text_color",
+        "flip_calendar_card_background",
+        "flip_calendar_text_color",
+        "flip_calendar_border_color",
     ):
-        if key.endswith("_text_color") and value is None:
+        if key in (
+            "title_text_color",
+            "subtitle_text_color",
+            "label_text_color",
+            "value_text_color",
+            "time_label_text_color",
+            "source_text_color",
+            "rank_label_text_color",
+            "value_grid_tick_text_color",
+        ) and value is None:
             return None
 
         if not isinstance(value, str) or not value.strip():
@@ -530,6 +543,7 @@ def _convert_chart_value(key, value):
         "background_motion_intensity",
         "value_grid_line_opacity",
         "value_grid_tick_text_opacity",
+        "flip_calendar_shadow_opacity",
     ):
         if (
             isinstance(value, bool)
@@ -566,6 +580,7 @@ def _convert_chart_value(key, value):
         "bar_inner_shadow_size",
         "bar_shine_width",
         "value_grid_line_thickness",
+        "flip_calendar_scale",
     ):
         if (
             isinstance(value, bool)
@@ -573,6 +588,33 @@ def _convert_chart_value(key, value):
             or value <= 0
         ):
             raise ProjectFileError(f"Chart field '{key}' must be > 0.")
+        if key == "flip_calendar_scale" and not 0.4 <= value <= 2.0:
+            raise ProjectFileError(
+                "Chart field 'flip_calendar_scale' must be from 0.4 to 2."
+            )
+        return value
+
+    if key == "flip_calendar_corner_radius":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 <= value <= 40
+        ):
+            raise ProjectFileError(
+                "Chart field 'flip_calendar_corner_radius' must be from 0 to 40."
+            )
+        return float(value)
+
+    if key == "flip_calendar_flip_duration_frames":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 1 <= value <= 12
+        ):
+            raise ProjectFileError(
+                "Chart field 'flip_calendar_flip_duration_frames' must be an "
+                "integer from 1 to 12."
+            )
         return value
 
     if key in (
@@ -906,6 +948,30 @@ def _convert_dataset_value(key, value):
                 "Dataset field 'time_label_column' must be null or a non-empty string."
             )
         return value.strip()
+
+    if key == "time_granularity":
+        if value is None:
+            return None
+        if value not in ("annual", "monthly", "daily"):
+            raise ProjectFileError(
+                "Dataset field 'time_granularity' must be null, 'annual', "
+                "'monthly', or 'daily'."
+            )
+        return value
+
+    if key == "calendar":
+        if value != "gregorian":
+            raise ProjectFileError(
+                "Dataset field 'calendar' must be 'gregorian'."
+            )
+        return value
+
+    if key == "period_anchor":
+        if value != "start":
+            raise ProjectFileError(
+                "Dataset field 'period_anchor' must be 'start'."
+            )
+        return value
 
     if key in (
         "category_labels",

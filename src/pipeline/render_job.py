@@ -8,6 +8,7 @@ from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
+from core.display_calendar import DisplayCalendarResolver
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
@@ -154,6 +155,19 @@ class RenderJob:
                 )),
             )
         chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
+        calendar_resolver = (
+            DisplayCalendarResolver.from_timeline(
+                timeline,
+                years,
+                steps_per_transition=chart_config.steps_per_transition,
+                continuous_motion=chart_config.animation.continuous_motion,
+                flip_duration_frames=(
+                    chart_config.flip_calendar_flip_duration_frames
+                ),
+            )
+            if chart_config.date_style == "flip_calendar"
+            else None
+        )
         selector = BarSelector(config=chart_config.selection)
         layout = LayoutEngine(
             config=chart_config,
@@ -290,6 +304,11 @@ class RenderJob:
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
                     scene.frame_index = frame_id
+                    scene.display_calendar = (
+                        calendar_resolver.state_at(frame_id)
+                        if calendar_resolver is not None
+                        else None
+                    )
                     scene.value_axis = value_axis
                     scene.bar_value_scale = bar_value_scale
                     scene.short_overlay = short_overlay_for_frame(

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from models.bar_sprite import BarSprite
 from models.bar_value_scale import BarValueScale
 from models.fun_fact import ActiveFunFact
+from models.display_calendar import DisplayCalendarState
 from models.value_axis import ValueAxisState
 
 
@@ -23,6 +24,7 @@ class Scene:
     title: str
     subtitle: str = ""
     time_label: str = ""
+    display_calendar: DisplayCalendarState | None = None
     source_label: str = ""
     bars: list[BarSprite] = field(default_factory=list)
     fun_fact: ActiveFunFact | None = None

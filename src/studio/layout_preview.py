@@ -10,11 +10,17 @@ from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.preview import (
     _preview_mode,
     _preview_value_scales,
+    _display_calendar_resolver,
     _selected_transition_years,
     _selected_year,
     _sprites_for_year,
     _transition_frame_index,
     _transition_sprites,
+)
+from studio.short_export import (
+    apply_export_profile,
+    resolve_export_periods,
+    short_fun_fact_config,
 )
 
 
@@ -31,19 +37,31 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
     preview_settings = preview_settings if isinstance(preview_settings, dict) else {}
     preset = load_project_data(project_data, default_name="studio-layout-preview")
     timeline = Timeline(dataframe, config=preset.dataset_config)
-    years = timeline.get_years()
+    years = resolve_export_periods(
+        timeline.get_years(),
+        preset.export_config,
+    )
     if not years:
         raise ValueError("Layout preview requires at least one time period.")
 
     raw_chart_config = preset.chart_config
-    chart_config = apply_fun_fact_layout(
-        raw_chart_config,
+    effective_fun_fact_config = short_fun_fact_config(
         preset.fun_fact_config,
+        preset.export_config,
+    )
+    chart_config = apply_fun_fact_layout(
+        apply_export_profile(raw_chart_config, preset.export_config),
+        effective_fun_fact_config,
+    )
+    calendar_resolver = _display_calendar_resolver(
+        timeline,
+        years,
+        chart_config,
     )
     selector = BarSelector(config=chart_config.selection)
     layout = LayoutEngine(
         config=chart_config,
-        fun_fact_config=preset.fun_fact_config,
+        fun_fact_config=effective_fun_fact_config,
     )
     mode = _preview_mode(preview_settings.get("preview_mode", "year"), years)
     year = preview_settings.get("year")
@@ -88,11 +106,16 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
     return StudioLayoutPreview(
         chart_config=chart_config,
         raw_chart_config=raw_chart_config,
-        fun_fact_config=preset.fun_fact_config,
+        fun_fact_config=effective_fun_fact_config,
         scene=Scene(
             title=chart_config.title,
             subtitle=subtitle,
             time_label=time_label,
+            display_calendar=(
+                calendar_resolver.state_at(frame_index)
+                if calendar_resolver is not None
+                else None
+            ),
             source_label=preset.data_source_config.source_label,
             bars=sprites,
             frame_index=frame_index,

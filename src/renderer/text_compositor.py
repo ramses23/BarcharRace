@@ -13,7 +13,24 @@ class TextCompositorMixin:
         bar_commands = []
         foreground_commands = []
 
-        if self.config.time_label_enabled and scene.time_label:
+        if (
+            self.config.time_label_enabled
+            and self.config.date_style == "flip_calendar"
+            and scene.display_calendar is not None
+        ):
+            family = self._font_family(self.config.time_label_font_family)
+            command = self._flip_calendar_renderer.command(
+                scene.display_calendar,
+                self.config,
+                font_path=self._text_font_path(
+                    family,
+                    self.config.time_label_font_weight,
+                    self.config.time_label_font_style,
+                ),
+            )
+            if command is not None:
+                background_commands.append(command)
+        elif self.config.time_label_enabled and scene.time_label:
             command = self._text_command(
                 scene.time_label,
                 self.config.time_label_x,

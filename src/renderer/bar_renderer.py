@@ -40,6 +40,7 @@ from renderer.artists import (
 )
 from renderer.text_compositor import TextCompositorMixin
 from renderer.material_texture import blend_texture, procedural_texture_pattern
+from renderer.flip_calendar_renderer import FlipCalendarRenderer
 from studio.fun_fact_layout import editorial_geometry, panel_geometry
 from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
@@ -93,6 +94,7 @@ class BarRenderer(TextCompositorMixin):
         self._fun_fact_resized_image_cache = OrderedDict()
         self._fun_fact_panel_cache = OrderedDict()
         self._short_overlay_cache = OrderedDict()
+        self._flip_calendar_renderer = FlipCalendarRenderer()
         self.draw_seconds = 0.0
         self.save_seconds = 0.0
         os.makedirs(self.output_dir, exist_ok=True)
@@ -174,6 +176,7 @@ class BarRenderer(TextCompositorMixin):
             self._fun_fact_resized_image_cache.clear()
             self._fun_fact_panel_cache.clear()
             self._short_overlay_cache.clear()
+            self._flip_calendar_renderer.clear()
             self._background_motion_cache.clear()
 
     def _initialize_scene_artists(self, ax):

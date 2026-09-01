@@ -9,6 +9,11 @@ class DatasetConfig:
     # Optional display-only label for a numeric period, such as YYYY-MM.
     # The numeric year_column remains the ordering/interpolation axis.
     time_label_column: str | None = None
+    # Optional metadata narrows Flip Calendar parsing; inference remains the
+    # default for unambiguous YYYY, YYYY-MM, and YYYY-MM-DD labels.
+    time_granularity: str | None = None
+    calendar: str = "gregorian"
+    period_anchor: str = "start"
     category_labels: dict[str, str] = field(default_factory=dict)
     category_colors: dict[str, str] = field(default_factory=dict)
     category_logos: dict[str, str] = field(default_factory=dict)

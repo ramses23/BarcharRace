@@ -7,6 +7,7 @@ from core.logo_geometry import (
     primary_logo_horizontal_bounds,
     resolved_primary_logo_size,
 )
+from core.display_calendar import flip_calendar_dimensions
 from studio.fun_fact_layout import editorial_geometry
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_value
@@ -141,17 +142,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             chart_config.subtitle_font_weight,
             chart_config.subtitle_font_style,
         ),
-        "date": _text_rect(
-            scene.time_label,
-            chart_config.time_label_x,
-            chart_config.time_label_y,
-            chart_config.time_label_font_size,
-            chart_config.time_label_font_family,
-            chart_config.dpi,
-            chart_config.time_label_font_weight,
-            chart_config.time_label_font_style,
-            anchor="right",
-        ),
+        "date": _date_rect(chart_config, scene),
         "source": _text_rect(
             scene.source_label,
             chart_config.source_x,
@@ -225,6 +216,33 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             for sprite in sprites
         ],
     }
+
+
+def _date_rect(chart_config, scene):
+    if (
+        chart_config.date_style == "flip_calendar"
+        and scene.display_calendar is not None
+    ):
+        width, height = flip_calendar_dimensions(
+            chart_config.flip_calendar_scale
+        )
+        return SceneRect(
+            chart_config.time_label_x - width,
+            chart_config.time_label_y - (height / 2.0),
+            width,
+            height,
+        )
+    return _text_rect(
+        scene.time_label,
+        chart_config.time_label_x,
+        chart_config.time_label_y,
+        chart_config.time_label_font_size,
+        chart_config.time_label_font_family,
+        chart_config.dpi,
+        chart_config.time_label_font_weight,
+        chart_config.time_label_font_style,
+        anchor="right",
+    )
 
 
 def _value_axis_geometry(value_axis):

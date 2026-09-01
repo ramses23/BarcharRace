@@ -8,6 +8,56 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_flip_calendar_defaults_roundtrip_and_validation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy = root / "legacy_calendar.json"
+            legacy.write_text("{}", encoding="utf-8")
+            legacy_config = load_project_file(legacy).chart_config
+            self.assertEqual(legacy_config.date_style, "standard")
+            self.assertEqual(legacy_config.flip_calendar_scale, 1.0)
+
+            configured = root / "flip_calendar.json"
+            configured.write_text(json.dumps({
+                "chart": {
+                    "date_style": "flip_calendar",
+                    "flip_calendar_scale": 0.8,
+                    "flip_calendar_card_background": "#112233",
+                    "flip_calendar_text_color": "#F0F1F2",
+                    "flip_calendar_border_color": "#445566",
+                    "flip_calendar_shadow_opacity": 0.4,
+                    "flip_calendar_corner_radius": 18,
+                    "flip_calendar_flip_duration_frames": 6,
+                },
+                "dataset": {
+                    "time_granularity": "monthly",
+                    "calendar": "gregorian",
+                    "period_anchor": "start",
+                },
+            }), encoding="utf-8")
+            preset = load_project_file(configured)
+            self.assertEqual(preset.chart_config.date_style, "flip_calendar")
+            self.assertEqual(preset.chart_config.flip_calendar_scale, 0.8)
+            self.assertEqual(
+                preset.chart_config.flip_calendar_flip_duration_frames, 6
+            )
+            self.assertEqual(preset.dataset_config.time_granularity, "monthly")
+
+            invalid_values = (
+                ("date_style", "calendar"),
+                ("flip_calendar_scale", 0.39),
+                ("flip_calendar_shadow_opacity", 1.01),
+                ("flip_calendar_corner_radius", 41),
+                ("flip_calendar_flip_duration_frames", 0),
+            )
+            for field, value in invalid_values:
+                path = root / f"invalid_calendar_{field}.json"
+                path.write_text(json.dumps({
+                    "chart": {field: value},
+                }), encoding="utf-8")
+                with self.assertRaisesRegex(ProjectFileError, field):
+                    load_project_file(path)
+
     def test_rank_movement_duration_defaults_and_validates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

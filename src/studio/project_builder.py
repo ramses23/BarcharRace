@@ -249,6 +249,14 @@ def build_project_data(
     value_text_opacity=None,
     time_label_text_color=None,
     time_label_opacity=None,
+    date_style="standard",
+    flip_calendar_scale=1.0,
+    flip_calendar_card_background="#20252B",
+    flip_calendar_text_color="#F5F4EF",
+    flip_calendar_border_color="#4B5159",
+    flip_calendar_shadow_opacity=0.32,
+    flip_calendar_corner_radius=12.0,
+    flip_calendar_flip_duration_frames=4,
     source_text_color=None,
     source_text_opacity=None,
     rank_label_text_color=None,
@@ -307,6 +315,7 @@ def build_project_data(
                 "title_enabled": True,
                 "subtitle_enabled": True,
                 "time_label_enabled": True,
+                "date_style": "standard",
                 "source_label_enabled": True,
                 "rank_labels_enabled": True,
                 "category_labels_enabled": True,
@@ -383,6 +392,22 @@ def build_project_data(
             "label_font_family": label_font_family,
             "value_font_family": value_font_family,
             "time_label_font_family": time_label_font_family,
+            "date_style": date_style,
+            "flip_calendar_scale": float(flip_calendar_scale),
+            "flip_calendar_card_background": (
+                flip_calendar_card_background
+            ),
+            "flip_calendar_text_color": flip_calendar_text_color,
+            "flip_calendar_border_color": flip_calendar_border_color,
+            "flip_calendar_shadow_opacity": float(
+                flip_calendar_shadow_opacity
+            ),
+            "flip_calendar_corner_radius": float(
+                flip_calendar_corner_radius
+            ),
+            "flip_calendar_flip_duration_frames": int(
+                flip_calendar_flip_duration_frames
+            ),
             "source_font_family": source_font_family,
             "rank_label_font_family": rank_label_font_family,
             "fps": fps,
@@ -669,6 +694,26 @@ def project_form_values(project_data=None):
         "value_text_opacity": chart.get("value_text_opacity", 1.0),
         "time_label_text_color": chart.get("time_label_text_color"),
         "time_label_opacity": chart.get("time_label_opacity", 0.22),
+        "date_style": chart.get("date_style", "standard"),
+        "flip_calendar_scale": chart.get("flip_calendar_scale", 1.0),
+        "flip_calendar_card_background": chart.get(
+            "flip_calendar_card_background", "#20252B"
+        ),
+        "flip_calendar_text_color": chart.get(
+            "flip_calendar_text_color", "#F5F4EF"
+        ),
+        "flip_calendar_border_color": chart.get(
+            "flip_calendar_border_color", "#4B5159"
+        ),
+        "flip_calendar_shadow_opacity": chart.get(
+            "flip_calendar_shadow_opacity", 0.32
+        ),
+        "flip_calendar_corner_radius": chart.get(
+            "flip_calendar_corner_radius", 12.0
+        ),
+        "flip_calendar_flip_duration_frames": chart.get(
+            "flip_calendar_flip_duration_frames", 4
+        ),
         "source_text_color": chart.get("source_text_color"),
         "source_text_opacity": chart.get("source_text_opacity", 1.0),
         "rank_label_text_color": chart.get("rank_label_text_color"),

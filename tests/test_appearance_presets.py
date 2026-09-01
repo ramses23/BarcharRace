@@ -46,6 +46,14 @@ class AppearancePresetsTest(unittest.TestCase):
                 "label_text_opacity": 0.62,
                 "value_text_opacity": 0.51,
                 "time_label_opacity": 0.47,
+                "date_style": "flip_calendar",
+                "flip_calendar_scale": 0.8,
+                "flip_calendar_card_background": "#121820",
+                "flip_calendar_text_color": "#F8F4E8",
+                "flip_calendar_border_color": "#52606D",
+                "flip_calendar_shadow_opacity": 0.4,
+                "flip_calendar_corner_radius": 16,
+                "flip_calendar_flip_duration_frames": 6,
                 "source_text_opacity": 0.4,
                 "rank_label_text_opacity": 0.35,
                 "left_margin": 240,
@@ -122,6 +130,8 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.canvas["layout_preset"], "vertical_shorts")
         self.assertEqual(preset.canvas["title_font_size"], 44)
         self.assertEqual(preset.canvas["time_label_opacity"], 0.47)
+        self.assertEqual(preset.canvas["date_style"], "flip_calendar")
+        self.assertEqual(preset.canvas["flip_calendar_scale"], 0.8)
         self.assertEqual(preset.canvas["title_text_opacity"], 0.84)
         self.assertTrue(preset.canvas["value_grid_enabled"])
         self.assertEqual(preset.canvas["value_grid_mode"], "static")
@@ -145,6 +155,35 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertNotIn("output_file", preset.chart_values)
         self.assertNotIn("fps", preset.chart_values)
         self.assertNotIn("top_n", preset.chart_values)
+
+    def test_schema_10_presets_migrate_flip_calendar_fields_to_standard(self):
+        current = build_appearance_preset(
+            "Legacy calendar",
+            self.project_data(),
+        ).to_dict()
+        current["schema_version"] = 10
+        for field in (
+            "date_style",
+            "flip_calendar_scale",
+            "flip_calendar_card_background",
+            "flip_calendar_text_color",
+            "flip_calendar_border_color",
+            "flip_calendar_shadow_opacity",
+            "flip_calendar_corner_radius",
+            "flip_calendar_flip_duration_frames",
+        ):
+            del current["canvas"][field]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "legacy_calendar.json"
+            path.write_text(json.dumps(current), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertEqual(loaded.canvas["date_style"], "standard")
+        self.assertEqual(loaded.canvas["flip_calendar_scale"], 1.0)
+        self.assertEqual(
+            loaded.canvas["flip_calendar_flip_duration_frames"], 4
+        )
 
     def test_saves_loads_and_updates_preset_atomically(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 10
+APPEARANCE_PRESET_SCHEMA_VERSION = 11
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -95,6 +95,14 @@ CANVAS_APPEARANCE_FIELDS = (
     "subtitle_y",
     "time_label_x",
     "time_label_y",
+    "date_style",
+    "flip_calendar_scale",
+    "flip_calendar_card_background",
+    "flip_calendar_text_color",
+    "flip_calendar_border_color",
+    "flip_calendar_shadow_opacity",
+    "flip_calendar_corner_radius",
+    "flip_calendar_flip_duration_frames",
     "source_x",
     "source_y",
     "label_min_x",
@@ -167,6 +175,14 @@ _ROOT_FIELDS_BY_VERSION = {
     8: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     9: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     10: {
+        "schema_version",
+        "name",
+        "canvas",
+        "bars",
+        "fun_facts",
+        "animation",
+    },
+    11: {
         "schema_version",
         "name",
         "canvas",
@@ -454,6 +470,17 @@ def _validated_preset(data):
         )
     name = _validated_name(data["name"])
     canvas_defaults = {}
+    if schema_version <= 10:
+        canvas_defaults.update({
+            "date_style": "standard",
+            "flip_calendar_scale": 1.0,
+            "flip_calendar_card_background": "#20252B",
+            "flip_calendar_text_color": "#F5F4EF",
+            "flip_calendar_border_color": "#4B5159",
+            "flip_calendar_shadow_opacity": 0.32,
+            "flip_calendar_corner_radius": 12.0,
+            "flip_calendar_flip_duration_frames": 4,
+        })
     if schema_version <= 7:
         canvas_defaults["value_grid_tick_value_format"] = "same"
     if schema_version <= 6:

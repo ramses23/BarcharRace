@@ -158,6 +158,14 @@ class ChartConfig:
     title_enabled: bool = True
     subtitle_enabled: bool = True
     time_label_enabled: bool = True
+    date_style: str = "standard"
+    flip_calendar_scale: float = 1.0
+    flip_calendar_card_background: str = "#20252B"
+    flip_calendar_text_color: str = "#F5F4EF"
+    flip_calendar_border_color: str = "#4B5159"
+    flip_calendar_shadow_opacity: float = 0.32
+    flip_calendar_corner_radius: float = 12.0
+    flip_calendar_flip_duration_frames: int = 4
     source_label_enabled: bool = True
     category_labels_enabled: bool = True
     value_labels_enabled: bool = True

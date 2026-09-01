@@ -42,6 +42,25 @@ class FunFactSystemTest(unittest.TestCase):
         self.assertEqual(adjusted.time_label_x, 1866)
         self.assertAlmostEqual(adjusted.time_label_y, 179.0)
 
+    def test_editorial_right_positions_flip_calendar_by_component_height(self):
+        chart = ChartConfig(
+            width=1920,
+            height=1080,
+            date_style="flip_calendar",
+            flip_calendar_scale=1.0,
+        )
+        config = FunFactConfig(
+            enabled=True,
+            layout="editorial_right",
+            panel_width=500,
+            panel_margin=30,
+            panel_padding=24,
+        )
+
+        adjusted = apply_fun_fact_layout(chart, config)
+
+        self.assertEqual(adjusted.time_label_y, 172.0)
+
     def test_old_project_loads_with_fun_facts_disabled(self):
         preset = load_project_data({"schema_version": 1, "name": "legacy"})
 

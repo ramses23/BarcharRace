@@ -116,6 +116,14 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             value_text_opacity=0.64,
             time_label_text_color="#505152",
             time_label_opacity=0.65,
+            date_style="flip_calendar",
+            flip_calendar_scale=0.8,
+            flip_calendar_card_background="#121820",
+            flip_calendar_text_color="#F8F4E8",
+            flip_calendar_border_color="#52606D",
+            flip_calendar_shadow_opacity=0.4,
+            flip_calendar_corner_radius=16,
+            flip_calendar_flip_duration_frames=6,
             source_text_color="#606162",
             source_text_opacity=0.46,
             rank_label_text_color="#707172",
@@ -199,6 +207,11 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertEqual(loaded["chart"]["value_text_opacity"], 0.64)
         self.assertEqual(loaded["chart"]["time_label_text_color"], "#505152")
         self.assertEqual(loaded["chart"]["time_label_opacity"], 0.65)
+        self.assertEqual(loaded["chart"]["date_style"], "flip_calendar")
+        self.assertEqual(loaded["chart"]["flip_calendar_scale"], 0.8)
+        self.assertEqual(
+            loaded["chart"]["flip_calendar_flip_duration_frames"], 6
+        )
         self.assertEqual(loaded["chart"]["source_text_color"], "#606162")
         self.assertEqual(loaded["chart"]["source_text_opacity"], 0.46)
         self.assertEqual(loaded["chart"]["rank_label_text_color"], "#707172")
@@ -230,6 +243,8 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             0.7,
         )
         self.assertEqual(form_values["rank_movement_duration"], 0.7)
+        self.assertEqual(form_values["date_style"], "flip_calendar")
+        self.assertEqual(form_values["flip_calendar_corner_radius"], 16.0)
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
         self.assertEqual(loaded["categories"]["Coal"]["logo"], "logos/coal.png")
