@@ -204,6 +204,36 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         project_data = json.loads(app.json[0].value)
         self.assertEqual(project_data["chart"]["time_label_opacity"], 0.65)
 
+    def test_flip_calendar_card_opacity_uses_five_percent_steps_and_persists(self):
+        app_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "ui"
+            / "project_studio.py"
+        )
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+        date_style = next(
+            control for control in app.selectbox if control.label == "Date Style"
+        )
+        date_style.select("Flip Calendar")
+        app.run()
+        card_opacity = next(
+            control for control in app.slider if control.label == "Card opacity"
+        )
+
+        self.assertEqual(card_opacity.value, 100)
+        self.assertEqual(card_opacity.min, 0)
+        self.assertEqual(card_opacity.max, 100)
+        self.assertEqual(card_opacity.step, 5)
+        card_opacity.set_value(55)
+        app.run()
+
+        self.assertFalse(app.exception)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["flip_calendar_card_opacity"], 0.55)
+        self.assertEqual(project_data["chart"]["date_style"], "flip_calendar")
+
     def test_appearance_presets_save_apply_and_delete_current_visuals(self):
         root_dir = Path(__file__).resolve().parents[1]
         app_path = root_dir / "src" / "ui" / "project_studio.py"

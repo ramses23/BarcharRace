@@ -252,6 +252,7 @@ def build_project_data(
     date_style="standard",
     flip_calendar_scale=1.0,
     flip_calendar_card_background="#20252B",
+    flip_calendar_card_opacity=1.0,
     flip_calendar_text_color="#F5F4EF",
     flip_calendar_border_color="#4B5159",
     flip_calendar_shadow_opacity=0.32,
@@ -396,6 +397,9 @@ def build_project_data(
             "flip_calendar_scale": float(flip_calendar_scale),
             "flip_calendar_card_background": (
                 flip_calendar_card_background
+            ),
+            "flip_calendar_card_opacity": float(
+                flip_calendar_card_opacity
             ),
             "flip_calendar_text_color": flip_calendar_text_color,
             "flip_calendar_border_color": flip_calendar_border_color,
@@ -698,6 +702,9 @@ def project_form_values(project_data=None):
         "flip_calendar_scale": chart.get("flip_calendar_scale", 1.0),
         "flip_calendar_card_background": chart.get(
             "flip_calendar_card_background", "#20252B"
+        ),
+        "flip_calendar_card_opacity": chart.get(
+            "flip_calendar_card_opacity", 1.0
         ),
         "flip_calendar_text_color": chart.get(
             "flip_calendar_text_color", "#F5F4EF"

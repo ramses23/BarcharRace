@@ -49,6 +49,7 @@ class AppearancePresetsTest(unittest.TestCase):
                 "date_style": "flip_calendar",
                 "flip_calendar_scale": 0.8,
                 "flip_calendar_card_background": "#121820",
+                "flip_calendar_card_opacity": 0.55,
                 "flip_calendar_text_color": "#F8F4E8",
                 "flip_calendar_border_color": "#52606D",
                 "flip_calendar_shadow_opacity": 0.4,
@@ -132,6 +133,7 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.canvas["time_label_opacity"], 0.47)
         self.assertEqual(preset.canvas["date_style"], "flip_calendar")
         self.assertEqual(preset.canvas["flip_calendar_scale"], 0.8)
+        self.assertEqual(preset.canvas["flip_calendar_card_opacity"], 0.55)
         self.assertEqual(preset.canvas["title_text_opacity"], 0.84)
         self.assertTrue(preset.canvas["value_grid_enabled"])
         self.assertEqual(preset.canvas["value_grid_mode"], "static")
@@ -166,6 +168,7 @@ class AppearancePresetsTest(unittest.TestCase):
             "date_style",
             "flip_calendar_scale",
             "flip_calendar_card_background",
+            "flip_calendar_card_opacity",
             "flip_calendar_text_color",
             "flip_calendar_border_color",
             "flip_calendar_shadow_opacity",
@@ -181,9 +184,27 @@ class AppearancePresetsTest(unittest.TestCase):
 
         self.assertEqual(loaded.canvas["date_style"], "standard")
         self.assertEqual(loaded.canvas["flip_calendar_scale"], 1.0)
+        self.assertEqual(loaded.canvas["flip_calendar_card_opacity"], 1.0)
         self.assertEqual(
             loaded.canvas["flip_calendar_flip_duration_frames"], 4
         )
+
+    def test_schema_11_preset_defaults_only_new_card_opacity(self):
+        current = build_appearance_preset(
+            "Legacy card opacity",
+            self.project_data(),
+        ).to_dict()
+        current["schema_version"] = 11
+        del current["canvas"]["flip_calendar_card_opacity"]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "legacy_card_opacity.json"
+            path.write_text(json.dumps(current), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+
+        self.assertEqual(loaded.canvas["date_style"], "flip_calendar")
+        self.assertEqual(loaded.canvas["flip_calendar_card_opacity"], 1.0)
+        self.assertEqual(loaded.canvas["flip_calendar_shadow_opacity"], 0.4)
 
     def test_saves_loads_and_updates_preset_atomically(self):
         with tempfile.TemporaryDirectory() as temp_dir:

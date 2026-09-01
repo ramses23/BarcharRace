@@ -16,6 +16,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
             legacy_config = load_project_file(legacy).chart_config
             self.assertEqual(legacy_config.date_style, "standard")
             self.assertEqual(legacy_config.flip_calendar_scale, 1.0)
+            self.assertEqual(legacy_config.flip_calendar_card_opacity, 1.0)
 
             configured = root / "flip_calendar.json"
             configured.write_text(json.dumps({
@@ -23,6 +24,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                     "date_style": "flip_calendar",
                     "flip_calendar_scale": 0.8,
                     "flip_calendar_card_background": "#112233",
+                    "flip_calendar_card_opacity": 0.55,
                     "flip_calendar_text_color": "#F0F1F2",
                     "flip_calendar_border_color": "#445566",
                     "flip_calendar_shadow_opacity": 0.4,
@@ -39,6 +41,9 @@ class ProjectFileLoaderTest(unittest.TestCase):
             self.assertEqual(preset.chart_config.date_style, "flip_calendar")
             self.assertEqual(preset.chart_config.flip_calendar_scale, 0.8)
             self.assertEqual(
+                preset.chart_config.flip_calendar_card_opacity, 0.55
+            )
+            self.assertEqual(
                 preset.chart_config.flip_calendar_flip_duration_frames, 6
             )
             self.assertEqual(preset.dataset_config.time_granularity, "monthly")
@@ -46,6 +51,8 @@ class ProjectFileLoaderTest(unittest.TestCase):
             invalid_values = (
                 ("date_style", "calendar"),
                 ("flip_calendar_scale", 0.39),
+                ("flip_calendar_card_opacity", -0.01),
+                ("flip_calendar_card_opacity", 1.01),
                 ("flip_calendar_shadow_opacity", 1.01),
                 ("flip_calendar_corner_radius", 41),
                 ("flip_calendar_flip_duration_frames", 0),

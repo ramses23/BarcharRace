@@ -569,6 +569,7 @@ class ShortExportTest(unittest.TestCase):
                 value_grid_enabled=True,
                 date_style="flip_calendar",
                 flip_calendar_scale=0.8,
+                flip_calendar_card_opacity=0.55,
                 fps=30,
                 steps_per_transition=2,
             )
@@ -598,6 +599,9 @@ class ShortExportTest(unittest.TestCase):
                     "value_grid_enabled": chart.value_grid_enabled,
                     "date_style": chart.date_style,
                     "flip_calendar_scale": chart.flip_calendar_scale,
+                    "flip_calendar_card_opacity": (
+                        chart.flip_calendar_card_opacity
+                    ),
                     "fps": chart.fps,
                     "steps_per_transition": chart.steps_per_transition,
                 },
@@ -668,6 +672,11 @@ class ShortExportTest(unittest.TestCase):
                 "2000-01-01",
             )
             self.assertEqual(preview_config.date_style, "flip_calendar")
+            self.assertEqual(
+                preview_config.flip_calendar_card_opacity,
+                render_config.flip_calendar_card_opacity,
+            )
+            self.assertEqual(preview_config.flip_calendar_card_opacity, 0.55)
 
     def test_short_preview_renders_real_vertical_canvas_with_intro(self):
         with tempfile.TemporaryDirectory() as temp_dir:

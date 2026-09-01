@@ -221,6 +221,19 @@ class FlipCalendarRendererTest(unittest.TestCase):
             frame_index=10,
         )
 
+    @staticmethod
+    def _image(*, phase=1.0, **config_values):
+        config = ChartConfig(date_style="flip_calendar", **config_values)
+        return FlipCalendarRenderer().command(
+            FlipCalendarRendererTest._state(phase),
+            config,
+            font_path=font_manager.findfont("DejaVu Sans"),
+        )[0]
+
+    @staticmethod
+    def _alpha_at(image, x, pil_y):
+        return int(image[image.shape[0] - 1 - pil_y, x, 3])
+
     def test_renderer_is_deterministic_and_has_finished_geometry(self):
         config = ChartConfig(
             width=640,
@@ -287,6 +300,122 @@ class FlipCalendarRendererTest(unittest.TestCase):
         )[0]
         self.assertLess(np.max(half[:, :, 3]), np.max(opaque[:, :, 3]))
 
+    def test_card_opacity_controls_only_each_module_fill(self):
+        fill_points = ((180, 30), (80, 140), (250, 140))
+        expected_alpha = {
+            1.0: 255,
+            0.75: 191,
+            0.5: 128,
+            0.25: 64,
+            0.0: 0,
+        }
+        for opacity, expected in expected_alpha.items():
+            with self.subTest(opacity=opacity):
+                image = self._image(
+                    flip_calendar_card_opacity=opacity,
+                    time_label_opacity=1.0,
+                )
+                self.assertEqual(
+                    [self._alpha_at(image, *point) for point in fill_points],
+                    [expected, expected, expected],
+                )
+                self.assertEqual(np.max(image[:, :, 3]), 255)
+
+    def test_card_and_global_date_opacity_compose_multiplicatively(self):
+        half_card = self._image(
+            flip_calendar_card_opacity=0.5,
+            time_label_opacity=1.0,
+        )
+        half_both = self._image(
+            flip_calendar_card_opacity=0.5,
+            time_label_opacity=0.5,
+        )
+        hidden_date = self._image(
+            flip_calendar_card_opacity=1.0,
+            time_label_opacity=0.0,
+        )
+
+        self.assertEqual(self._alpha_at(half_card, 180, 30), 128)
+        self.assertEqual(self._alpha_at(half_both, 180, 30), 64)
+        self.assertFalse(np.any(hidden_date[:, :, 3]))
+        self.assertTrue(np.array_equal(
+            half_both[:, :, 3],
+            np.uint8(half_card[:, :, 3].astype(np.float32) * 0.5),
+        ))
+
+    def test_zero_card_opacity_preserves_text_border_hinges_seam_and_shadow(self):
+        image = self._image(
+            flip_calendar_card_opacity=0.0,
+            flip_calendar_shadow_opacity=0.32,
+            time_label_opacity=1.0,
+        )
+        pil_alpha = image[::-1, :, 3]
+
+        self.assertEqual(self._alpha_at(image, 180, 30), 0)
+        self.assertEqual(np.max(pil_alpha[20:100, 40:320]), 255)  # value text
+        self.assertGreater(np.max(pil_alpha[45:58, 0:355]), 0)  # seam/hinges
+        self.assertGreater(np.max(pil_alpha[0:105, 0:10]), 0)  # border
+        self.assertEqual(self._alpha_at(image, 355, 100), 84)  # shadow only
+
+    def test_shadow_opacity_is_independent_before_global_date_opacity(self):
+        no_shadow = self._image(
+            flip_calendar_card_opacity=0.0,
+            flip_calendar_shadow_opacity=0.0,
+            time_label_opacity=1.0,
+        )
+        full_shadow = self._image(
+            flip_calendar_card_opacity=0.0,
+            flip_calendar_shadow_opacity=1.0,
+            time_label_opacity=1.0,
+        )
+        half_date = self._image(
+            flip_calendar_card_opacity=0.0,
+            flip_calendar_shadow_opacity=1.0,
+            time_label_opacity=0.5,
+        )
+
+        self.assertEqual(self._alpha_at(no_shadow, 355, 100), 0)
+        self.assertEqual(self._alpha_at(full_shadow, 355, 100), 255)
+        self.assertEqual(self._alpha_at(half_date, 355, 100), 127)
+
+    def test_card_opacity_is_used_during_settled_and_mid_flip_phases(self):
+        for phase in (0.5, 1.0):
+            with self.subTest(phase=phase):
+                image = self._image(
+                    phase=phase,
+                    flip_calendar_card_opacity=0.25,
+                    time_label_opacity=1.0,
+                )
+                self.assertEqual(self._alpha_at(image, 180, 30), 64)
+                self.assertEqual(self._alpha_at(image, 80, 140), 64)
+                self.assertEqual(self._alpha_at(image, 250, 140), 64)
+
+    def test_card_opacity_participates_in_raster_cache_key(self):
+        font_path = font_manager.findfont("DejaVu Sans")
+        renderer = FlipCalendarRenderer()
+        opaque_config = ChartConfig(
+            date_style="flip_calendar",
+            flip_calendar_card_opacity=1.0,
+        )
+        transparent_config = ChartConfig(
+            date_style="flip_calendar",
+            flip_calendar_card_opacity=0.0,
+        )
+
+        opaque_first = renderer.command(
+            self._state(1.0), opaque_config, font_path=font_path
+        )[0]
+        transparent = renderer.command(
+            self._state(1.0), transparent_config, font_path=font_path
+        )[0]
+        opaque_again = renderer.command(
+            self._state(1.0), opaque_config, font_path=font_path
+        )[0]
+
+        self.assertFalse(np.array_equal(opaque_first, transparent))
+        self.assertTrue(np.array_equal(opaque_first, opaque_again))
+        self.assertEqual(len(renderer._cache), 2)
+
     def test_standard_date_ignores_calendar_state_pixel_for_pixel(self):
         config = ChartConfig(
             width=640,
@@ -313,6 +442,28 @@ class FlipCalendarRendererTest(unittest.TestCase):
         finally:
             renderer.close()
         self.assertTrue(np.array_equal(plain, with_state))
+
+    def test_standard_date_ignores_flip_card_opacity_pixel_for_pixel(self):
+        images = []
+        for card_opacity in (0.0, 1.0):
+            config = ChartConfig(
+                width=640,
+                height=360,
+                date_style="standard",
+                flip_calendar_card_opacity=card_opacity,
+                time_label_x=600,
+                time_label_y=300,
+                time_label_font_size=48,
+            )
+            renderer = BarRenderer(output_dir=".", config=config)
+            try:
+                images.append(np.frombuffer(
+                    renderer.render_rgba(Scene(title="", time_label="2023")),
+                    dtype=np.uint8,
+                ).copy())
+            finally:
+                renderer.close()
+        self.assertTrue(np.array_equal(*images))
 
 
 if __name__ == "__main__":

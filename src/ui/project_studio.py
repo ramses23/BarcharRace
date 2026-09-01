@@ -1340,6 +1340,9 @@ def _project_form(
         flip_calendar_card_background=(
             canvas_settings["flip_calendar_card_background"]
         ),
+        flip_calendar_card_opacity=(
+            canvas_settings["flip_calendar_card_opacity"]
+        ),
         flip_calendar_text_color=(
             canvas_settings["flip_calendar_text_color"]
         ),
@@ -1930,6 +1933,9 @@ def _canvas_settings_from_values(
         ),
         "flip_calendar_card_background": _color_or_default(
             values.get("flip_calendar_card_background"), "#20252B"
+        ),
+        "flip_calendar_card_opacity": _opacity_or_default(
+            values.get("flip_calendar_card_opacity"), 1.0
         ),
         "flip_calendar_text_color": _color_or_default(
             values.get("flip_calendar_text_color"), "#F5F4EF"
@@ -3165,6 +3171,9 @@ def _canvas_text_section(
         flip_calendar_card_background = _color_or_default(
             values.get("flip_calendar_card_background"), "#20252B"
         )
+        flip_calendar_card_opacity = _opacity_or_default(
+            values.get("flip_calendar_card_opacity"), 1.0
+        )
         flip_calendar_text_color = _color_or_default(
             values.get("flip_calendar_text_color"), "#F5F4EF"
         )
@@ -3215,12 +3224,24 @@ def _canvas_text_section(
                     step=1,
                     key=_widget_key("flip_calendar_corner_radius"),
                 )
-            card_column, flip_text_column, border_column, shadow_column = st.columns(4)
+            card_column, card_opacity_column, flip_text_column = st.columns(3)
             with card_column:
                 flip_calendar_card_background = st.color_picker(
                     "Card background",
                     value=flip_calendar_card_background,
                     key=_widget_key("flip_calendar_card_background"),
+                )
+            with card_opacity_column:
+                flip_calendar_card_opacity = _opacity_percent_slider(
+                    "Card opacity",
+                    flip_calendar_card_opacity,
+                    1.0,
+                    _widget_key("flip_calendar_card_opacity"),
+                    step=5,
+                    help=(
+                        "Controls only the card fill. Text, borders, hinges, "
+                        "seams, and shadow keep their own opacity."
+                    ),
                 )
             with flip_text_column:
                 flip_calendar_text_color = st.color_picker(
@@ -3228,6 +3249,7 @@ def _canvas_text_section(
                     value=flip_calendar_text_color,
                     key=_widget_key("flip_calendar_text_color"),
                 )
+            border_column, shadow_column = st.columns(2)
             with border_column:
                 flip_calendar_border_color = st.color_picker(
                     "Border color",
@@ -3535,6 +3557,7 @@ def _canvas_text_section(
         "date_style": date_style,
         "flip_calendar_scale": float(flip_calendar_scale),
         "flip_calendar_card_background": flip_calendar_card_background,
+        "flip_calendar_card_opacity": float(flip_calendar_card_opacity),
         "flip_calendar_text_color": flip_calendar_text_color,
         "flip_calendar_border_color": flip_calendar_border_color,
         "flip_calendar_shadow_opacity": float(
@@ -5831,16 +5854,26 @@ def _opacity_or_default(value, default):
     return min(1.0, max(0.0, value))
 
 
-def _opacity_percent_slider(label, value, default, key, *, disabled=False):
+def _opacity_percent_slider(
+    label,
+    value,
+    default,
+    key,
+    *,
+    disabled=False,
+    step=1,
+    help="Base text opacity. Animation and fade opacity are multiplied afterward.",
+):
     percent = st.slider(
         label,
         min_value=0,
         max_value=100,
         value=round(_opacity_or_default(value, default) * 100),
+        step=step,
         format="%d%%",
         key=key,
         disabled=disabled,
-        help="Base text opacity. Animation and fade opacity are multiplied afterward.",
+        help=help,
     )
     return percent / 100.0
 

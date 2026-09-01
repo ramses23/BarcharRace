@@ -543,6 +543,7 @@ def _convert_chart_value(key, value):
         "background_motion_intensity",
         "value_grid_line_opacity",
         "value_grid_tick_text_opacity",
+        "flip_calendar_card_opacity",
         "flip_calendar_shadow_opacity",
     ):
         if (

@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 11
+APPEARANCE_PRESET_SCHEMA_VERSION = 12
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -98,6 +98,7 @@ CANVAS_APPEARANCE_FIELDS = (
     "date_style",
     "flip_calendar_scale",
     "flip_calendar_card_background",
+    "flip_calendar_card_opacity",
     "flip_calendar_text_color",
     "flip_calendar_border_color",
     "flip_calendar_shadow_opacity",
@@ -183,6 +184,14 @@ _ROOT_FIELDS_BY_VERSION = {
         "animation",
     },
     11: {
+        "schema_version",
+        "name",
+        "canvas",
+        "bars",
+        "fun_facts",
+        "animation",
+    },
+    12: {
         "schema_version",
         "name",
         "canvas",
@@ -481,6 +490,8 @@ def _validated_preset(data):
             "flip_calendar_corner_radius": 12.0,
             "flip_calendar_flip_duration_frames": 4,
         })
+    if schema_version <= 11:
+        canvas_defaults["flip_calendar_card_opacity"] = 1.0
     if schema_version <= 7:
         canvas_defaults["value_grid_tick_value_format"] = "same"
     if schema_version <= 6:

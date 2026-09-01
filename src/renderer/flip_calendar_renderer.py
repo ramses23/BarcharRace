@@ -23,6 +23,7 @@ class FlipCalendarRenderer:
             state,
             round(float(config.flip_calendar_scale), 3),
             config.flip_calendar_card_background,
+            round(float(config.flip_calendar_card_opacity), 3),
             config.flip_calendar_text_color,
             config.flip_calendar_border_color,
             round(float(config.flip_calendar_shadow_opacity), 3),
@@ -60,7 +61,10 @@ class FlipCalendarRenderer:
         day_left = month_width + gap
         radius = int(round(config.flip_calendar_corner_radius * scale * aa))
         border_width = max(1, int(round(1.2 * scale * aa)))
-        background = _rgba(config.flip_calendar_card_background)
+        background = _with_opacity(
+            _rgba(config.flip_calendar_card_background),
+            config.flip_calendar_card_opacity,
+        )
         border = _rgba(config.flip_calendar_border_color)
         text_color = _rgba(config.flip_calendar_text_color)
         shadow = (0, 0, 0, int(round(
@@ -212,7 +216,11 @@ class FlipCalendarRenderer:
             (left + max(8, int(round(10 * aa))), top + max(5, int(round(6 * aa)))),
             label,
             font=label_font,
-            fill=_blend(text_color, background, 0.45),
+            fill=_blend(
+                text_color,
+                (*background[:3], text_color[3]),
+                0.45,
+            ),
             anchor="la",
         )
 
@@ -236,6 +244,11 @@ def _rgba(value):
         return ImageColor.getcolor(str(value).strip(), "RGBA")
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid RGB color: {value!r}.") from exc
+
+
+def _with_opacity(color, opacity):
+    opacity = max(0.0, min(1.0, float(opacity)))
+    return (*color[:3], int(round(color[3] * opacity)))
 
 
 def _blend(first, second, amount):

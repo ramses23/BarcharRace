@@ -161,6 +161,7 @@ class ChartConfig:
     date_style: str = "standard"
     flip_calendar_scale: float = 1.0
     flip_calendar_card_background: str = "#20252B"
+    flip_calendar_card_opacity: float = 1.0
     flip_calendar_text_color: str = "#F5F4EF"
     flip_calendar_border_color: str = "#4B5159"
     flip_calendar_shadow_opacity: float = 0.32
