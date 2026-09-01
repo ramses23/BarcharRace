@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from dataclasses import replace
+from math import pi, sin
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
 from core.layout_engine import LayoutEngine
+from core.logo_geometry import continuous_logo_minimum_width
 from core.scene_geometry import build_scene_geometry
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.value_axis import ValueAxisTracker
@@ -177,8 +179,8 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             self.assertLess(rank_motion_depth(frame[0]), rank_motion_depth(frame[1]))
 
         midpoint = {item.name: item for item in frames[2]}
-        self.assertEqual(rank_motion_effective_height(midpoint["A"]), 16)
-        self.assertEqual(rank_motion_effective_height(midpoint["B"]), 24)
+        self.assertEqual(rank_motion_effective_height(midpoint["A"]), 14)
+        self.assertEqual(rank_motion_effective_height(midpoint["B"]), 26)
         self.assertEqual(
             visual_rank_motion_sprite(midpoint["A"]).y,
             midpoint["A"].y,
@@ -270,6 +272,38 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertGreater(rank_motion_effective_height(tiny), 0)
         self.assertGreater(rank_motion_effective_height(zero), 0)
 
+    def test_rank_motion_uses_six_pixel_sine_delta_with_exact_endpoints(self):
+        base = sprite("Motion", 1, 40)
+        rising = replace(base, rank_motion_state="rising")
+        falling = replace(base, rank_motion_state="falling")
+
+        for progress in (0.0, 0.25, 0.5, 0.75, 1.0):
+            with self.subTest(progress=progress):
+                delta = 6.0 * sin(pi * progress)
+                self.assertAlmostEqual(
+                    rank_motion_effective_height(replace(
+                        rising,
+                        rank_motion_progress=progress,
+                    )),
+                    base.height + delta,
+                )
+                self.assertAlmostEqual(
+                    rank_motion_effective_height(replace(
+                        falling,
+                        rank_motion_progress=progress,
+                    )),
+                    base.height - delta,
+                )
+
+        self.assertEqual(rank_motion_effective_height(rising), base.height)
+        self.assertEqual(
+            rank_motion_effective_height(replace(
+                rising,
+                rank_motion_progress=1.0,
+            )),
+            base.height,
+        )
+
     def test_rank_motion_render_paths_borders_tracks_and_final_geometry(self):
         falling = replace(
             sprite("Falling", 2, 90),
@@ -287,7 +321,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             rank_motion_progress=0.5,
             rank_motion_target=1,
         )
-        self.assertEqual(RANK_MOTION_HEIGHT_EMPHASIS, 4)
+        self.assertEqual(RANK_MOTION_HEIGHT_EMPHASIS, 6)
 
         modes = {
             "solid": dict(
@@ -345,7 +379,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                                 for command in renderer._advanced_composite_artist.commands
                             ]
                             self.assertEqual(track_heights, [20, 20])
-                            self.assertEqual(body_heights, [16, 24])
+                            self.assertEqual(body_heights, [14, 26])
                             body_colors = []
                             for command in renderer._advanced_composite_artist.commands:
                                 pixels = command[0]
@@ -360,7 +394,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                                 artists.border.get_path().get_extents().height
                                 for artists in renderer._bar_artists[:2]
                             ]
-                            self.assertEqual(border_heights, [16, 24])
+                            self.assertEqual(border_heights, [14, 26])
                             if mode == "gradient":
                                 colors = renderer._gradient_artist.get_facecolors()
                                 self.assertGreater(colors[0][0], colors[0][2])
@@ -473,9 +507,9 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             finally:
                 renderer.close()
 
-        self.assertEqual(rank_motion_effective_height(item), 24)
-        self.assertEqual(logo_image.shape[:2], (24, 24))
-        self.assertEqual(bar_image.shape[0], 24)
+        self.assertEqual(rank_motion_effective_height(item), 26)
+        self.assertEqual(logo_image.shape[:2], (26, 26))
+        self.assertEqual(bar_image.shape[0], 26)
 
     def test_rank_motion_swap_matches_preview_and_render_job(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -898,7 +932,10 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             self.assertEqual(render_visual, preview_visual)
             self.assertEqual(render_layout, preview_layout)
             self.assertGreaterEqual(render_visual.width, render_layout["size"])
-            self.assertEqual(render_layout["left"], render_visual.x)
+            self.assertAlmostEqual(
+                render_layout["right"],
+                render_visual.x + render_visual.width,
+            )
 
     def test_internal_primary_logo_floor_is_visual_only_and_asset_gated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -998,7 +1035,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                         renderer.close()
                     self.assertEqual(visual.width, 0)
 
-    def test_logo_floor_transition_labels_grid_and_ratios_remain_independent(self):
+    def test_logo_remap_transition_labels_grid_and_ratios_remain_independent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "logo.png"
             Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
@@ -1034,7 +1071,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                         bar_available_width=600,
                     )
                     for index, (width, value) in enumerate(
-                        ((0, 1), (20, 2), (40, 3), (60, 4))
+                        ((0, 1), (5, 2), (20, 3), (40, 4), (60, 5))
                     )
                 ]
                 visuals = [
@@ -1045,8 +1082,15 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             finally:
                 renderer.close()
 
-            self.assertEqual([item.width for item in originals], [0, 20, 40, 60])
-            self.assertEqual([item.width for item in visuals], [40, 40, 40, 60])
+            self.assertEqual(
+                [item.width for item in originals],
+                [0, 5, 20, 40, 60],
+            )
+            self.assertEqual(visuals[0].width, 40)
+            self.assertTrue(all(
+                right.width > left.width
+                for left, right in zip(visuals, visuals[1:])
+            ))
             self.assertGreaterEqual(
                 label["x"],
                 visuals[0].x + visuals[0].width + config.value_label_gap,
@@ -1077,6 +1121,56 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             )
             self.assertEqual(axis_with_logos.scale, axis_without_logos.scale)
 
+            leader = replace(originals[0], name="Leader", width=600)
+            nonleader = replace(originals[1], name="Nonleader", width=150)
+            renderer = BarRenderer(config=config)
+            try:
+                leader_visual = renderer._final_visual_geometry(leader)[0]
+                nonleader_visual = renderer._final_visual_geometry(nonleader)[0]
+                no_logo_visual = renderer._final_visual_geometry(
+                    replace(nonleader, logo_path=None)
+                )[0]
+                external_renderer = BarRenderer(config=replace(
+                    config,
+                    bar_logo_position="outside_left",
+                ))
+                try:
+                    external_visual = external_renderer._final_visual_geometry(
+                        nonleader
+                    )[0]
+                finally:
+                    external_renderer.close()
+            finally:
+                renderer.close()
+
+            self.assertEqual(leader_visual.width, 600)
+            self.assertLess(nonleader_visual.width, leader_visual.width)
+            self.assertEqual(no_logo_visual.width, nonleader.width)
+            self.assertEqual(external_visual.width, nonleader.width)
+
+    def test_continuous_logo_minimum_width_has_strict_growth_and_endpoints(self):
+        data_widths = (0, 5, 10, 20, 40, 60, 80, 100, 200, 500, 1000)
+        visual_widths = [
+            continuous_logo_minimum_width(width, 1000, 60)
+            for width in data_widths
+        ]
+
+        self.assertEqual(visual_widths[0], 60)
+        self.assertTrue(all(
+            right > left
+            for left, right in zip(visual_widths, visual_widths[1:])
+        ))
+        self.assertEqual(visual_widths[-1], 1000)
+        self.assertAlmostEqual(visual_widths[1], 64.7)
+        self.assertAlmostEqual(
+            continuous_logo_minimum_width(60, 1000, 60),
+            116.4,
+        )
+        self.assertLess(
+            continuous_logo_minimum_width(999, 1000, 60),
+            1000,
+        )
+
     def test_primary_logo_geometry_locks_all_rank_motion_states(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "logo.png"
@@ -1095,8 +1189,8 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             try:
                 for state, expected_height in (
                     ("stable", 20),
-                    ("rising", 24),
-                    ("falling", 16),
+                    ("rising", 26),
+                    ("falling", 14),
                 ):
                     with self.subTest(state=state):
                         item = BarSprite(
@@ -1296,10 +1390,10 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                     logo = geometry["primary_logo_rects"][0]
 
                     self.assertEqual(item.width, 0)
-                    self.assertEqual(bar["width"], 24)
-                    self.assertEqual(bar["height"], 24)
-                    self.assertEqual(logo["width"], 24)
-                    self.assertEqual(logo["height"], 24)
+                    self.assertEqual(bar["width"], 26)
+                    self.assertEqual(bar["height"], 26)
+                    self.assertEqual(logo["width"], 26)
+                    self.assertEqual(logo["height"], 26)
                     self.assertEqual(logo["x"], bar["x"])
                     self.assertEqual(logo["x"] + logo["width"], bar["x"] + bar["width"])
                     self.assertEqual(logo["y"], bar["y"])

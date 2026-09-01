@@ -48,24 +48,71 @@ def final_visual_bar_sprite(
     *,
     primary_logo_available=False,
 ):
-    """Return render-only bar geometry after rank emphasis and logo floor."""
+    """Return render-only bar geometry after rank and logo constraints."""
     visual = visual_rank_motion_sprite(sprite)
     if not primary_logo_is_inside(config, visual):
         return visual
 
-    logo_width = resolved_primary_logo_size(
+    nominal_logo_width = resolved_primary_logo_size(
+        config,
+        sprite,
+        config.logo_size,
+    )
+    effective_logo_width = resolved_primary_logo_size(
         config,
         visual,
         config.logo_size,
     )
     if callable(primary_logo_available):
-        primary_logo_available = primary_logo_available(visual, logo_width)
-    if not primary_logo_available or logo_width <= 0.0:
+        primary_logo_available = primary_logo_available(
+            visual,
+            effective_logo_width,
+        )
+    if not primary_logo_available or effective_logo_width <= 0.0:
         return visual
 
+    structural_width = _primary_logo_containment_width(config, visual)
     return replace(
         visual,
-        width=max(0.0, float(visual.width), logo_width),
+        width=continuous_logo_minimum_width(
+            visual.width,
+            structural_width,
+            nominal_logo_width,
+            effective_logo_width=effective_logo_width,
+        ),
+    )
+
+
+def continuous_logo_minimum_width(
+    data_width,
+    structural_width,
+    nominal_logo_width,
+    *,
+    effective_logo_width=None,
+):
+    """Map data width 0..W continuously onto logo-safe width L..W."""
+    data_width = max(0.0, float(data_width))
+    structural_width = max(0.0, float(structural_width))
+    if structural_width <= 0.0:
+        return 0.0
+
+    nominal_logo_width = min(
+        structural_width,
+        max(0.0, float(nominal_logo_width)),
+    )
+    q = min(1.0, data_width / structural_width)
+    candidate_width = nominal_logo_width + (
+        q * (structural_width - nominal_logo_width)
+    )
+    if effective_logo_width is None:
+        effective_logo_width = nominal_logo_width
+    effective_logo_width = min(
+        structural_width,
+        max(0.0, float(effective_logo_width)),
+    )
+    return min(
+        structural_width,
+        max(candidate_width, effective_logo_width),
     )
 
 
