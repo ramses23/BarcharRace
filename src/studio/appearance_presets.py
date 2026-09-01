@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 9
+APPEARANCE_PRESET_SCHEMA_VERSION = 10
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -149,6 +149,9 @@ FUN_FACT_APPEARANCE_FIELDS = (
     "editorial_image_position",
     "editorial_collision_gap",
 )
+ANIMATION_APPEARANCE_FIELDS = (
+    "rank_movement_duration",
+)
 APPEARANCE_CHART_FIELDS = (
     *CANVAS_APPEARANCE_FIELDS,
     *BAR_APPEARANCE_FIELDS,
@@ -163,6 +166,14 @@ _ROOT_FIELDS_BY_VERSION = {
     7: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     8: {"schema_version", "name", "canvas", "bars", "fun_facts"},
     9: {"schema_version", "name", "canvas", "bars", "fun_facts"},
+    10: {
+        "schema_version",
+        "name",
+        "canvas",
+        "bars",
+        "fun_facts",
+        "animation",
+    },
 }
 _MAX_NAME_LENGTH = 80
 
@@ -177,6 +188,7 @@ class AppearancePreset:
     canvas: dict
     bars: dict
     fun_facts: dict | None = None
+    animation: dict | None = None
     path: Path | None = None
     schema_version: int = APPEARANCE_PRESET_SCHEMA_VERSION
 
@@ -196,6 +208,8 @@ class AppearancePreset:
         }
         if self.schema_version >= 2:
             data["fun_facts"] = copy.deepcopy(self.fun_facts)
+        if self.schema_version >= 10:
+            data["animation"] = copy.deepcopy(self.animation)
         return data
 
 
@@ -250,6 +264,10 @@ def build_appearance_preset(name, project_data):
             field: copy.deepcopy(getattr(fun_fact_config, field))
             for field in FUN_FACT_APPEARANCE_FIELDS
         },
+        animation={
+            field: copy.deepcopy(getattr(chart_config.animation, field))
+            for field in ANIMATION_APPEARANCE_FIELDS
+        },
     )
     return _validated_preset(candidate.to_dict())
 
@@ -267,6 +285,14 @@ def apply_appearance_preset(project_data, preset):
         raise AppearancePresetError("Project section 'chart' must be an object.")
 
     chart.update(preset.chart_values)
+    animation = updated.setdefault("animation", {})
+    if not isinstance(animation, dict):
+        raise AppearancePresetError(
+            "Project section 'animation' must be an object."
+        )
+    animation.update(copy.deepcopy(preset.animation or {
+        "rank_movement_duration": 1.0,
+    }))
     if preset.fun_facts is not None:
         fun_facts = updated.setdefault("fun_facts", {})
         if not isinstance(fun_facts, dict):
@@ -301,6 +327,7 @@ def load_appearance_preset(path):
         canvas=preset.canvas,
         bars=preset.bars,
         fun_facts=preset.fun_facts,
+        animation=preset.animation,
         path=path,
         schema_version=preset.schema_version,
     )
@@ -355,6 +382,7 @@ def save_appearance_preset(preset, directory, *, overwrite=False):
         canvas=preset.canvas,
         bars=preset.bars,
         fun_facts=preset.fun_facts,
+        animation=preset.animation,
         path=path,
         schema_version=preset.schema_version,
     )
@@ -540,10 +568,21 @@ def _validated_preset(data):
             missing_defaults=fun_fact_defaults,
         )
 
+    animation = _validated_section(
+        (
+            data["animation"]
+            if schema_version >= 10
+            else {"rank_movement_duration": 1.0}
+        ),
+        expected_fields=ANIMATION_APPEARANCE_FIELDS,
+        section_name="animation",
+    )
+
     try:
         validation_project = {
             "name": name,
             "chart": {**canvas, **bars},
+            "animation": animation,
         }
         if fun_facts is not None:
             validation_project["fun_facts"] = fun_facts
@@ -558,6 +597,7 @@ def _validated_preset(data):
         canvas=canvas,
         bars=bars,
         fun_facts=fun_facts,
+        animation=animation,
         schema_version=schema_version,
     )
 

@@ -4,6 +4,7 @@ import unittest
 import _test_path
 from config.animation_config import AnimationConfig
 from core.motion_engine import MotionEngine
+from core.rank_motion import rank_motion_effective_height
 from models.bar_sprite import BarSprite
 
 
@@ -346,9 +347,96 @@ class MotionEngineTest(unittest.TestCase):
         frames = MotionEngine().interpolate_sprites(start, end, steps=2)
 
         self.assertEqual([sprite.name for sprite in frames[0]], ["B", "A"])
-        self.assertEqual([sprite.name for sprite in frames[1]], ["B", "A"])
+        self.assertEqual([sprite.name for sprite in frames[1]], ["A", "B"])
         self.assertEqual(frames[0][0].rank_motion_state, "falling")
         self.assertEqual(frames[0][1].rank_motion_state, "rising")
+        self.assertTrue(all(
+            sprite.rank_motion_state == "stable"
+            for sprite in frames[1]
+        ))
+
+    def test_rank_movement_duration_accelerates_only_y_and_rank(self):
+        start = [self._sprite(10, y=0, rank=2)]
+        end = [self._sprite(110, y=100, rank=1)]
+        engine = MotionEngine(AnimationConfig(rank_movement_duration=0.7))
+
+        start_frame = engine.interpolate_sprites_at(start, end, 0.0)[0]
+        halfway_rank = engine.interpolate_sprites_at(start, end, 0.35)[0]
+        arrived = engine.interpolate_sprites_at(start, end, 0.7)[0]
+        later = engine.interpolate_sprites_at(start, end, 0.85)[0]
+        final = engine.interpolate_sprites_at(start, end, 1.0)[0]
+
+        self.assertEqual(start_frame.y, 0)
+        self.assertAlmostEqual(halfway_rank.y, 50)
+        self.assertEqual(arrived.y, 100)
+        self.assertEqual(later.y, 100)
+        self.assertEqual(final.y, 100)
+        self.assertAlmostEqual(halfway_rank.rank, 1.5)
+        self.assertEqual(arrived.rank, 1)
+        self.assertLess(arrived.value, later.value)
+        self.assertLess(later.value, final.value)
+        self.assertEqual(final.value, 110)
+        self.assertEqual(halfway_rank.rank_motion_progress, 0.5)
+        self.assertEqual(rank_motion_effective_height(halfway_rank), 46)
+        self.assertEqual(arrived.rank_motion_state, "stable")
+        self.assertEqual(rank_motion_effective_height(arrived), 40)
+
+    def test_rank_movement_duration_supports_half_and_legacy_transitions(self):
+        start = [self._sprite(10, y=20, rank=4)]
+        end = [self._sprite(90, y=140, rank=1)]
+        legacy = MotionEngine(AnimationConfig(rank_movement_duration=1.0))
+        faster = MotionEngine(AnimationConfig(rank_movement_duration=0.5))
+
+        legacy_mid = legacy.interpolate_sprites_at(start, end, 0.5)[0]
+        faster_mid = faster.interpolate_sprites_at(start, end, 0.5)[0]
+        faster_late = faster.interpolate_sprites_at(start, end, 0.9)[0]
+
+        self.assertEqual(legacy_mid.y, 80)
+        self.assertEqual(faster_mid.y, 140)
+        self.assertEqual(faster_late.y, 140)
+        self.assertEqual(faster_mid.rank, 1)
+        self.assertEqual(faster_mid.rank_motion_state, "stable")
+        self.assertAlmostEqual(legacy_mid.value, faster_mid.value)
+
+    def test_rank_movement_duration_applies_to_continuous_motion_only(self):
+        engine = MotionEngine(
+            AnimationConfig(
+                motion_mode="continuous",
+                rank_movement_duration=0.7,
+            )
+        )
+        previous = [self._sprite(10, y=0, rank=2)]
+        start = [self._sprite(30, y=20, rank=2)]
+        end = [self._sprite(90, y=120, rank=1)]
+        next_sprites = [self._sprite(130, y=120, rank=1)]
+
+        arrived = engine.interpolate_sprites_continuous_at(
+            previous, start, end, next_sprites, 0.7
+        )[0]
+        later = engine.interpolate_sprites_continuous_at(
+            previous, start, end, next_sprites, 0.85
+        )[0]
+
+        self.assertEqual(arrived.y, end[0].y)
+        self.assertEqual(arrived.rank, end[0].rank)
+        self.assertEqual(arrived.rank_motion_state, "stable")
+        self.assertLess(arrived.value, later.value)
+        self.assertLess(later.value, end[0].value)
+
+    def test_rank_duration_keeps_entry_exit_fades_independent(self):
+        start = [self._sprite(100, name="Exit", y=80, rank=2)]
+        end = [self._sprite(100, name="Enter", y=20, rank=1)]
+        engine = MotionEngine(AnimationConfig(rank_movement_duration=0.5))
+
+        frame = {
+            sprite.name: sprite
+            for sprite in engine.interpolate_sprites_at(start, end, 0.75)
+        }
+
+        self.assertEqual(frame["Exit"].rank_motion_state, "stable")
+        self.assertEqual(frame["Enter"].rank_motion_state, "stable")
+        self.assertGreater(frame["Exit"].opacity, 0)
+        self.assertLess(frame["Enter"].opacity, 1)
 
     def test_uses_configured_easing_for_motion(self):
         start = [

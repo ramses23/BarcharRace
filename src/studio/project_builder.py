@@ -280,6 +280,7 @@ def build_project_data(
     left_margin=None,
     rank_label_gap=None,
     motion_mode=None,
+    rank_movement_duration=1.0,
     aggregate_other=False,
     category_styles=None,
     fun_facts=None,
@@ -337,6 +338,7 @@ def build_project_data(
             "enter_exit": True,
             "value_smoothing": True,
             "motion_mode": "transition_easing",
+            "rank_movement_duration": 1.0,
         }
         selection.update(
             {
@@ -478,6 +480,7 @@ def build_project_data(
 
     if motion_mode is not None:
         animation["motion_mode"] = motion_mode
+    animation["rank_movement_duration"] = float(rank_movement_duration)
     selection.update(
         {
             "top_n": top_n,
@@ -730,6 +733,9 @@ def project_form_values(project_data=None):
             for field in BAR_STYLE_FIELDS
         },
         "motion_mode": animation.get("motion_mode", "transition_easing"),
+        "rank_movement_duration": animation.get(
+            "rank_movement_duration", 1.0
+        ),
         "aggregate_other": selection.get("aggregate_other", False),
         "output_file": chart.get("output_file", paths["output_file"]),
         "frames_dir": chart.get("frames_dir", paths["frames_dir"]),

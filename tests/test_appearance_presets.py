@@ -65,6 +65,9 @@ class AppearancePresetsTest(unittest.TestCase):
                 "top_n": 5,
                 "aggregate_other": True,
             },
+            "animation": {
+                "rank_movement_duration": 0.7,
+            },
             "dataset": {
                 "year_column": "year",
                 "name_column": "company",
@@ -128,6 +131,7 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(preset.bars["bar_secondary_logo_size"], 19)
         self.assertTrue(preset.bars["start_bars_at_zero"])
         self.assertEqual(preset.bars["leader_full_width_point"], 0.5)
+        self.assertEqual(preset.animation["rank_movement_duration"], 0.7)
         self.assertEqual(preset.fun_facts["layout"], "editorial_right")
         self.assertEqual(
             preset.fun_facts["editorial_background_mode"],
@@ -175,6 +179,7 @@ class AppearancePresetsTest(unittest.TestCase):
         current = build_appearance_preset("Legacy v8", self.project_data())
         legacy = current.to_dict()
         legacy["schema_version"] = 8
+        del legacy["animation"]
         del legacy["bars"]["start_bars_at_zero"]
         del legacy["bars"]["leader_full_width_point"]
 
@@ -185,6 +190,7 @@ class AppearancePresetsTest(unittest.TestCase):
 
         self.assertFalse(loaded.bars["start_bars_at_zero"])
         self.assertEqual(loaded.bars["leader_full_width_point"], 1.0)
+        self.assertEqual(loaded.animation["rank_movement_duration"], 1.0)
 
     def test_applies_visual_fields_without_mutating_or_copying_project_content(self):
         source = self.project_data()
@@ -218,6 +224,7 @@ class AppearancePresetsTest(unittest.TestCase):
         self.assertEqual(applied["chart"]["fps"], 24)
         self.assertEqual(applied["chart"]["bar_shape"], "capsule")
         self.assertEqual(applied["chart"]["title_font_size"], 44)
+        self.assertEqual(applied["animation"]["rank_movement_duration"], 0.7)
         self.assertEqual(applied["selection"], original["selection"])
         self.assertEqual(applied["dataset"], original["dataset"])
         self.assertEqual(applied["categories"], original["categories"])
@@ -233,6 +240,7 @@ class AppearancePresetsTest(unittest.TestCase):
         current = build_appearance_preset("Legacy preset", self.project_data())
         legacy_data = current.to_dict()
         legacy_data["schema_version"] = 1
+        del legacy_data["animation"]
         del legacy_data["fun_facts"]
         del legacy_data["bars"]["bar_label_offset_x"]
         del legacy_data["bars"]["bar_label_offset_y"]
@@ -263,6 +271,7 @@ class AppearancePresetsTest(unittest.TestCase):
         current = build_appearance_preset("V2 preset", self.project_data())
         legacy_data = current.to_dict()
         legacy_data["schema_version"] = 2
+        del legacy_data["animation"]
         for field in (
             "editorial_orientation",
             "editorial_card_x",
@@ -291,6 +300,7 @@ class AppearancePresetsTest(unittest.TestCase):
         for schema_version in (1, 2, 3):
             legacy_data = current.to_dict()
             legacy_data["schema_version"] = schema_version
+            del legacy_data["animation"]
             del legacy_data["canvas"]["time_label_opacity"]
             if schema_version == 1:
                 del legacy_data["fun_facts"]
@@ -340,6 +350,7 @@ class AppearancePresetsTest(unittest.TestCase):
         for schema_version in (1, 2, 3, 4):
             data = current.to_dict()
             data["schema_version"] = schema_version
+            del data["animation"]
             for field in new_canvas_fields:
                 del data["canvas"][field]
             if schema_version == 1:
@@ -394,6 +405,7 @@ class AppearancePresetsTest(unittest.TestCase):
         current = build_appearance_preset("Before value grid", self.project_data())
         data = current.to_dict()
         data["schema_version"] = 6
+        del data["animation"]
         value_grid_fields = tuple(
             field
             for field in CANVAS_APPEARANCE_FIELDS
@@ -417,6 +429,7 @@ class AppearancePresetsTest(unittest.TestCase):
         current = build_appearance_preset("Before tick format", self.project_data())
         data = current.to_dict()
         data["schema_version"] = 7
+        del data["animation"]
         del data["canvas"]["value_grid_tick_value_format"]
 
         with tempfile.TemporaryDirectory() as temp_dir:

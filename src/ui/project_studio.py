@@ -1316,6 +1316,7 @@ def _project_form(
         png_compress_level=render_settings["png_compress_level"],
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
+        rank_movement_duration=render_settings["rank_movement_duration"],
         bar_style=bars_settings["bar_style"],
         title_font_family=canvas_settings["title_font_family"],
         subtitle_font_family=canvas_settings["subtitle_font_family"],
@@ -2589,6 +2590,10 @@ def _render_settings_from_values(
     motion_mode = values.get("motion_mode", "transition_easing")
     if motion_mode not in ("transition_easing", "continuous"):
         motion_mode = "transition_easing"
+    rank_movement_duration = min(1.0, max(
+        0.4,
+        float(values.get("rank_movement_duration", 1.0)),
+    ))
 
     current_draft = st.session_state.get(CURRENT_DRAFT_STATE)
     current_project_file = (
@@ -2603,6 +2608,7 @@ def _render_settings_from_values(
             24,
         ),
         "motion_mode": motion_mode,
+        "rank_movement_duration": rank_movement_duration,
         "frame_output_mode": frame_output_mode,
         "png_compress_level": _int_in_range_or_default(
             values.get("png_compress_level"),
@@ -3829,6 +3835,25 @@ def _animation_output_section(
             key=_widget_key("motion_mode"),
         )
 
+    rank_movement_percent = st.slider(
+        "Rank movement duration",
+        min_value=40,
+        max_value=100,
+        value=int(round(
+            min(1.0, max(
+                0.4,
+                float(values.get("rank_movement_duration", 1.0)),
+            )) * 100
+        )),
+        step=5,
+        format="%d%%",
+        help=(
+            "Percentage of each transition used for vertical rank movement. "
+            "Values, dates, FPS, and video duration are unchanged."
+        ),
+        key=_widget_key("rank_movement_duration"),
+    )
+
     with st.container(border=True):
         selected_periods = resolve_export_periods(
             available_years,
@@ -3925,6 +3950,7 @@ def _animation_output_section(
         "fps": int(fps),
         "steps": int(steps),
         "motion_mode": motion_mode,
+        "rank_movement_duration": rank_movement_percent / 100.0,
         "frame_output_mode": frame_output_mode,
         "png_compress_level": int(png_compress_level),
         "output_file": output_file,

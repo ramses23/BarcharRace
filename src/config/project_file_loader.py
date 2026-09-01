@@ -782,6 +782,18 @@ def _convert_export_value(key, value):
 
 
 def _convert_animation_value(key, value):
+    if key == "rank_movement_duration":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0.4 <= value <= 1.0
+        ):
+            raise ProjectFileError(
+                "Animation field 'rank_movement_duration' must be from "
+                "0.4 to 1.0."
+            )
+        return float(value)
+
     if key == "motion_mode":
         if value not in ("transition_easing", "continuous"):
             raise ProjectFileError(

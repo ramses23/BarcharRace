@@ -9,6 +9,7 @@ class AnimationConfig:
     enter_exit: bool = True
     value_smoothing: bool = True
     motion_mode: str = "transition_easing"
+    rank_movement_duration: float = 1.0
 
     def easing_function(self):
         return get_easing_function(self.easing)

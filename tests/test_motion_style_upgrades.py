@@ -172,11 +172,16 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         end = [sprite("A", 2, 80), sprite("B", 1, 40)]
         frames = engine.interpolate_sprites(start, end, steps=5)
 
-        for frame in frames:
+        for frame in frames[:-1]:
             self.assertEqual([item.name for item in frame], ["A", "B"])
             self.assertEqual(frame[0].rank_motion_state, "falling")
             self.assertEqual(frame[1].rank_motion_state, "rising")
             self.assertLess(rank_motion_depth(frame[0]), rank_motion_depth(frame[1]))
+        self.assertEqual([item.name for item in frames[-1]], ["B", "A"])
+        self.assertTrue(all(
+            item.rank_motion_state == "stable"
+            for item in frames[-1]
+        ))
 
         midpoint = {item.name: item for item in frames[2]}
         self.assertEqual(rank_motion_effective_height(midpoint["A"]), 14)
@@ -209,12 +214,20 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             sprite("D", 3, 60),
         ]
         frames = MotionEngine().interpolate_sprites(start, end, steps=7)
-        for frame in frames:
+        for frame in frames[:-1]:
             self.assertEqual([item.name for item in frame], ["A", "B", "C", "D"])
             self.assertEqual(
                 [item.rank_motion_state for item in frame],
                 ["falling", "rising", "rising", "rising"],
             )
+        self.assertEqual(
+            [item.name for item in frames[-1]],
+            ["B", "C", "D", "A"],
+        )
+        self.assertTrue(all(
+            item.rank_motion_state == "stable"
+            for item in frames[-1]
+        ))
 
         tied = [
             replace(frames[3][2], name="Zulu", rank_motion_target=2),
@@ -525,6 +538,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                 top_n=2,
                 max_visible_bars=2,
                 motion_mode="continuous",
+                rank_movement_duration=0.7,
             )
             project_data["chart"].update({
                 "width": 320,

@@ -27,6 +27,7 @@ class MotionEngine:
         for step in range(steps):
             raw_t = step / (steps - 1) if steps > 1 else 1
             t = easing(raw_t)
+            rank_raw_t, rank_t = self._rank_progress(raw_t, easing)
             value_t = t if self.animation_config.value_smoothing else raw_t
 
             frame = []
@@ -66,13 +67,14 @@ class MotionEngine:
                 start_opacity = self._sprite_opacity(a, fallback=0.0 if b else 1.0)
                 end_opacity = self._sprite_opacity(b, fallback=0.0 if a else 1.0)
                 rank = (
-                    lerp(start_rank, end_rank, t)
+                    lerp(start_rank, end_rank, rank_t)
                     if start_rank is not None and end_rank is not None
                     else None
                 )
-                rank_motion_state = classify_rank_motion(
+                rank_motion_state = self._active_rank_motion_state(
                     start_rank,
                     end_rank,
+                    rank_raw_t,
                     start_present=a is not None,
                     end_present=b is not None,
                 )
@@ -83,7 +85,7 @@ class MotionEngine:
                         value=lerp(start_val, end_val, value_t),
                         color=color,
                         x=lerp(start_x, end_x, t),
-                        y=lerp(start_y, end_y, t),
+                        y=lerp(start_y, end_y, rank_t),
                         width=lerp(start_width, end_width, t),
                         height=lerp(start_height, end_height, t),
                         rank=rank,
@@ -91,7 +93,7 @@ class MotionEngine:
                         secondary_logo_path=secondary_logo_path,
                         opacity=lerp(start_opacity, end_opacity, t),
                         rank_motion_state=rank_motion_state,
-                        rank_motion_progress=raw_t,
+                        rank_motion_progress=rank_raw_t,
                         rank_motion_target=(
                             None
                             if rank_motion_state == RANK_MOTION_STABLE
@@ -207,16 +209,18 @@ class MotionEngine:
 
     def _continuous_sprite(self, previous, start, end, next_sprite, t):
         value_t = t if not self.animation_config.value_smoothing else None
-        position_t = self.animation_config.easing_function()(t)
+        easing = self.animation_config.easing_function()
+        rank_raw_t, rank_t = self._rank_progress(t, easing)
         start_rank, end_rank = self._rank_bounds(start, end)
         rank = (
-            lerp(start_rank, end_rank, position_t)
+            lerp(start_rank, end_rank, rank_t)
             if start_rank is not None and end_rank is not None
             else None
         )
-        rank_motion_state = classify_rank_motion(
+        rank_motion_state = self._active_rank_motion_state(
             start_rank,
             end_rank,
+            rank_raw_t,
         )
 
         return BarSprite(
@@ -240,7 +244,7 @@ class MotionEngine:
             # neighboring periods with Catmull-Rom can flatten the beginning
             # or end of a swap and leave two rows visually attached. Use the
             # configured motion easing directly between the two row centers.
-            y=lerp(start.y, end.y, position_t),
+            y=lerp(start.y, end.y, rank_t),
             width=max(0.0, self._bounded_catmull_rom(
                 previous.width,
                 start.width,
@@ -268,7 +272,7 @@ class MotionEngine:
                 t,
             ))),
             rank_motion_state=rank_motion_state,
-            rank_motion_progress=t,
+            rank_motion_progress=rank_raw_t,
             rank_motion_target=(
                 None
                 if rank_motion_state == RANK_MOTION_STABLE
@@ -286,6 +290,7 @@ class MotionEngine:
     def _transition_sprite(self, name, start, end, raw_t):
         easing = self.animation_config.easing_function()
         t = easing(raw_t)
+        rank_raw_t, rank_t = self._rank_progress(raw_t, easing)
         value_t = t if self.animation_config.value_smoothing else raw_t
         start_val = start.value if start else 0
         end_val = end.value if end else 0
@@ -307,9 +312,10 @@ class MotionEngine:
         start_rank, end_rank = self._rank_bounds(start, end)
         start_opacity = self._sprite_opacity(start, fallback=0.0 if end else 1.0)
         end_opacity = self._sprite_opacity(end, fallback=0.0 if start else 1.0)
-        rank_motion_state = classify_rank_motion(
+        rank_motion_state = self._active_rank_motion_state(
             start_rank,
             end_rank,
+            rank_raw_t,
             start_present=start is not None,
             end_present=end is not None,
         )
@@ -319,11 +325,11 @@ class MotionEngine:
             value=lerp(start_val, end_val, value_t),
             color=color,
             x=lerp(start_x, end_x, t),
-            y=lerp(start_y, end_y, t),
+            y=lerp(start_y, end_y, rank_t),
             width=lerp(start_width, end_width, t),
             height=lerp(start_height, end_height, t),
             rank=(
-                lerp(start_rank, end_rank, t)
+                lerp(start_rank, end_rank, rank_t)
                 if start_rank is not None and end_rank is not None
                 else None
             ),
@@ -335,7 +341,7 @@ class MotionEngine:
             ),
             opacity=lerp(start_opacity, end_opacity, t),
             rank_motion_state=rank_motion_state,
-            rank_motion_progress=raw_t,
+            rank_motion_progress=rank_raw_t,
             rank_motion_target=(
                 None
                 if rank_motion_state == RANK_MOTION_STABLE
@@ -460,6 +466,36 @@ class MotionEngine:
         if sprite is None:
             return None
         return sprite.bar_available_width
+
+    def _rank_progress(self, raw_t, easing):
+        try:
+            duration = float(self.animation_config.rank_movement_duration)
+        except (TypeError, ValueError):
+            duration = 1.0
+        if not isfinite(duration):
+            duration = 1.0
+        duration = max(0.4, min(1.0, duration))
+        rank_raw_t = max(0.0, min(1.0, float(raw_t) / duration))
+        return rank_raw_t, easing(rank_raw_t)
+
+    @staticmethod
+    def _active_rank_motion_state(
+        start_rank,
+        end_rank,
+        rank_raw_t,
+        *,
+        start_present=True,
+        end_present=True,
+    ):
+        state = classify_rank_motion(
+            start_rank,
+            end_rank,
+            start_present=start_present,
+            end_present=end_present,
+        )
+        if rank_raw_t >= 1.0:
+            return RANK_MOTION_STABLE
+        return state
 
     @staticmethod
     def _clamped_progress(progress):

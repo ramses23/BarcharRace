@@ -8,6 +8,38 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_rank_movement_duration_defaults_and_validates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            legacy = root / "legacy.json"
+            legacy.write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                load_project_file(legacy).chart_config.animation.rank_movement_duration,
+                1.0,
+            )
+
+            configured = root / "configured.json"
+            configured.write_text(json.dumps({
+                "animation": {"rank_movement_duration": 0.7},
+            }), encoding="utf-8")
+            self.assertEqual(
+                load_project_file(
+                    configured
+                ).chart_config.animation.rank_movement_duration,
+                0.7,
+            )
+
+            for invalid in (True, 0.39, 1.01, "0.7"):
+                invalid_path = root / f"invalid_{invalid}.json"
+                invalid_path.write_text(json.dumps({
+                    "animation": {"rank_movement_duration": invalid},
+                }), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    ProjectFileError,
+                    "rank_movement_duration",
+                ):
+                    load_project_file(invalid_path)
+
     def test_progressive_bar_scale_defaults_roundtrip_and_validation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

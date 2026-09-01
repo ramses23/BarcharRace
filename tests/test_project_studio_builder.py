@@ -146,6 +146,7 @@ class ProjectStudioBuilderTest(unittest.TestCase):
             left_margin=360,
             rank_label_gap=340,
             motion_mode="continuous",
+            rank_movement_duration=0.7,
             category_styles={
                 "Coal": {
                     "label": "Carbon",
@@ -224,6 +225,11 @@ class ProjectStudioBuilderTest(unittest.TestCase):
         self.assertTrue(form_values["start_bars_at_zero"])
         self.assertEqual(form_values["leader_full_width_point"], 0.5)
         self.assertEqual(loaded["animation"]["motion_mode"], "continuous")
+        self.assertEqual(
+            loaded["animation"]["rank_movement_duration"],
+            0.7,
+        )
+        self.assertEqual(form_values["rank_movement_duration"], 0.7)
         self.assertEqual(loaded["categories"]["Coal"]["label"], "Carbon")
         self.assertEqual(loaded["categories"]["Coal"]["color"], "#333333")
         self.assertEqual(loaded["categories"]["Coal"]["logo"], "logos/coal.png")
