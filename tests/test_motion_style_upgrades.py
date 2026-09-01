@@ -270,7 +270,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertGreater(rank_motion_effective_height(tiny), 0)
         self.assertGreater(rank_motion_effective_height(zero), 0)
 
-    def test_rank_motion_render_paths_borders_tracks_and_nominal_geometry(self):
+    def test_rank_motion_render_paths_borders_tracks_and_final_geometry(self):
         falling = replace(
             sprite("Falling", 2, 90),
             color="#FF0000",
@@ -380,7 +380,10 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             FunFactConfig(),
             Scene(title="", bars=[rising]),
         )
-        self.assertEqual(geometry["bar_rects"][0]["height"], rising.height)
+        self.assertEqual(
+            geometry["bar_rects"][0]["height"],
+            rank_motion_effective_height(rising),
+        )
 
     def test_rank_motion_pixel_composition_puts_rising_bar_on_top(self):
         config = ChartConfig(
@@ -429,7 +432,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
 
         self.assertEqual(image.getpixel((60, 40))[:3], (0, 0, 255))
 
-    def test_rank_motion_keeps_primary_logo_at_nominal_height(self):
+    def test_rank_motion_locks_primary_logo_to_effective_height(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "logo.png"
             Image.new("RGBA", (32, 32), (20, 120, 220, 255)).save(logo_path)
@@ -471,7 +474,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                 renderer.close()
 
         self.assertEqual(rank_motion_effective_height(item), 24)
-        self.assertEqual(logo_image.shape[:2], (20, 20))
+        self.assertEqual(logo_image.shape[:2], (24, 24))
         self.assertEqual(bar_image.shape[0], 24)
 
     def test_rank_motion_swap_matches_preview_and_render_job(self):
@@ -880,14 +883,427 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             preview_bar = next(bar for bar in preview_scene.bars if bar.name == "Tiny")
             renderer = BarRenderer(config=preset.chart_config)
             try:
-                render_layout = renderer._logo_layout(render_bar)
-                preview_layout = renderer._logo_layout(preview_bar)
+                render_visual, render_logo = renderer._final_visual_geometry(
+                    render_bar
+                )
+                preview_visual, preview_logo = renderer._final_visual_geometry(
+                    preview_bar
+                )
+                render_layout = renderer._logo_layout(render_logo)
+                preview_layout = renderer._logo_layout(preview_logo)
             finally:
                 renderer.close()
 
             self.assertEqual(render_bar, preview_bar)
+            self.assertEqual(render_visual, preview_visual)
             self.assertEqual(render_layout, preview_layout)
-            self.assertEqual(render_layout["left"], render_bar.x)
+            self.assertGreaterEqual(render_visual.width, render_layout["size"])
+            self.assertEqual(render_layout["left"], render_visual.x)
+
+    def test_internal_primary_logo_floor_is_visual_only_and_asset_gated(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
+            item = BarSprite(
+                name="Tiny",
+                value=7,
+                color="#CC3300",
+                x=40,
+                y=70,
+                width=0,
+                height=40,
+                rank=3,
+                logo_path=str(logo_path),
+                bar_available_width=180,
+            )
+            for position in ("inside_left", "inside_right"):
+                for shape in ("adaptive", "circle", "square"):
+                    with self.subTest(position=position, shape=shape):
+                        renderer = BarRenderer(config=ChartConfig(
+                            width=260,
+                            height=140,
+                            dpi=72,
+                            logos_enabled=True,
+                            logo_size=100,
+                            bar_logo_position=position,
+                            bar_logo_shape=shape,
+                        ))
+                        try:
+                            visual, logo_sprite = (
+                                renderer._final_visual_geometry(item)
+                            )
+                            layout = renderer._logo_layout(logo_sprite)
+                        finally:
+                            renderer.close()
+
+                        self.assertEqual(item.width, 0)
+                        self.assertEqual(item.value, 7)
+                        self.assertEqual(visual.width, 40)
+                        self.assertEqual(layout["size"], 40)
+                        self.assertGreaterEqual(visual.width, layout["size"])
+
+            constrained = replace(item, bar_available_width=30)
+            renderer = BarRenderer(config=ChartConfig(
+                width=260,
+                height=140,
+                logos_enabled=True,
+                logo_size=100,
+                bar_logo_position="inside_right",
+            ))
+            try:
+                constrained_visual, constrained_logo = (
+                    renderer._final_visual_geometry(constrained)
+                )
+                constrained_layout = renderer._logo_layout(constrained_logo)
+            finally:
+                renderer.close()
+            self.assertEqual(constrained_visual.width, 30)
+            self.assertEqual(constrained_layout["size"], 30)
+
+            no_floor_cases = (
+                (replace(item, logo_path=None), ChartConfig(
+                    width=260, height=140, bar_logo_position="inside_right",
+                )),
+                (item, ChartConfig(
+                    width=260, height=140, logos_enabled=False,
+                    bar_logo_position="inside_right",
+                )),
+                (item, ChartConfig(
+                    width=260, height=140,
+                    bar_logo_position="outside_left",
+                )),
+                (replace(
+                    item,
+                    logo_path=None,
+                    secondary_logo_path=str(logo_path),
+                ), ChartConfig(
+                    width=260,
+                    height=140,
+                    bar_logo_position="inside_right",
+                    bar_secondary_logo_enabled=True,
+                )),
+                (replace(item, logo_path=str(logo_path.with_name("missing.png"))),
+                 ChartConfig(
+                     width=260,
+                     height=140,
+                     bar_logo_position="inside_right",
+                 )),
+            )
+            for case_item, config in no_floor_cases:
+                with self.subTest(no_floor=config.bar_logo_position):
+                    renderer = BarRenderer(config=config)
+                    try:
+                        visual, _ = renderer._final_visual_geometry(case_item)
+                    finally:
+                        renderer.close()
+                    self.assertEqual(visual.width, 0)
+
+    def test_logo_floor_transition_labels_grid_and_ratios_remain_independent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
+            config = ChartConfig(
+                width=800,
+                height=400,
+                dpi=72,
+                left_margin=100,
+                right_margin=100,
+                logos_enabled=True,
+                logo_size=100,
+                bar_logo_position="inside_right",
+                bar_appearance_mode="unified",
+                bar_value_position="outside",
+                value_grid_enabled=True,
+                value_grid_mode="dynamic",
+                start_bars_at_zero=True,
+                leader_full_width_point=0.5,
+            )
+            renderer = BarRenderer(config=config)
+            try:
+                originals = [
+                    BarSprite(
+                        name=f"Bar {width}",
+                        value=value,
+                        color="#CC3300",
+                        x=100,
+                        y=80 + (index * 50),
+                        width=width,
+                        height=40,
+                        rank=index + 1,
+                        logo_path=str(logo_path),
+                        bar_available_width=600,
+                    )
+                    for index, (width, value) in enumerate(
+                        ((0, 1), (20, 2), (40, 3), (60, 4))
+                    )
+                ]
+                visuals = [
+                    renderer._final_visual_geometry(item)[0]
+                    for item in originals
+                ]
+                label = renderer._value_label_layout(visuals[0], "1")
+            finally:
+                renderer.close()
+
+            self.assertEqual([item.width for item in originals], [0, 20, 40, 60])
+            self.assertEqual([item.width for item in visuals], [40, 40, 40, 60])
+            self.assertGreaterEqual(
+                label["x"],
+                visuals[0].x + visuals[0].width + config.value_label_gap,
+            )
+
+            data_bars = [
+                replace(originals[0], name="Leader", value=100, width=600),
+                replace(originals[1], name="Quarter", value=25, width=150),
+            ]
+            scale = BarValueScaleResolver.from_config(
+                config,
+                [data_bars, data_bars],
+            ).for_sprites(data_bars, timeline_progress=0.5)
+            scaled = scale_bar_sprites(data_bars, scale)
+            axis_with_logos = ValueAxisTracker.from_config(
+                config,
+                [data_bars],
+            ).next(data_bars)
+            axis_without_logos = ValueAxisTracker.from_config(
+                replace(config, logos_enabled=False),
+                [data_bars],
+            ).next(data_bars)
+
+            self.assertEqual(scaled[1].width / scaled[0].width, 0.25)
+            self.assertEqual(
+                [tick.x for tick in axis_with_logos.ticks],
+                [tick.x for tick in axis_without_logos.ticks],
+            )
+            self.assertEqual(axis_with_logos.scale, axis_without_logos.scale)
+
+    def test_primary_logo_geometry_locks_all_rank_motion_states(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
+            config = ChartConfig(
+                width=300,
+                height=160,
+                dpi=72,
+                logos_enabled=True,
+                logo_size=100,
+                bar_logo_position="inside_right",
+                bar_logo_shape="square",
+                bar_logo_padding=0,
+            )
+            renderer = BarRenderer(config=config)
+            try:
+                for state, expected_height in (
+                    ("stable", 20),
+                    ("rising", 24),
+                    ("falling", 16),
+                ):
+                    with self.subTest(state=state):
+                        item = BarSprite(
+                            name=state,
+                            value=100,
+                            color="#CC3300",
+                            x=40.25,
+                            y=80.25,
+                            width=120.35,
+                            height=20,
+                            rank=1,
+                            logo_path=str(logo_path),
+                            rank_motion_state=state,
+                            rank_motion_progress=0.5,
+                            bar_available_width=220,
+                        )
+                        visual, logo_sprite = (
+                            renderer._final_visual_geometry(item)
+                        )
+                        layout = renderer._logo_layout(logo_sprite)
+                        command = renderer._logo_composite_command(
+                            logo_sprite,
+                            layout=layout,
+                        )
+                        image, left, top = command
+                        bar_top = visual.y - (visual.height / 2)
+                        bar_bottom = visual.y + (visual.height / 2)
+
+                        self.assertEqual(visual.height, expected_height)
+                        self.assertAlmostEqual(
+                            layout["right"],
+                            visual.x + visual.width,
+                        )
+                        self.assertAlmostEqual(
+                            (layout["top"] + layout["bottom"]) / 2,
+                            visual.y,
+                        )
+                        self.assertAlmostEqual(layout["top"], bar_top)
+                        self.assertAlmostEqual(layout["bottom"], bar_bottom)
+                        self.assertEqual(
+                            left + image.shape[1],
+                            round(visual.x + visual.width),
+                        )
+                        self.assertEqual(top, round(bar_top))
+                        self.assertEqual(
+                            top + image.shape[0],
+                            round(bar_bottom),
+                        )
+            finally:
+                renderer.close()
+
+    def test_primary_logo_pixel_edges_lock_for_solid_gradient_and_material(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
+            modes = {
+                "solid": {
+                    "bar_appearance_mode": "simple",
+                    "bar_gradient_enabled": False,
+                },
+                "gradient": {
+                    "bar_appearance_mode": "unified",
+                    "bar_fill_type": "gradient",
+                    "bar_gradient_direction": "horizontal",
+                    "bar_gradient_color_count": 2,
+                    "bar_fill_use_category_color": True,
+                    "bar_edge_darkening": 0,
+                },
+                "material": {
+                    "bar_appearance_mode": "advanced",
+                    "bar_fill_type": "texture",
+                    "bar_texture_enabled": True,
+                },
+            }
+            for mode, options in modes.items():
+                for state in ("stable", "rising", "falling"):
+                    with self.subTest(mode=mode, state=state):
+                        config = ChartConfig(
+                            width=240,
+                            height=120,
+                            dpi=72,
+                            background_color_override="#000000",
+                            title_enabled=False,
+                            subtitle_enabled=False,
+                            source_label_enabled=False,
+                            time_label_enabled=False,
+                            category_labels_enabled=False,
+                            value_labels_enabled=False,
+                            rank_labels_enabled=False,
+                            logos_enabled=True,
+                            logo_size=100,
+                            bar_logo_position="inside_right",
+                            bar_logo_shape="square",
+                            bar_logo_padding=0,
+                            bar_logo_background_enabled=True,
+                            bar_logo_background_color="#0066FF",
+                            bar_logo_background_opacity=1,
+                            bar_logo_border_enabled=False,
+                            bar_shape="rectangle",
+                            bar_shadow_enabled=False,
+                            bar_border_enabled=False,
+                            **options,
+                        )
+                        item = BarSprite(
+                            name=state,
+                            value=100,
+                            color="#FF3300",
+                            x=40.25,
+                            y=60,
+                            width=120.35,
+                            height=20,
+                            rank=1,
+                            logo_path=str(logo_path),
+                            rank_motion_state=state,
+                            rank_motion_progress=0.5,
+                            bar_available_width=180,
+                        )
+                        renderer = BarRenderer(config=config)
+                        try:
+                            rgba = renderer.render_rgba(
+                                Scene(title="", bars=[item])
+                            )
+                            visual, logo_sprite = (
+                                renderer._final_visual_geometry(item)
+                            )
+                            layout = renderer._logo_layout(logo_sprite)
+                            command = renderer._logo_composite_command(
+                                logo_sprite,
+                                layout=layout,
+                            )
+                        finally:
+                            renderer.close()
+
+                        image = Image.frombytes(
+                            "RGBA",
+                            (config.width, config.height),
+                            rgba,
+                        )
+                        badge, left, top = command
+                        right = left + badge.shape[1]
+                        bottom = top + badge.shape[0]
+                        center_x = left + (badge.shape[1] // 2)
+                        center_y = top + (badge.shape[0] // 2)
+
+                        self.assertEqual(right, round(visual.x + visual.width))
+                        self.assertEqual(
+                            (top, bottom),
+                            (
+                                round(visual.y - (visual.height / 2)),
+                                round(visual.y + (visual.height / 2)),
+                            ),
+                        )
+                        self.assertNotEqual(
+                            image.getpixel((right - 1, center_y))[:3],
+                            (0, 0, 0),
+                        )
+                        self.assertEqual(image.getpixel((right, center_y))[:3], (0, 0, 0))
+                        self.assertNotEqual(image.getpixel((center_x, top))[:3], (0, 0, 0))
+                        self.assertEqual(image.getpixel((center_x, top - 1))[:3], (0, 0, 0))
+                        self.assertNotEqual(image.getpixel((center_x, bottom - 1))[:3], (0, 0, 0))
+                        self.assertEqual(image.getpixel((center_x, bottom))[:3], (0, 0, 0))
+
+    def test_scene_geometry_and_aspect_ratios_use_final_logo_bar_rect(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo_path = Path(temp_dir) / "logo.png"
+            Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
+            for width, height in ((1920, 1080), (1080, 1920)):
+                with self.subTest(width=width, height=height):
+                    config = ChartConfig(
+                        width=width,
+                        height=height,
+                        dpi=72,
+                        logos_enabled=True,
+                        logo_size=100,
+                        bar_logo_position="inside_right",
+                    )
+                    item = BarSprite(
+                        name="Rising",
+                        value=1,
+                        color="#CC3300",
+                        x=100,
+                        y=300,
+                        width=0,
+                        height=20,
+                        rank=1,
+                        logo_path=str(logo_path),
+                        rank_motion_state="rising",
+                        rank_motion_progress=0.5,
+                        bar_available_width=width - 200,
+                    )
+                    geometry = build_scene_geometry(
+                        config,
+                        FunFactConfig(),
+                        Scene(title="", bars=[item]),
+                    )
+                    bar = geometry["bar_rects"][0]
+                    logo = geometry["primary_logo_rects"][0]
+
+                    self.assertEqual(item.width, 0)
+                    self.assertEqual(bar["width"], 24)
+                    self.assertEqual(bar["height"], 24)
+                    self.assertEqual(logo["width"], 24)
+                    self.assertEqual(logo["height"], 24)
+                    self.assertEqual(logo["x"], bar["x"])
+                    self.assertEqual(logo["x"] + logo["width"], bar["x"] + bar["width"])
+                    self.assertEqual(logo["y"], bar["y"])
+                    self.assertEqual(logo["y"] + logo["height"], bar["y"] + bar["height"])
 
     def _project_data(self, **overrides):
         defaults = dict(

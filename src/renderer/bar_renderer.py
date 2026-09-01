@@ -25,12 +25,13 @@ from core.bar_appearance import (
     uses_vector_bar_gradient,
 )
 from core.logo_geometry import (
+    final_visual_bar_sprite,
+    primary_logo_is_inside,
     primary_logo_horizontal_bounds,
     resolved_primary_logo_size,
 )
 from core.rank_motion import (
     ordered_rank_motion_sprites,
-    visual_rank_motion_sprite,
 )
 from renderer.artists import (
     BarArtists,
@@ -399,11 +400,13 @@ class BarRenderer(TextCompositorMixin):
             visible=self.config.source_label_enabled and bool(scene.source_label),
         )
         ordered_sprites = ordered_rank_motion_sprites(scene.bars)
-        visual_sprites = [
-            visual_rank_motion_sprite(sprite)
+        visual_geometry = [
+            self._final_visual_geometry(sprite)
             for sprite in ordered_sprites
         ]
-        self._update_text_composites(replace(scene, bars=ordered_sprites))
+        visual_sprites = [visual for visual, _ in visual_geometry]
+        logo_sprites = [logo for _, logo in visual_geometry]
+        self._update_text_composites(replace(scene, bars=visual_sprites))
 
         self._ensure_bar_artist_capacity(ax, len(ordered_sprites))
 
@@ -414,7 +417,7 @@ class BarRenderer(TextCompositorMixin):
             )
             self._update_advanced_composite(visual_sprites)
 
-        self._update_logo_composite(ordered_sprites)
+        self._update_logo_composite(logo_sprites)
 
         for artists, sprite in zip(self._bar_artists, visual_sprites):
             self._update_bar_artists(artists, sprite)
@@ -427,6 +430,32 @@ class BarRenderer(TextCompositorMixin):
 
         self._update_fun_fact_overlay(scene.fun_fact)
         self._update_short_overlay(scene.short_overlay)
+
+    def _final_visual_geometry(self, sprite):
+        primary_available = False
+
+        def resolve_primary_asset(visual_sprite, logo_width):
+            nonlocal primary_available
+            pixel_size = max(1, int(round(logo_width)))
+            primary_available = (
+                self._load_logo(visual_sprite.logo_path, pixel_size)
+                is not None
+            )
+            return primary_available
+
+        visual_sprite = final_visual_bar_sprite(
+            self.config,
+            sprite,
+            primary_logo_available=resolve_primary_asset,
+        )
+        if primary_logo_is_inside(self.config, sprite) and not primary_available:
+            visual_sprite = replace(visual_sprite, logo_path=None)
+        logo_sprite = (
+            visual_sprite
+            if primary_available and primary_logo_is_inside(self.config, sprite)
+            else sprite
+        )
+        return visual_sprite, logo_sprite
 
     def _update_value_axis(self, ax, value_axis):
         if self._value_grid_collection is None:
@@ -1738,10 +1767,18 @@ class BarRenderer(TextCompositorMixin):
         if sprite.width <= 0 or sprite.height <= 0:
             return None
 
-        pixel_width = max(1, int(round(sprite.width)))
-        pixel_height = max(1, int(round(sprite.height)))
-        left = int(round(sprite.x))
-        top = int(round(sprite.y - (sprite.height / 2)))
+        if primary_logo_is_inside(self.config, sprite):
+            left = int(round(sprite.x))
+            right = int(round(sprite.x + sprite.width))
+            top = int(round(sprite.y - (sprite.height / 2)))
+            bottom = int(round(sprite.y + (sprite.height / 2)))
+            pixel_width = max(1, right - left)
+            pixel_height = max(1, bottom - top)
+        else:
+            pixel_width = max(1, int(round(sprite.width)))
+            pixel_height = max(1, int(round(sprite.height)))
+            left = int(round(sprite.x))
+            top = int(round(sprite.y - (sprite.height / 2)))
         mask = self._advanced_shape_mask(
             pixel_width,
             pixel_height,
@@ -2526,14 +2563,25 @@ class BarRenderer(TextCompositorMixin):
         if layout is None:
             return None
 
-        pixel_size = max(
-            1,
-            (
-                int(np.floor(layout["size"]))
-                if slot == "primary"
-                else int(round(layout["size"]))
-            ),
+        position = self._logo_position(slot)
+        locked_primary = (
+            slot == "primary"
+            and position in ("inside_left", "inside_right")
         )
+        if locked_primary:
+            pixel_top = int(round(layout["top"]))
+            pixel_bottom = int(round(layout["bottom"]))
+            pixel_size = max(1, pixel_bottom - pixel_top)
+        else:
+            pixel_top = int(round(layout["top"]))
+            pixel_size = max(
+                1,
+                (
+                    int(np.floor(layout["size"]))
+                    if slot == "primary"
+                    else int(round(layout["size"]))
+                ),
+            )
         image = self._load_logo(logo_path, pixel_size)
 
         if image is None:
@@ -2552,10 +2600,13 @@ class BarRenderer(TextCompositorMixin):
                 np.asarray(logo_sprite[:, :, 3], dtype=np.float32) * opacity
             )
 
+        pixel_left = int(round(layout["left"]))
+        if locked_primary and position == "inside_right":
+            pixel_left = int(round(layout["right"])) - pixel_size
         return (
             logo_sprite,
-            int(round(layout["left"])) - padding,
-            int(round(layout["top"])) - padding,
+            pixel_left - padding,
+            pixel_top - padding,
         )
 
     def _cached_logo_sprite(self, logo_path, image, size, *, slot="primary"):
@@ -3257,17 +3308,17 @@ class BarRenderer(TextCompositorMixin):
                 continue
 
             rgba = mcolors.to_rgba(sprite.color, opacity)
-            visual_sprite = visual_rank_motion_sprite(sprite)
+            visual_sprite, logo_sprite = self._final_visual_geometry(sprite)
 
             self._draw_bar_shadow(ax, visual_sprite, opacity)
 
             self._draw_bar(ax, visual_sprite, rgba)
 
             self._draw_rank_label(ax, sprite, opacity)
-            self._draw_logo(ax, sprite, opacity)
+            self._draw_logo(ax, logo_sprite, opacity)
 
             if self.config.category_labels_enabled:
-                name_layout = self._bar_label_layout(sprite)
+                name_layout = self._bar_label_layout(visual_sprite)
                 ax.text(
                     name_layout["x"],
                     name_layout["y"],
@@ -3286,7 +3337,7 @@ class BarRenderer(TextCompositorMixin):
                     sprite.value,
                     value_format=self.config.value_format,
                 )
-                value_layout = self._value_label_layout(sprite, value_text)
+                value_layout = self._value_label_layout(visual_sprite, value_text)
 
                 ax.text(
                     value_layout["x"],

@@ -2054,11 +2054,14 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                 self.assertEqual(
                     command_image.shape[:2],
                     (
-                        int(round(layout["size"])),
-                        int(round(layout["size"])),
+                        int(round(layout["bottom"])) - int(round(layout["top"])),
+                        int(round(layout["bottom"])) - int(round(layout["top"])),
                     ),
                 )
-                self.assertEqual(command_left, int(round(layout["left"])) - padding)
+                self.assertEqual(
+                    command_left,
+                    int(round(layout["right"])) - command_image.shape[1] - padding,
+                )
                 self.assertEqual(command_top, int(round(layout["top"])) - padding)
                 self.assertEqual(int(command_image[0, 0, 3]), 0)
                 self.assertGreater(int(command_image[:, :, 3].max()), 0)

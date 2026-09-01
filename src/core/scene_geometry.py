@@ -1,6 +1,9 @@
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from core.logo_geometry import (
+    final_visual_bar_sprite,
+    primary_logo_is_inside,
     primary_logo_horizontal_bounds,
     resolved_primary_logo_size,
 )
@@ -34,6 +37,27 @@ class SceneRect:
 def build_scene_geometry(chart_config, fun_fact_config, scene):
     """Describe a rendered scene in final-canvas pixels for Studio editors."""
     sprites = tuple(scene.bars or ())
+    primary_logo_available = tuple(
+        _primary_logo_file_available(sprite)
+        for sprite in sprites
+    )
+    visual_sprites = tuple(
+        final_visual_bar_sprite(
+            chart_config,
+            sprite,
+            primary_logo_available=available,
+        )
+        for sprite, available in zip(sprites, primary_logo_available)
+    )
+    logo_sprites = tuple(
+        visual if available and primary_logo_is_inside(chart_config, sprite)
+        else sprite
+        for sprite, visual, available in zip(
+            sprites,
+            visual_sprites,
+            primary_logo_available,
+        )
+    )
     canvas = SceneRect(0, 0, chart_config.width, chart_config.height)
     rows = tuple(
         SceneRect(
@@ -51,7 +75,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             max(0, sprite.width),
             sprite.height,
         )
-        for sprite in sprites
+        for sprite in visual_sprites
     )
     row_top = min((rect.y for rect in rows), default=chart_config.top_margin)
     row_bottom = max(
@@ -158,7 +182,10 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             height,
         )
 
-    primary_logos, secondary_logos = _logo_rects(chart_config, sprites)
+    primary_logos, secondary_logos = _logo_rects(
+        chart_config,
+        logo_sprites,
+    )
     return {
         "canvas": canvas.to_dict(),
         "safe_area": SceneRect(
@@ -308,6 +335,16 @@ def _logo_rects(config, sprites):
         if rect is not None:
             secondary.append(rect)
     return tuple(primary), tuple(secondary)
+
+
+def _primary_logo_file_available(sprite):
+    logo_path = getattr(sprite, "logo_path", None)
+    if not logo_path:
+        return False
+    try:
+        return Path(logo_path).is_file()
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 def _base_logo_rect(
