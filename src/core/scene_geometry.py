@@ -8,6 +8,7 @@ from core.logo_geometry import (
     resolved_primary_logo_size,
 )
 from core.display_calendar import flip_calendar_dimensions
+from core.source_text_geometry import resolve_source_text_layout
 from studio.fun_fact_layout import editorial_geometry
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_value
@@ -121,6 +122,13 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         max(0, row_bottom - row_top),
     )
 
+    source_layout = resolve_source_text_layout(
+        chart_config,
+        fun_fact_config,
+        scene.source_label,
+        time_label=scene.time_label,
+        display_calendar=scene.display_calendar,
+    )
     text_bounds = {
         "title": _text_rect(
             scene.title,
@@ -144,7 +152,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         ),
         "date": _date_rect(chart_config, scene),
         "source": _text_rect(
-            scene.source_label,
+            source_layout.fitted_text,
             chart_config.source_x,
             chart_config.source_y,
             chart_config.source_font_size,
@@ -199,6 +207,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             name: rect.to_dict()
             for name, rect in text_bounds.items()
         },
+        "source_layout": source_layout.to_dict(),
         "editorial_rect": (
             editorial_rect.to_dict() if editorial_rect is not None else None
         ),

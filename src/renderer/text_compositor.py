@@ -76,7 +76,7 @@ class TextCompositorMixin:
             ),
             (
                 (
-                    self._fit_source_label(scene.source_label)
+                    self._fit_source_label(scene.source_label, scene=scene)
                     if self.config.source_label_enabled and scene.source_label
                     else ""
                 ),

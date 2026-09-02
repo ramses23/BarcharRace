@@ -838,15 +838,6 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                 renderer.config.subtitle_font_family,
                 renderer.config.subtitle_font_weight,
             ),
-            (
-                renderer._fit_source_label(
-                    "Source: very/long/path/to/source.csv"
-                ),
-                50,
-                renderer.config.source_font_size,
-                renderer.config.source_font_family,
-                renderer.config.source_font_weight,
-            ),
         )
 
         for fitted, max_width, font_size, family, weight in cases:
@@ -863,6 +854,8 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                     ),
                     max_width,
                 )
+        source = "Source: very/long/path/to/source.csv"
+        self.assertEqual(renderer._fit_source_label(source), source)
 
     def test_fits_main_text_to_available_canvas_width(self):
         renderer = BarRenderer(
@@ -1512,7 +1505,10 @@ class BarRendererTextLayoutTest(unittest.TestCase):
         self.assertEqual(axis.text_calls[0]["text"], "2000")
         self.assertEqual(axis.text_calls[0]["fontweight"], "heavy")
         self.assertEqual(axis.text_calls[0]["zorder"], 0)
-        self.assertEqual(axis.text_calls[1]["text"], "Source:...")
+        self.assertEqual(
+            axis.text_calls[1]["text"],
+            "Source: very/long/path/to/source.csv",
+        )
         self.assertEqual(axis.text_calls[1]["fontweight"], "medium")
         self.assertEqual(axis.text_calls[1]["zorder"], 5)
 

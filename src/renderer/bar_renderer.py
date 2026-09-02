@@ -33,6 +33,7 @@ from core.logo_geometry import (
 from core.rank_motion import (
     ordered_rank_motion_sprites,
 )
+from core.source_text_geometry import resolve_source_text_layout
 from renderer.artists import (
     BarArtists,
     ImageCommandsArtist,
@@ -3981,7 +3982,7 @@ class BarRenderer(TextCompositorMixin):
             ax.text(
                 self.config.source_x,
                 self.config.source_y,
-                self._fit_source_label(scene.source_label),
+                self._fit_source_label(scene.source_label, scene=scene),
                 ha="left",
                 va="center",
                 fontsize=self.config.source_font_size,
@@ -3991,18 +3992,21 @@ class BarRenderer(TextCompositorMixin):
                 zorder=5,
             )
 
-    def _fit_source_label(self, source_label):
-        return self._fit_text(
+    def _fit_source_label(self, source_label, *, scene=None):
+        layout = resolve_source_text_layout(
+            self.config,
+            self.fun_fact_config,
             source_label,
-            max_width=self._available_text_width(
-                self.config.source_x,
-                self.config.source_max_width,
+            time_label=getattr(scene, "time_label", ""),
+            display_calendar=getattr(scene, "display_calendar", None),
+            font=self._measurement_font(
+                self.config.source_font_size,
+                self.config.source_font_family,
+                self.config.source_font_weight,
+                self.config.source_font_style,
             ),
-            font_size=self.config.source_font_size,
-            font_family=self.config.source_font_family,
-            font_weight=self.config.source_font_weight,
-            font_style=self.config.source_font_style,
         )
+        return layout.fitted_text
 
     def _available_text_width(self, x, configured_max_width):
         right_edge = self.config.width - self.config.value_label_edge_padding

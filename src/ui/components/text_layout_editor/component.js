@@ -97,6 +97,7 @@ function renderGeometry(state) {
   addRect(state, geometry.ranking_lane, "ranking-lane", "rank")
   addRect(state, geometry.category_lane, "category-lane", "category")
   addRect(state, geometry.value_lane, "value-lane", "value")
+  addRect(state, geometry.source_layout?.available_rect, "source-available", "source width")
   for (const row of geometry.row_rects || []) addRect(state, row, "bar-row", "")
   for (const bar of geometry.bar_rects || []) addRect(state, bar, "bar-extent", "")
   for (const logo of geometry.primary_logo_rects || []) addRect(state, logo, "primary-logo", "L1")

@@ -3656,7 +3656,11 @@ def _mount_text_layout_editor(
         elements["title"]["text"] = preview.scene.title or "Title"
         elements["subtitle"]["text"] = preview.scene.subtitle or "Subtitle"
         elements["date"]["text"] = preview.scene.time_label or "Date"
-        elements["source"]["text"] = preview.scene.source_label or "Source"
+        elements["source"]["text"] = (
+            geometry.get("source_layout", {}).get("fitted_text")
+            or preview.scene.source_label
+            or "Source"
+        )
         effective_date = geometry.get("effective_positions", {}).get("date")
         raw_date = {
             "x": int(preview.raw_chart_config.time_label_x),
