@@ -193,7 +193,10 @@ def _source_obstacle_candidates(
         if date_rect is not None:
             candidates.append(("date", date_rect, SOURCE_OBSTACLE_GAP))
 
-    if fun_fact_config.enabled:
+    if (
+        fun_fact_config.enabled
+        and fun_fact_config.editorial_layout_mode == "reserved"
+    ):
         left, top, width, height = editorial_geometry(
             chart_config,
             fun_fact_config,

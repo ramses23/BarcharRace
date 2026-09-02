@@ -80,7 +80,73 @@ def editorial_geometry(chart_config, fun_fact_config):
     top = fun_fact_config.editorial_card_y
     if top is None:
         top = round(chart_config.height * 0.54)
+    left, top = resolved_editorial_position(
+        chart_config,
+        fun_fact_config,
+        width,
+        height,
+        manual_left=left,
+        manual_top=top,
+    )
     return int(left), int(top), int(width), int(height)
+
+
+def editorial_safe_area(chart_config, fun_fact_config):
+    """Return deterministic final-canvas bounds used by card placement."""
+    inset = max(0, int(fun_fact_config.panel_margin))
+    return (
+        inset,
+        inset,
+        max(inset, int(chart_config.width) - inset),
+        max(inset, int(chart_config.height) - inset),
+    )
+
+
+def resolved_editorial_position(
+    chart_config,
+    fun_fact_config,
+    width,
+    height,
+    *,
+    manual_left,
+    manual_top,
+):
+    """Resolve Manual or a stable nine-point placement in canvas pixels."""
+    left_edge, top_edge, right_edge, bottom_edge = editorial_safe_area(
+        chart_config,
+        fun_fact_config,
+    )
+    mode = fun_fact_config.editorial_placement_mode
+    horizontal = {
+        "top_left": left_edge,
+        "middle_left": left_edge,
+        "bottom_left": left_edge,
+        "top_center": left_edge + ((right_edge - left_edge - width) / 2),
+        "center": left_edge + ((right_edge - left_edge - width) / 2),
+        "bottom_center": left_edge + ((right_edge - left_edge - width) / 2),
+        "top_right": right_edge - width,
+        "middle_right": right_edge - width,
+        "bottom_right": right_edge - width,
+    }
+    vertical = {
+        "top_left": top_edge,
+        "top_center": top_edge,
+        "top_right": top_edge,
+        "middle_left": top_edge + ((bottom_edge - top_edge - height) / 2),
+        "center": top_edge + ((bottom_edge - top_edge - height) / 2),
+        "middle_right": top_edge + ((bottom_edge - top_edge - height) / 2),
+        "bottom_left": bottom_edge - height,
+        "bottom_center": bottom_edge - height,
+        "bottom_right": bottom_edge - height,
+    }
+    left = horizontal.get(mode, manual_left)
+    top = vertical.get(mode, manual_top)
+    if fun_fact_config.editorial_keep_inside_safe_area:
+        max_left = max(left_edge, right_edge - width)
+        max_top = max(top_edge, bottom_edge - height)
+        left = min(max_left, max(left_edge, left))
+        top = min(max_top, max(top_edge, top))
+    return int(round(left)), int(round(top))
 
 
 def apply_fun_fact_layout(chart_config, fun_fact_config):
@@ -88,6 +154,8 @@ def apply_fun_fact_layout(chart_config, fun_fact_config):
         return chart_config
 
     validate_fun_fact_layout(chart_config, fun_fact_config)
+    if fun_fact_config.editorial_layout_mode == "overlay":
+        return chart_config
     if fun_fact_config.layout == "editorial_floating":
         if not fun_fact_config.editorial_reposition_time_label:
             return chart_config
@@ -173,6 +241,22 @@ def validate_fun_fact_layout(chart_config, fun_fact_config):
         raise FunFactLayoutError(
             "fun_facts.editorial_orientation must be 'vertical' or 'horizontal'."
         )
+    if fun_fact_config.editorial_layout_mode not in ("reserved", "overlay"):
+        raise FunFactLayoutError(
+            "fun_facts.editorial_layout_mode must be 'reserved' or 'overlay'."
+        )
+    if fun_fact_config.editorial_headline_alignment not in (
+        "left", "center", "right", "justify",
+    ) or fun_fact_config.editorial_body_alignment not in (
+        "left", "center", "right", "justify",
+    ):
+        raise FunFactLayoutError("Editorial text alignment is invalid.")
+    if fun_fact_config.editorial_placement_mode not in (
+        "manual", "top_left", "top_center", "top_right",
+        "middle_left", "center", "middle_right", "bottom_left",
+        "bottom_center", "bottom_right", "smart",
+    ):
+        raise FunFactLayoutError("Editorial placement mode is invalid.")
     if fun_fact_config.editorial_background_texture not in (
         "none", "grain", "paper", "dots", "diagonal",
     ):
@@ -210,7 +294,10 @@ def validate_fun_fact_layout(chart_config, fun_fact_config):
             raise FunFactLayoutError(
                 "The floating editorial card must remain inside the canvas."
             )
-        if left - fun_fact_config.editorial_collision_gap - chart_config.left_margin < 80:
+        if (
+            fun_fact_config.editorial_layout_mode == "reserved"
+            and left - fun_fact_config.editorial_collision_gap - chart_config.left_margin < 80
+        ):
             raise FunFactLayoutError(
                 "The floating editorial card leaves no useful bar space on intersecting rows."
             )

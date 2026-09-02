@@ -89,6 +89,7 @@ function render(state) {
   state.stage.style.setProperty("--canvas-background", state.data.theme?.background_color || "#111827")
   state.stage.replaceChildren()
   const overlay = state.data.overlay || {}
+  addOverlay(state, overlay.safe_area, "overlay-safe-area")
   for (const bar of overlay.bar_rects || []) addOverlay(state, bar, "overlay-bar")
   for (const rect of Object.values(overlay.text_bounds || {})) addOverlay(state, rect, "overlay-text")
   const card = document.createElement("div")

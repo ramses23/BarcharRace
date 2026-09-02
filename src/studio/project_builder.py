@@ -829,6 +829,13 @@ def project_form_values(project_data=None):
                 "editorial_card_y", "editorial_card_width",
                 "editorial_card_height", "editorial_image_position",
                 "editorial_collision_gap",
+                "editorial_layout_mode", "editorial_headline_alignment",
+                "editorial_body_alignment", "editorial_placement_mode",
+                "editorial_keep_inside_safe_area",
+                "editorial_background_opacity", "editorial_border_color",
+                "editorial_border_opacity", "editorial_border_width",
+                "editorial_corner_radius", "editorial_shadow_opacity",
+                "editorial_shadow_blur", "editorial_shadow_offset",
             )
         },
     }

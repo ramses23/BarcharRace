@@ -92,7 +92,7 @@ def render_project_preview(
     selector = BarSelector(config=chart_config.selection)
     layout = LayoutEngine(
         config=chart_config,
-        fun_fact_config=preset.fun_fact_config,
+        fun_fact_config=fun_fact_config,
     )
     preview_mode = _preview_mode(preview_mode, years)
 

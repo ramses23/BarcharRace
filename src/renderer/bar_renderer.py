@@ -15,7 +15,7 @@ import numpy as np
 from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
-from PIL import Image, ImageChops, ImageDraw, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
 from config.chart_config import ChartConfig
 from config.fun_fact_config import FunFactConfig
@@ -771,6 +771,16 @@ class BarRenderer(TextCompositorMixin):
             self.fun_fact_config.editorial_text_image_gap,
             self.fun_fact_config.editorial_orientation,
             self.fun_fact_config.editorial_image_position,
+            self.fun_fact_config.editorial_headline_alignment,
+            self.fun_fact_config.editorial_body_alignment,
+            self.fun_fact_config.editorial_background_opacity,
+            self.fun_fact_config.editorial_border_color,
+            self.fun_fact_config.editorial_border_opacity,
+            self.fun_fact_config.editorial_border_width,
+            self.fun_fact_config.editorial_corner_radius,
+            self.fun_fact_config.editorial_shadow_opacity,
+            self.fun_fact_config.editorial_shadow_blur,
+            self.fun_fact_config.editorial_shadow_offset,
         )
         cached = self._lru_get(self._fun_fact_panel_cache, cache_key)
         if cached is not None:
@@ -788,7 +798,11 @@ class BarRenderer(TextCompositorMixin):
         background = self._fun_fact_panel_background()
         canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
-        radius = max(12, min(28, padding))
+        radius = (
+            max(0, self.fun_fact_config.editorial_corner_radius)
+            if self.fun_fact_config.editorial_corner_radius is not None
+            else max(12, min(28, padding))
+        )
         background_mode = (
             self.fun_fact_config.editorial_background_mode
             if self.fun_fact_config.layout in ("editorial_right", "editorial_floating")
@@ -873,6 +887,8 @@ class BarRenderer(TextCompositorMixin):
             font=headline_font,
             fill=headline_color,
             spacing=headline_spacing,
+            max_width=content_width,
+            alignment=self.fun_fact_config.editorial_headline_alignment,
         )
         y += max(12, padding // 2)
 
@@ -912,6 +928,8 @@ class BarRenderer(TextCompositorMixin):
             font=body_font,
             fill=body_color,
             spacing=body_spacing,
+            max_width=content_width,
+            alignment=self.fun_fact_config.editorial_body_alignment,
         )
 
         if fact.image_path:
@@ -971,7 +989,11 @@ class BarRenderer(TextCompositorMixin):
         canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
         mode = self.fun_fact_config.editorial_background_mode
-        radius = max(12, min(28, padding))
+        radius = (
+            max(0, self.fun_fact_config.editorial_corner_radius)
+            if self.fun_fact_config.editorial_corner_radius is not None
+            else max(12, min(28, padding))
+        )
         if mode != "transparent":
             self._draw_fun_fact_background(
                 canvas, draw, fact,
@@ -1074,6 +1096,8 @@ class BarRenderer(TextCompositorMixin):
             font=headline_font,
             fill=headline_color,
             spacing=max(4, round(headline_font.size * 0.15)),
+            max_width=text_width,
+            alignment=self.fun_fact_config.editorial_headline_alignment,
         )
         y += max(8, padding // 3)
         body_line_height = self._line_height(draw, body_font)
@@ -1098,6 +1122,8 @@ class BarRenderer(TextCompositorMixin):
             font=body_font,
             fill=body_color,
             spacing=body_spacing,
+            max_width=text_width,
+            alignment=self.fun_fact_config.editorial_body_alignment,
         )
 
         if image_width:
@@ -1254,6 +1280,8 @@ class BarRenderer(TextCompositorMixin):
         font,
         fill,
         spacing,
+        max_width=None,
+        alignment="left",
     ):
         line_height = cls._line_height(draw, font)
         target_draw = draw
@@ -1261,8 +1289,40 @@ class BarRenderer(TextCompositorMixin):
         if canvas is not None:
             layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
             target_draw = ImageDraw.Draw(layer)
-        for line in lines:
-            target_draw.text((x, y), line, font=font, fill=fill)
+        max_width = max_width if max_width is not None else 0
+        for index, line in enumerate(lines):
+            line_width = float(target_draw.textlength(line, font=font))
+            line_x = float(x)
+            if alignment == "center" and max_width:
+                line_x += max(0.0, (max_width - line_width) / 2.0)
+            elif alignment == "right" and max_width:
+                line_x += max(0.0, max_width - line_width)
+            justify = (
+                alignment == "justify"
+                and max_width
+                and index < len(lines) - 1
+                and len(line.split()) > 1
+            )
+            if justify:
+                words = line.split()
+                natural_words = sum(
+                    float(target_draw.textlength(word, font=font))
+                    for word in words
+                )
+                gap = (max_width - natural_words) / (len(words) - 1)
+                normal_gap = float(target_draw.textlength(" ", font=font))
+                max_gap = normal_gap + max(18.0, float(font.size) * 0.65)
+                if normal_gap <= gap <= max_gap:
+                    cursor = line_x
+                    for word_index, word in enumerate(words):
+                        target_draw.text((cursor, y), word, font=font, fill=fill)
+                        cursor += float(target_draw.textlength(word, font=font))
+                        if word_index < len(words) - 1:
+                            cursor += gap
+                else:
+                    target_draw.text((line_x, y), line, font=font, fill=fill)
+            else:
+                target_draw.text((line_x, y), line, font=font, fill=fill)
             y += line_height + spacing
         if layer is not None:
             canvas.alpha_composite(layer)
@@ -1273,13 +1333,18 @@ class BarRenderer(TextCompositorMixin):
             self.fun_fact_config.layout in ("editorial_right", "editorial_floating")
             and self.fun_fact_config.editorial_background_color
         ):
-            return self._rgba8(self.fun_fact_config.editorial_background_color)
+            background = self._rgba8(self.fun_fact_config.editorial_background_color)
+            return self._rgba_with_opacity(
+                background,
+                self.fun_fact_config.editorial_background_opacity,
+            )
         base = np.asarray(mcolors.to_rgb(self.config.background_color), dtype=float)
         luminance = float(np.dot(base, (0.2126, 0.7152, 0.0722)))
         target = np.ones(3) if luminance < 0.5 else np.zeros(3)
         amount = 0.09 if luminance < 0.5 else 0.06
         mixed = base + ((target - base) * amount)
-        return tuple(int(round(value * 255)) for value in mixed) + (245,)
+        alpha = int(round(245 * self.fun_fact_config.editorial_background_opacity))
+        return tuple(int(round(value * 255)) for value in mixed) + (alpha,)
 
     def _draw_fun_fact_background(
         self,
@@ -1292,6 +1357,21 @@ class BarRenderer(TextCompositorMixin):
         radius,
     ):
         rectangle = (0, 0, canvas.width - 1, canvas.height - 1)
+        if self.fun_fact_config.editorial_shadow_opacity > 0:
+            shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+            shadow_mask = Image.new("L", canvas.size, 0)
+            offset = self.fun_fact_config.editorial_shadow_offset
+            ImageDraw.Draw(shadow_mask).rounded_rectangle(
+                (offset, offset, canvas.width - 1, canvas.height - 1),
+                radius=radius,
+                fill=int(round(255 * self.fun_fact_config.editorial_shadow_opacity)),
+            )
+            if self.fun_fact_config.editorial_shadow_blur > 0:
+                shadow_mask = shadow_mask.filter(
+                    ImageFilter.GaussianBlur(self.fun_fact_config.editorial_shadow_blur)
+                )
+            shadow.putalpha(shadow_mask)
+            canvas.alpha_composite(shadow)
         layer = self._fun_fact_background_material(
             canvas.width,
             canvas.height,
@@ -1306,14 +1386,22 @@ class BarRenderer(TextCompositorMixin):
         layer = layer.copy()
         layer.putalpha(ImageChops.multiply(layer.getchannel("A"), mask))
         canvas.alpha_composite(layer)
-        draw.rounded_rectangle(
-            rectangle,
-            radius=radius,
-            outline=self._rgba8(
-                fact.accent_color or self.config.resolved_title_text_color
-            ),
-            width=max(1, round(self.config.dpi / 96)),
-        )
+        border_width = max(0, int(self.fun_fact_config.editorial_border_width))
+        if border_width:
+            border = self._rgba8(
+                self.fun_fact_config.editorial_border_color
+                or fact.accent_color
+                or self.config.resolved_title_text_color
+            )
+            draw.rounded_rectangle(
+                rectangle,
+                radius=radius,
+                outline=self._rgba_with_opacity(
+                    border,
+                    self.fun_fact_config.editorial_border_opacity,
+                ),
+                width=border_width,
+            )
 
     def _fun_fact_background_material(self, width, height, background):
         rgba = np.asarray(background, dtype=np.uint8)

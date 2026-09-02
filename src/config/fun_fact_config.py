@@ -44,3 +44,16 @@ class FunFactConfig:
     editorial_card_height: int | None = None
     editorial_image_position: str = "right"
     editorial_collision_gap: int = 24
+    editorial_layout_mode: str = "reserved"
+    editorial_headline_alignment: str = "left"
+    editorial_body_alignment: str = "left"
+    editorial_placement_mode: str = "manual"
+    editorial_keep_inside_safe_area: bool = False
+    editorial_background_opacity: float = 1.0
+    editorial_border_color: str | None = None
+    editorial_border_opacity: float = 1.0
+    editorial_border_width: int = 1
+    editorial_corner_radius: int | None = None
+    editorial_shadow_opacity: float = 0.0
+    editorial_shadow_blur: int = 0
+    editorial_shadow_offset: int = 0

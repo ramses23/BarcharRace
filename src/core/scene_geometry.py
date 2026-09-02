@@ -170,16 +170,17 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             fun_fact_config,
         )
         editorial_rect = SceneRect(left, top, width, height)
-        collision_left = max(
-            0,
-            left - max(0, fun_fact_config.editorial_collision_gap),
-        )
-        collision_rect = SceneRect(
-            collision_left,
-            top,
-            width + left - collision_left,
-            height,
-        )
+        if fun_fact_config.editorial_layout_mode == "reserved":
+            collision_left = max(
+                0,
+                left - max(0, fun_fact_config.editorial_collision_gap),
+            )
+            collision_rect = SceneRect(
+                collision_left,
+                top,
+                width + left - collision_left,
+                height,
+            )
 
     primary_logos, secondary_logos = _logo_rects(
         chart_config,

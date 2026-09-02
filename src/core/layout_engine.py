@@ -225,6 +225,7 @@ class LayoutEngine:
         return (
             self.fun_fact_config.enabled
             and self.fun_fact_config.layout == "editorial_floating"
+            and self.fun_fact_config.editorial_layout_mode == "reserved"
         )
 
     def _reserves_outside_value_lane(self):

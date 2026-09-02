@@ -11,6 +11,7 @@
 .overlay-rect { border: 1px dashed; pointer-events: none; position: absolute; }
 .overlay-bar { background: rgb(78 121 167 / 18%); border-color: rgb(78 121 167 / 55%); }
 .overlay-text { border-color: rgb(236 72 153 / 35%); }
+.overlay-safe-area { border-color: rgb(34 197 94 / 65%); border-style: dotted; }
 .editorial-card-editor {
   background: var(--card-background, #111827);
   border: 2px solid var(--st-primary-color, #ff4b4b); cursor: move; outline: none; position: absolute; z-index: 3;

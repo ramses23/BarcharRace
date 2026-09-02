@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 13
+APPEARANCE_PRESET_SCHEMA_VERSION = 14
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -157,6 +157,19 @@ FUN_FACT_APPEARANCE_FIELDS = (
     "editorial_card_height",
     "editorial_image_position",
     "editorial_collision_gap",
+    "editorial_layout_mode",
+    "editorial_headline_alignment",
+    "editorial_body_alignment",
+    "editorial_placement_mode",
+    "editorial_keep_inside_safe_area",
+    "editorial_background_opacity",
+    "editorial_border_color",
+    "editorial_border_opacity",
+    "editorial_border_width",
+    "editorial_corner_radius",
+    "editorial_shadow_opacity",
+    "editorial_shadow_blur",
+    "editorial_shadow_offset",
 )
 ANIMATION_APPEARANCE_FIELDS = (
     "rank_movement_duration",
@@ -200,6 +213,14 @@ _ROOT_FIELDS_BY_VERSION = {
         "animation",
     },
     13: {
+        "schema_version",
+        "name",
+        "canvas",
+        "bars",
+        "fun_facts",
+        "animation",
+    },
+    14: {
         "schema_version",
         "name",
         "canvas",
@@ -592,8 +613,24 @@ def _validated_preset(data):
     fun_facts = None
     if schema_version >= 2:
         fun_fact_defaults = None
-        if schema_version <= 5:
+        if schema_version <= 13:
             fun_fact_defaults = {
+                "editorial_layout_mode": "reserved",
+                "editorial_headline_alignment": "left",
+                "editorial_body_alignment": "left",
+                "editorial_placement_mode": "manual",
+                "editorial_keep_inside_safe_area": False,
+                "editorial_background_opacity": 1.0,
+                "editorial_border_color": None,
+                "editorial_border_opacity": 1.0,
+                "editorial_border_width": 1,
+                "editorial_corner_radius": None,
+                "editorial_shadow_opacity": 0.0,
+                "editorial_shadow_blur": 0,
+                "editorial_shadow_offset": 0,
+            }
+        if schema_version <= 5:
+            fun_fact_defaults.update({
                 "editorial_headline_font_weight": "bold",
                 "editorial_headline_font_style": "normal",
                 "editorial_body_font_weight": "normal",
@@ -608,7 +645,7 @@ def _validated_preset(data):
                 "editorial_body_opacity": 1.0,
                 "editorial_credit_color": None,
                 "editorial_credit_opacity": 1.0,
-            }
+            })
             if schema_version == 2:
                 fun_fact_defaults.update({
                     "editorial_orientation": "vertical",

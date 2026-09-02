@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import SimpleNamespace
 
 import pandas as pd
 import streamlit as st
@@ -29,6 +30,7 @@ from studio.fun_fact_layout import (
     DEFAULT_FLOATING_CARD_HEIGHT_RATIO,
     DEFAULT_FLOATING_CARD_WIDTH_RATIO,
     DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO,
+    resolved_editorial_position,
 )
 from studio.fun_fact_loader import FunFactFileError, load_fun_fact_collection
 from studio.package_paths import (
@@ -2173,6 +2175,19 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         "editorial_card_height": _int_in_range_or_default(values.get("fun_facts_editorial_card_height"), default_card_height, 140, layout.height),
         "editorial_image_position": values.get("fun_facts_editorial_image_position", "right"),
         "editorial_collision_gap": _int_in_range_or_default(values.get("fun_facts_editorial_collision_gap"), 24, 0, layout.width),
+        "editorial_layout_mode": values.get("fun_facts_editorial_layout_mode", "reserved"),
+        "editorial_headline_alignment": values.get("fun_facts_editorial_headline_alignment", "left"),
+        "editorial_body_alignment": values.get("fun_facts_editorial_body_alignment", "left"),
+        "editorial_placement_mode": values.get("fun_facts_editorial_placement_mode", "manual"),
+        "editorial_keep_inside_safe_area": bool(values.get("fun_facts_editorial_keep_inside_safe_area", False)),
+        "editorial_background_opacity": _opacity_or_default(values.get("fun_facts_editorial_background_opacity"), 1.0),
+        "editorial_border_color": values.get("fun_facts_editorial_border_color"),
+        "editorial_border_opacity": _opacity_or_default(values.get("fun_facts_editorial_border_opacity"), 1.0),
+        "editorial_border_width": _int_in_range_or_default(values.get("fun_facts_editorial_border_width"), 1, 0, 12),
+        "editorial_corner_radius": _int_in_range_or_default(values.get("fun_facts_editorial_corner_radius"), 12, 0, 80),
+        "editorial_shadow_opacity": _opacity_or_default(values.get("fun_facts_editorial_shadow_opacity"), 0.0),
+        "editorial_shadow_blur": _int_in_range_or_default(values.get("fun_facts_editorial_shadow_blur"), 0, 0, 40),
+        "editorial_shadow_offset": _int_in_range_or_default(values.get("fun_facts_editorial_shadow_offset"), 0, 0, 30),
     }
 
 
@@ -2184,6 +2199,28 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     )
     canvas_layout = get_layout_preset(layout_preset)
     settings = _fun_fact_settings_from_values(values, layout_preset=layout_preset)
+    documentary_pending_key = _widget_key("fun_facts_documentary_overlay_pending")
+    documentary_values = {
+        "editorial_layout_mode": "overlay",
+        "editorial_headline_alignment": "center",
+        "editorial_body_alignment": "center",
+        "editorial_background_mode": "card",
+        "editorial_background_color": "#F4F1EA",
+        "editorial_background_opacity": 0.90,
+        "editorial_border_color": "#384152",
+        "editorial_border_opacity": 0.32,
+        "editorial_border_width": 1,
+        "editorial_corner_radius": 12,
+        "editorial_shadow_opacity": 0.18,
+        "editorial_shadow_blur": 8,
+        "editorial_shadow_offset": 4,
+        "editorial_headline_font_weight": "bold",
+        "panel_padding": 32,
+    }
+    if st.session_state.pop(documentary_pending_key, False):
+        settings.update(documentary_values)
+        for field, value in documentary_values.items():
+            st.session_state[_widget_key(f"fun_facts_{field}")] = value
     editorial_editor_key = _widget_key("fun_facts_editorial_layout_editor")
     editorial_event_key = f"{editorial_editor_key}_consumed_event"
     current_rect = {
@@ -2192,6 +2229,16 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "width": settings["editorial_card_width"],
         "height": settings["editorial_card_height"],
     }
+    if settings["editorial_placement_mode"] not in ("manual", "smart"):
+        resolved_x, resolved_y = resolved_editorial_position(
+            canvas_layout,
+            SimpleNamespace(**settings),
+            current_rect["width"],
+            current_rect["height"],
+            manual_left=current_rect["x"],
+            manual_top=current_rect["y"],
+        )
+        current_rect.update({"x": resolved_x, "y": resolved_y})
     editorial_state = editorial_layout_component_state(
         key=editorial_editor_key,
         rect=current_rect,
@@ -2219,6 +2266,11 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                 _widget_key(f"fun_facts_editorial_card_{field}"),
                 None,
             )
+        settings["editorial_placement_mode"] = "manual"
+        st.session_state.pop(
+            _widget_key("fun_facts_editorial_placement_mode"),
+            None,
+        )
     st.markdown("##### Source and scheduling")
     enabled = st.toggle(
         "Enable fun facts",
@@ -2294,6 +2346,37 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     editorial_editor_slot = None
     if layout in ("editorial_right", "editorial_floating"):
         with st.expander("Editorial layout", expanded=True, icon=":material/article:"):
+            st.markdown("**Layout behavior**")
+            mode_column, placement_column = st.columns(2)
+            editorial["editorial_layout_mode"] = mode_column.selectbox(
+                "Layout mode",
+                ("reserved", "overlay"),
+                index=_option_index(("reserved", "overlay"), settings["editorial_layout_mode"]),
+                format_func=lambda value: value.title(),
+                key=_widget_key("fun_facts_editorial_layout_mode"),
+                help="Overlay composes above the chart without changing bar or Source geometry.",
+            )
+            placement_options = (
+                "manual", "top_left", "top_center", "top_right",
+                "middle_left", "center", "middle_right", "bottom_left",
+                "bottom_center", "bottom_right", "smart",
+            )
+            editorial["editorial_placement_mode"] = placement_column.selectbox(
+                "Placement",
+                placement_options,
+                index=_option_index(placement_options, settings["editorial_placement_mode"]),
+                format_func=lambda value: (
+                    "Smart / Avoid Bars" if value == "smart"
+                    else value.replace("_", " ").title()
+                ),
+                disabled=layout != "editorial_floating",
+                key=_widget_key("fun_facts_editorial_placement_mode"),
+            )
+            editorial["editorial_keep_inside_safe_area"] = st.toggle(
+                "Keep inside safe area",
+                value=settings["editorial_keep_inside_safe_area"],
+                key=_widget_key("fun_facts_editorial_keep_inside_safe_area"),
+            )
             if layout == "editorial_floating":
                 st.markdown("**Card composition**")
                 orientation_column, image_side_column = st.columns(2)
@@ -2353,6 +2436,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     ),
                     step=8,
                     key=card_x_key,
+                    disabled=editorial["editorial_placement_mode"] != "manual",
                 )
                 editorial["editorial_card_y"] = position_y.number_input(
                     "Card Y",
@@ -2366,6 +2450,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     ),
                     step=8,
                     key=card_y_key,
+                    disabled=editorial["editorial_placement_mode"] != "manual",
                 )
                 editorial["editorial_collision_gap"] = st.number_input(
                     "Bar/card safety gap",
@@ -2382,6 +2467,14 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                 )
                 editorial_editor_slot = st.empty()
             st.markdown("**Card background**")
+            if st.button(
+                "Apply Documentary Overlay",
+                icon=":material/movie:",
+                key=_widget_key("fun_facts_documentary_overlay"),
+                help="Applies an original neutral documentary card appearance without changing size or position.",
+            ):
+                st.session_state[documentary_pending_key] = True
+                st.rerun()
             background_mode_column, background_color_column = st.columns(2)
             editorial["editorial_background_mode"] = background_mode_column.selectbox(
                 "Background mode", ("transparent", "solid", "card"),
@@ -2392,6 +2485,46 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                 "Background color", value=settings["editorial_background_color"] or "#111827",
                 key=_widget_key("fun_facts_editorial_background_color"),
                 disabled=editorial["editorial_background_mode"] == "transparent",
+            )
+            editorial["editorial_background_opacity"] = _opacity_percent_slider(
+                "Background opacity",
+                settings["editorial_background_opacity"],
+                1.0,
+                _widget_key("fun_facts_editorial_background_opacity"),
+                disabled=editorial["editorial_background_mode"] == "transparent",
+            )
+            border_column, radius_column = st.columns(2)
+            editorial["editorial_border_color"] = border_column.color_picker(
+                "Border color",
+                value=settings["editorial_border_color"] or "#384152",
+                key=_widget_key("fun_facts_editorial_border_color"),
+            )
+            editorial["editorial_corner_radius"] = radius_column.number_input(
+                "Corner radius", 0, 80, settings["editorial_corner_radius"],
+                key=_widget_key("fun_facts_editorial_corner_radius"),
+            )
+            border_width_column, border_opacity_column = st.columns(2)
+            editorial["editorial_border_width"] = border_width_column.number_input(
+                "Border width", 0, 12, settings["editorial_border_width"],
+                key=_widget_key("fun_facts_editorial_border_width"),
+            )
+            editorial["editorial_border_opacity"] = _opacity_percent_slider(
+                "Border opacity", settings["editorial_border_opacity"], 1.0,
+                _widget_key("fun_facts_editorial_border_opacity"),
+            )
+            shadow_opacity_column, shadow_blur_column, shadow_offset_column = st.columns(3)
+            with shadow_opacity_column:
+                editorial["editorial_shadow_opacity"] = _opacity_percent_slider(
+                    "Shadow opacity", settings["editorial_shadow_opacity"], 0.0,
+                    _widget_key("fun_facts_editorial_shadow_opacity"),
+                )
+            editorial["editorial_shadow_blur"] = shadow_blur_column.number_input(
+                "Shadow blur", 0, 40, settings["editorial_shadow_blur"],
+                key=_widget_key("fun_facts_editorial_shadow_blur"),
+            )
+            editorial["editorial_shadow_offset"] = shadow_offset_column.number_input(
+                "Shadow offset", 0, 30, settings["editorial_shadow_offset"],
+                key=_widget_key("fun_facts_editorial_shadow_offset"),
             )
             texture_column, texture_intensity_column = st.columns(2)
             texture_options = ("none", "grain", "paper", "dots", "diagonal")
@@ -2414,6 +2547,20 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             )
 
             st.markdown("**Editorial text**")
+            alignment_headline_column, alignment_body_column = st.columns(2)
+            alignment_options = ("left", "center", "right", "justify")
+            editorial["editorial_headline_alignment"] = alignment_headline_column.selectbox(
+                "Headline alignment", alignment_options,
+                index=_option_index(alignment_options, settings["editorial_headline_alignment"]),
+                format_func=str.title,
+                key=_widget_key("fun_facts_editorial_headline_alignment"),
+            )
+            editorial["editorial_body_alignment"] = alignment_body_column.selectbox(
+                "Body alignment", alignment_options,
+                index=_option_index(alignment_options, settings["editorial_body_alignment"]),
+                format_func=str.title,
+                key=_widget_key("fun_facts_editorial_body_alignment"),
+            )
             theme_settings = _resolved_theme(values)[1]
             headline_column, body_column, credit_column = st.columns(3)
             with headline_column:
@@ -3748,7 +3895,7 @@ def _mount_editorial_layout_editor(
         editorial_layout_editor(
             canvas_width=canvas_width,
             canvas_height=canvas_height,
-            rect=editor["rect"],
+            rect=(geometry.get("editorial_rect") or editor["rect"]),
             overlay=geometry,
             theme={
                 "background_color": background_color,

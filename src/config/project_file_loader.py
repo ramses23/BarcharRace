@@ -1054,6 +1054,22 @@ def _convert_fun_fact_value(key, value):
         if value not in ("transparent", "solid", "card"):
             raise ProjectFileError("Invalid editorial background mode.")
         return value
+    if key == "editorial_layout_mode":
+        if value not in ("reserved", "overlay"):
+            raise ProjectFileError("Invalid editorial layout mode.")
+        return value
+    if key in ("editorial_headline_alignment", "editorial_body_alignment"):
+        if value not in ("left", "center", "right", "justify"):
+            raise ProjectFileError(f"Fun facts field '{key}' has invalid alignment.")
+        return value
+    if key == "editorial_placement_mode":
+        if value not in (
+            "manual", "top_left", "top_center", "top_right",
+            "middle_left", "center", "middle_right", "bottom_left",
+            "bottom_center", "bottom_right", "smart",
+        ):
+            raise ProjectFileError("Invalid editorial placement mode.")
+        return value
     if key == "editorial_background_texture":
         if value not in ("none", "grain", "paper", "dots", "diagonal"):
             raise ProjectFileError("Invalid editorial background texture.")
@@ -1079,6 +1095,7 @@ def _convert_fun_fact_value(key, value):
         "editorial_headline_color",
         "editorial_body_color",
         "editorial_credit_color",
+        "editorial_border_color",
     ):
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise ProjectFileError(f"Fun facts field '{key}' must be null or a color.")
@@ -1088,6 +1105,9 @@ def _convert_fun_fact_value(key, value):
         "editorial_headline_opacity",
         "editorial_body_opacity",
         "editorial_credit_opacity",
+        "editorial_background_opacity",
+        "editorial_border_opacity",
+        "editorial_shadow_opacity",
     ):
         if (
             isinstance(value, bool)
@@ -1127,9 +1147,25 @@ def _convert_fun_fact_value(key, value):
                 "Fun facts field 'editorial_collision_gap' must be >= 0."
             )
         return value
-    if key == "editorial_reposition_time_label":
+    if key in (
+        "editorial_border_width", "editorial_shadow_blur",
+        "editorial_shadow_offset",
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError(f"Fun facts field '{key}' must be >= 0.")
+        return value
+    if key == "editorial_corner_radius":
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ProjectFileError("editorial_corner_radius must be null or >= 0.")
+        return value
+    if key in (
+        "editorial_reposition_time_label",
+        "editorial_keep_inside_safe_area",
+    ):
         if not isinstance(value, bool):
-            raise ProjectFileError("editorial_reposition_time_label must be boolean.")
+            raise ProjectFileError(f"{key} must be boolean.")
         return value
     return value
 
