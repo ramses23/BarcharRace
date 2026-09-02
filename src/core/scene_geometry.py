@@ -3,10 +3,12 @@ from pathlib import Path
 
 from core.logo_geometry import (
     final_visual_bar_sprite,
+    normalized_primary_logo_position,
     primary_logo_is_inside,
     primary_logo_horizontal_bounds,
     resolved_primary_logo_size,
 )
+from core.bar_text_geometry import resolve_value_text_geometry
 from core.display_calendar import flip_calendar_dimensions
 from core.source_text_geometry import resolve_source_text_layout
 from studio.fun_fact_layout import editorial_geometry
@@ -189,10 +191,73 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
                 height,
             )
 
-    primary_logos, secondary_logos = _logo_rects(
+    primary_logos, secondary_logos, logo_groups = _logo_rects(
         chart_config,
         logo_sprites,
     )
+    value_text_geometries = []
+    category_text_rects = []
+    bar_obstacles = []
+    for sprite, logo_group in zip(visual_sprites, logo_groups):
+        value_geometry = None
+        if (
+            chart_config.value_labels_enabled
+            and chart_config.value_text_opacity > 0
+            and sprite.opacity > 0
+        ):
+            value_geometry = resolve_value_text_geometry(
+                chart_config,
+                sprite,
+                format_value(sprite.value, chart_config.value_format),
+                inside_left_logo_extent=_rect_extent(
+                    logo_group["inside_left"]
+                ),
+                inside_right_logo_extent=_rect_extent(
+                    logo_group["inside_right"]
+                ),
+            )
+        value_rect = value_geometry.rect_dict() if value_geometry else None
+        category_rect = (
+            _category_text_rect(chart_config, sprite).to_dict()
+            if (
+                chart_config.category_labels_enabled
+                and chart_config.label_text_opacity > 0
+                and sprite.opacity > 0
+            )
+            else None
+        )
+        value_text_geometries.append(
+            {
+                "text": value_geometry.text,
+                "x": round(float(value_geometry.x), 3),
+                "y": round(float(value_geometry.y), 3),
+                "ha": value_geometry.horizontal_alignment,
+                "va": value_geometry.vertical_alignment,
+                "rect": value_rect,
+            }
+            if value_geometry
+            else None
+        )
+        category_text_rects.append(category_rect)
+        bar_obstacles.append({
+            "name": sprite.name,
+            "rank": sprite.rank,
+            "opacity": round(float(sprite.opacity), 6),
+            "bar": SceneRect(
+                sprite.x,
+                sprite.y - (sprite.height / 2),
+                max(0, sprite.width),
+                sprite.height,
+            ).to_dict(),
+            "category_text": category_rect,
+            "value_text": value_rect,
+            "primary_logos": [
+                rect.to_dict() for rect in logo_group["primary"]
+            ],
+            "secondary_logos": [
+                rect.to_dict() for rect in logo_group["secondary"]
+            ],
+        })
     return {
         "canvas": canvas.to_dict(),
         "safe_area": SceneRect(
@@ -211,6 +276,9 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         "bar_value_scale": _bar_value_scale_geometry(scene.bar_value_scale),
         "primary_logo_rects": [rect.to_dict() for rect in primary_logos],
         "secondary_logo_rects": [rect.to_dict() for rect in secondary_logos],
+        "category_text_rects": category_text_rects,
+        "value_text_geometries": value_text_geometries,
+        "bar_obstacles": bar_obstacles,
         "text_bounds": {
             name: rect.to_dict()
             for name, rect in text_bounds.items()
@@ -320,11 +388,16 @@ def _subtitle_x(config):
 
 def _logo_rects(config, sprites):
     if not config.logos_enabled:
-        return (), ()
+        return (), (), tuple(_empty_logo_group() for _ in sprites)
     primary = []
     secondary = []
+    groups = []
     for sprite in sprites:
+        group = _empty_logo_group()
         primary_rect = None
+        primary_position = normalized_primary_logo_position(
+            config.bar_logo_position
+        )
         if sprite.logo_path:
             primary_size = resolved_primary_logo_size(
                 config, sprite, config.logo_size
@@ -342,18 +415,23 @@ def _logo_rects(config, sprites):
                 )
             if primary_rect is not None:
                 primary.append(primary_rect)
+                group["primary"].append(primary_rect)
+                group.setdefault(primary_position, []).append(primary_rect)
         if not config.bar_secondary_logo_enabled or not sprite.secondary_logo_path:
+            groups.append(group)
             continue
         if config.bar_secondary_logo_layout == "badge" and primary_rect is not None:
             size = min(config.bar_secondary_logo_size, primary_rect.width)
-            secondary.append(
-                SceneRect(
-                    primary_rect.right - size,
-                    primary_rect.bottom - size,
-                    size,
-                    size,
-                )
+            rect = SceneRect(
+                primary_rect.right - size,
+                primary_rect.bottom - size,
+                size,
+                size,
             )
+            secondary.append(rect)
+            group["secondary"].append(rect)
+            group.setdefault(primary_position, []).append(rect)
+            groups.append(group)
             continue
         position = (
             config.bar_secondary_logo_position
@@ -369,7 +447,80 @@ def _logo_rects(config, sprites):
         )
         if rect is not None:
             secondary.append(rect)
-    return tuple(primary), tuple(secondary)
+            group["secondary"].append(rect)
+            normalized = normalized_primary_logo_position(position)
+            group.setdefault(normalized, []).append(rect)
+        groups.append(group)
+    return tuple(primary), tuple(secondary), tuple(groups)
+
+
+def _empty_logo_group():
+    return {
+        "primary": [],
+        "secondary": [],
+        "inside_left": [],
+        "inside_right": [],
+        "outside_left": [],
+    }
+
+
+def _rect_extent(rects):
+    if not rects:
+        return None
+    return min(rect.x for rect in rects), max(rect.right for rect in rects)
+
+
+def _category_text_rect(config, sprite):
+    font_height = max(
+        1.0,
+        float(config.label_font_size) * float(config.dpi) / 72.0,
+    )
+    border = (
+        max(0.0, float(config.bar_label_border_width))
+        if config.bar_label_border_enabled
+        else 0.0
+    )
+    shadow_x = (
+        float(config.bar_label_shadow_offset_x)
+        if config.bar_label_shadow_enabled
+        else 0.0
+    )
+    shadow_y = (
+        float(config.bar_label_shadow_offset_y)
+        if config.bar_label_shadow_enabled
+        else 0.0
+    )
+    left_padding = border + max(0.0, -shadow_x)
+    right_padding = border + max(0.0, shadow_x)
+    top_padding = border + max(0.0, -shadow_y)
+    bottom_padding = border + max(0.0, shadow_y)
+    position = {
+        "left": "outside_left",
+        "inside": "inside_left",
+        "outside": "outside_right",
+    }.get(config.bar_label_position, config.bar_label_position)
+    if position == "outside_right":
+        left = sprite.x + sprite.width
+        right = config.width - config.value_label_edge_padding
+    elif position in ("inside_left", "inside_center", "inside_right", "above"):
+        left = sprite.x
+        right = sprite.x + sprite.width
+    else:
+        left = config.label_min_x
+        right = sprite.x
+    center_y = sprite.y + config.bar_label_offset_y
+    if position == "above":
+        bottom = sprite.y - (sprite.height / 2) - 7 + config.bar_label_offset_y
+        top = bottom - font_height
+    else:
+        top = center_y - (font_height / 2.0)
+        bottom = center_y + (font_height / 2.0)
+    return SceneRect(
+        left - left_padding,
+        top - top_padding,
+        max(0.0, right - left) + left_padding + right_padding,
+        max(1.0, bottom - top) + top_padding + bottom_padding,
+    )
 
 
 def _primary_logo_file_available(sprite):

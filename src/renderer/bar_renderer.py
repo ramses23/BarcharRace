@@ -33,6 +33,7 @@ from core.logo_geometry import (
 from core.rank_motion import (
     ordered_rank_motion_sprites,
 )
+from core.bar_text_geometry import resolve_value_text_geometry
 from core.source_text_geometry import resolve_source_text_layout
 from renderer.artists import (
     BarArtists,
@@ -3790,148 +3791,17 @@ class BarRenderer(TextCompositorMixin):
         return min_x
 
     def _value_label_layout(self, sprite, value_text):
-        text = fit_text_to_width(
+        return resolve_value_text_geometry(
+            self.config,
+            sprite,
             value_text,
-            max_width=self._value_label_max_width(),
-            font=self._measurement_font(
-                self.config.value_font_size,
-                self.config.value_font_family,
-                self.config.value_font_weight,
-                self.config.value_font_style,
+            inside_left_logo_extent=self._logo_group_extent(
+                sprite, "inside_left"
             ),
-        )
-        text_width = self._value_label_text_width(text)
-        max_right = self.config.width - self.config.value_label_edge_padding
-        outside_x = sprite.x + sprite.width + self.config.value_label_gap
-        right_logos = self._logo_group_extent(sprite, "inside_right")
-        if right_logos:
-            outside_x = max(
-                outside_x,
-                right_logos[1] + self.config.logo_label_gap,
-            )
-
-        if self._uses_configurable_content():
-            position = self.config.bar_value_position
-            custom_color = (
-                self.config.value_text_color
-                if self.config.bar_value_use_theme_color
-                else self.config.bar_value_color
-            )
-
-            if position == "inside":
-                inside_x = sprite.x + sprite.width - self.config.value_label_gap
-
-                if right_logos:
-                    inside_x = min(
-                        inside_x,
-                        right_logos[0] - self.config.logo_label_gap,
-                    )
-
-                left_limit = sprite.x + self.config.value_label_inside_padding
-                left_logos = self._logo_group_extent(sprite, "inside_left")
-                if left_logos:
-                    left_limit = max(
-                        left_limit,
-                        left_logos[1] + self.config.logo_label_gap,
-                    )
-                if inside_x - text_width < left_limit:
-                    fits_outside = outside_x + text_width <= max_right
-                    return {
-                        "text": text,
-                        "x": outside_x if fits_outside else max_right,
-                        "y": sprite.y,
-                        "ha": "left" if fits_outside else "right",
-                        "va": "center",
-                        "color": custom_color or self.config.resolved_value_text_color,
-                    }
-
-                return {
-                    "text": text,
-                    "x": inside_x,
-                    "y": sprite.y,
-                    "ha": "right",
-                    "va": "center",
-                    "color": custom_color or self._value_label_inside_color(),
-                }
-
-            if position == "above":
-                return {
-                    "text": text,
-                    "x": min(max_right, sprite.x + sprite.width),
-                    "y": sprite.y - (sprite.height / 2) - 7,
-                    "ha": "right",
-                    "va": "bottom",
-                    "color": custom_color or self.config.resolved_value_text_color,
-                }
-
-            if position == "outside":
-                stacked = self.config.bar_label_position in ("outside", "outside_right")
-                available_width = max(0.0, max_right - outside_x)
-                outside_text = fit_text_to_width(
-                    text,
-                    max_width=available_width,
-                    font=self._measurement_font(
-                        self.config.value_font_size,
-                        self.config.value_font_family,
-                        self.config.value_font_weight,
-                        self.config.value_font_style,
-                    ),
-                )
-                return {
-                    "text": outside_text,
-                    "x": outside_x,
-                    "y": sprite.y + ((sprite.height * 0.2) if stacked else 0),
-                    "ha": "left",
-                    "va": "center",
-                    "color": custom_color or self.config.resolved_value_text_color,
-                }
-
-        if outside_x + text_width <= max_right:
-            layout = {
-                "text": text,
-                "x": outside_x,
-                "y": sprite.y + (
-                    (sprite.height * 0.2)
-                    if (
-                        self._uses_configurable_content()
-                        and self.config.bar_label_position in ("outside", "outside_right")
-                    )
-                    else 0
-                ),
-                "ha": "left",
-                "color": self.config.resolved_value_text_color,
-            }
-            return self._custom_value_color(layout)
-
-        inside_x = sprite.x + sprite.width - self.config.value_label_gap
-
-        right_logos = self._logo_group_extent(sprite, "inside_right")
-        if right_logos:
-            inside_x = min(
-                inside_x,
-                right_logos[0] - self.config.logo_label_gap,
-            )
-        required_inside_width = text_width + (self.config.value_label_inside_padding * 2)
-
-        if (
-            self.config.bar_shape != "lollipop"
-            and sprite.width >= required_inside_width
-        ):
-            layout = {
-                "text": text,
-                "x": inside_x,
-                "ha": "right",
-                "color": self._value_label_inside_color(),
-            }
-            return self._custom_value_color(layout)
-
-        layout = {
-            "text": text,
-            "x": max_right,
-            "ha": "right",
-            "color": self.config.resolved_value_text_color,
-        }
-        return self._custom_value_color(layout)
+            inside_right_logo_extent=self._logo_group_extent(
+                sprite, "inside_right"
+            ),
+        ).layout_dict()
 
     def _custom_value_color(self, layout):
         if (
