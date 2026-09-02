@@ -94,6 +94,15 @@ class ChartConfig:
     bar_label_alignment: str = "auto"
     bar_label_offset_x: int = 0
     bar_label_offset_y: int = 0
+    bar_label_border_enabled: bool = False
+    bar_label_border_color: str = "#000000"
+    bar_label_border_opacity: float = 1.0
+    bar_label_border_width: float = 1.0
+    bar_label_shadow_enabled: bool = False
+    bar_label_shadow_color: str = "#000000"
+    bar_label_shadow_opacity: float = 0.45
+    bar_label_shadow_offset_x: int = 1
+    bar_label_shadow_offset_y: int = 1
     bar_value_position: str = "auto"
     bar_value_use_theme_color: bool = True
     bar_value_color: str = "#FFFFFF"

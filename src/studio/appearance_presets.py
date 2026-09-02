@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 12
+APPEARANCE_PRESET_SCHEMA_VERSION = 13
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -192,6 +192,14 @@ _ROOT_FIELDS_BY_VERSION = {
         "animation",
     },
     12: {
+        "schema_version",
+        "name",
+        "canvas",
+        "bars",
+        "fun_facts",
+        "animation",
+    },
+    13: {
         "schema_version",
         "name",
         "canvas",
@@ -547,6 +555,18 @@ def _validated_preset(data):
         missing_defaults=canvas_defaults or None,
     )
     bar_defaults = {}
+    if schema_version <= 12:
+        bar_defaults.update({
+            "bar_label_border_enabled": False,
+            "bar_label_border_color": "#000000",
+            "bar_label_border_opacity": 1.0,
+            "bar_label_border_width": 1.0,
+            "bar_label_shadow_enabled": False,
+            "bar_label_shadow_color": "#000000",
+            "bar_label_shadow_opacity": 0.45,
+            "bar_label_shadow_offset_x": 1,
+            "bar_label_shadow_offset_y": 1,
+        })
     if schema_version <= 8:
         bar_defaults.update({
             "start_bars_at_zero": False,

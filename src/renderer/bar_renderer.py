@@ -1489,6 +1489,7 @@ class BarRenderer(TextCompositorMixin):
             color=self.config.resolved_label_text_color,
             zorder=4,
         )
+        name_label.set_path_effects(self._category_path_effects())
         value_label = ax.text(
             0,
             0,
@@ -3190,6 +3191,36 @@ class BarRenderer(TextCompositorMixin):
 
         return effects
 
+    def _category_path_effects(self):
+        effects = []
+
+        if self.config.bar_label_shadow_enabled:
+            effects.append(path_effects.SimpleLineShadow(
+                offset=(
+                    self.config.bar_label_shadow_offset_x,
+                    -self.config.bar_label_shadow_offset_y,
+                ),
+                shadow_color=self.config.bar_label_shadow_color,
+                alpha=self.config.bar_label_shadow_opacity,
+            ))
+
+        if (
+            self.config.bar_label_border_enabled
+            and self.config.bar_label_border_width > 0
+        ):
+            effects.append(path_effects.Stroke(
+                linewidth=self.config.bar_label_border_width,
+                foreground=mcolors.to_rgba(
+                    self.config.bar_label_border_color,
+                    self.config.bar_label_border_opacity,
+                ),
+            ))
+
+        if effects:
+            effects.append(path_effects.Normal())
+
+        return effects
+
     def _set_bar_artists_visible(self, artists, visible):
         for artist in artists.all():
             artist.set_visible(visible)
@@ -3332,8 +3363,9 @@ class BarRenderer(TextCompositorMixin):
                     fontsize=self.config.label_font_size,
                     fontfamily=self._font_family(self.config.label_font_family),
                     color=name_layout["color"],
-                    alpha=opacity,
+                    alpha=opacity * self.config.label_text_opacity,
                     zorder=4,
+                    path_effects=self._category_path_effects(),
                 )
 
             if self.config.value_labels_enabled:

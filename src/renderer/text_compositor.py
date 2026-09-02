@@ -148,6 +148,21 @@ class TextCompositorMixin:
                     font_style=self.config.label_font_style,
                     color=name_layout["color"],
                     opacity=opacity * self.config.label_text_opacity,
+                    stroke_width=(
+                        self.config.bar_label_border_width
+                        if self.config.bar_label_border_enabled
+                        else 0
+                    ),
+                    stroke_color=self.config.bar_label_border_color,
+                    stroke_opacity=self.config.bar_label_border_opacity,
+                    shadow_offset=(
+                        self.config.bar_label_shadow_offset_x,
+                        self.config.bar_label_shadow_offset_y,
+                    )
+                    if self.config.bar_label_shadow_enabled
+                    else None,
+                    shadow_color=self.config.bar_label_shadow_color,
+                    shadow_opacity=self.config.bar_label_shadow_opacity,
                 )
                 if command is not None:
                     bar_commands.append(command)
@@ -208,6 +223,7 @@ class TextCompositorMixin:
         opacity=1.0,
         stroke_width=0.0,
         stroke_color="#000000",
+        stroke_opacity=1.0,
         shadow_offset=None,
         shadow_color="#000000",
         shadow_opacity=0.0,
@@ -226,6 +242,7 @@ class TextCompositorMixin:
             color=color,
             stroke_width=stroke_width,
             stroke_color=stroke_color,
+            stroke_opacity=stroke_opacity,
             shadow_offset=shadow_offset,
             shadow_color=shadow_color,
             shadow_opacity=shadow_opacity,
@@ -257,6 +274,7 @@ class TextCompositorMixin:
         color,
         stroke_width,
         stroke_color,
+        stroke_opacity=1.0,
         shadow_offset,
         shadow_color,
         shadow_opacity,
@@ -276,7 +294,7 @@ class TextCompositorMixin:
                 for value in shadow_offset
             )
         color_rgba = self._rgba8(color)
-        stroke_rgba = self._rgba8(stroke_color)
+        stroke_rgba = self._rgba8(stroke_color, alpha=stroke_opacity)
         shadow_rgba = self._rgba8(shadow_color, alpha=shadow_opacity)
         cache_key = (
             text,

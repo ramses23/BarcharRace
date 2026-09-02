@@ -239,6 +239,26 @@ class BarStyleEditorTest(unittest.TestCase):
             "Category text position",
         )
 
+        enabled_category = {
+            descriptor["field"]: descriptor
+            for descriptor in visible_bar_style_fields({
+                "bar_label_border_enabled": True,
+                "bar_label_shadow_enabled": True,
+            })
+            if descriptor["field"].startswith("bar_label_")
+        }
+        for field in (
+            "bar_label_border_color",
+            "bar_label_border_opacity",
+            "bar_label_border_width",
+            "bar_label_shadow_color",
+            "bar_label_shadow_opacity",
+            "bar_label_shadow_offset_x",
+            "bar_label_shadow_offset_y",
+        ):
+            self.assertIn(field, enabled_category)
+            self.assertEqual(enabled_category[field]["group"], "Category text")
+
         visible_primary_fields = {
             field["field"]
             for field in visible_bar_style_fields({
@@ -288,6 +308,10 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertIn("state.settings.logo_size", javascript)
         self.assertIn("state.settings.bar_secondary_logo_size", javascript)
         self.assertIn("renderActiveSummary(state)", javascript)
+        self.assertIn("bar_label_border_enabled", javascript)
+        self.assertIn("webkitTextStroke", javascript)
+        self.assertIn("bar_label_shadow_enabled", javascript)
+        self.assertIn("name.style.textShadow", javascript)
         self.assertIn('bar_appearance_mode = "unified"', javascript)
         self.assertNotIn('for (const value of ["simple", "advanced"])', javascript)
         self.assertIn('setStateValue("settings"', javascript)

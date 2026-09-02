@@ -91,6 +91,15 @@ DEFAULT_BAR_STYLE = {
     "bar_label_alignment": "auto",
     "bar_label_offset_x": 0,
     "bar_label_offset_y": 0,
+    "bar_label_border_enabled": False,
+    "bar_label_border_color": "#000000",
+    "bar_label_border_opacity": 1.0,
+    "bar_label_border_width": 1.0,
+    "bar_label_shadow_enabled": False,
+    "bar_label_shadow_color": "#000000",
+    "bar_label_shadow_opacity": 0.45,
+    "bar_label_shadow_offset_x": 1,
+    "bar_label_shadow_offset_y": 1,
     "bar_value_position": "auto",
     "bar_value_use_theme_color": True,
     "bar_value_color": "#FFFFFF",
@@ -161,6 +170,8 @@ _BOOLEAN_FIELDS = (
     "bar_secondary_logo_border_enabled",
     "bar_secondary_logo_background_enabled",
     "bar_value_use_theme_color",
+    "bar_label_border_enabled",
+    "bar_label_shadow_enabled",
     "bar_value_border_enabled",
     "bar_value_shadow_enabled",
 )
@@ -177,6 +188,8 @@ _COLOR_FIELDS = (
     "bar_secondary_logo_border_color",
     "bar_secondary_logo_background_color",
     "bar_value_color",
+    "bar_label_border_color",
+    "bar_label_shadow_color",
     "bar_value_border_color",
     "bar_value_shadow_color",
 )
@@ -210,6 +223,9 @@ _FLOAT_BOUNDS = {
     "bar_secondary_logo_padding": (0.0, 20.0),
     "bar_secondary_logo_border_width": (0.0, 8.0),
     "bar_secondary_logo_background_opacity": (0.0, 1.0),
+    "bar_label_border_opacity": (0.0, 1.0),
+    "bar_label_border_width": (0.0, 8.0),
+    "bar_label_shadow_opacity": (0.0, 1.0),
     "bar_value_border_width": (0.0, 8.0),
 }
 _INTEGER_BOUNDS = {
@@ -218,6 +234,8 @@ _INTEGER_BOUNDS = {
     "bar_shadow_offset_y": (-40, 40),
     "bar_value_shadow_offset_x": (-20, 20),
     "bar_value_shadow_offset_y": (-20, 20),
+    "bar_label_shadow_offset_x": (-20, 20),
+    "bar_label_shadow_offset_y": (-20, 20),
     "bar_label_offset_x": (-500, 500),
     "bar_label_offset_y": (-500, 500),
     "logo_size": (0, 100),
@@ -283,6 +301,15 @@ _CATEGORY_TEXT_FIELDS = {
     "bar_label_alignment",
     "bar_label_offset_x",
     "bar_label_offset_y",
+    "bar_label_border_enabled",
+    "bar_label_border_color",
+    "bar_label_border_opacity",
+    "bar_label_border_width",
+    "bar_label_shadow_enabled",
+    "bar_label_shadow_color",
+    "bar_label_shadow_opacity",
+    "bar_label_shadow_offset_x",
+    "bar_label_shadow_offset_y",
 }
 
 
@@ -356,6 +383,19 @@ def _bar_style_group(field):
 
 def _bar_style_field_visible(field, group, settings):
     if group == "Category text":
+        if field in {
+            "bar_label_border_color",
+            "bar_label_border_opacity",
+            "bar_label_border_width",
+        }:
+            return settings["bar_label_border_enabled"]
+        if field in {
+            "bar_label_shadow_color",
+            "bar_label_shadow_opacity",
+            "bar_label_shadow_offset_x",
+            "bar_label_shadow_offset_y",
+        }:
+            return settings["bar_label_shadow_enabled"]
         return True
     if group == "Frame":
         if field in {"bar_border_color", "bar_border_width"}:
@@ -447,6 +487,15 @@ def _bar_style_label(field):
         "bar_label_alignment": "Category text alignment",
         "bar_label_offset_x": "Category text offset X",
         "bar_label_offset_y": "Category text offset Y",
+        "bar_label_border_enabled": "Border enabled",
+        "bar_label_border_color": "Border color",
+        "bar_label_border_opacity": "Border opacity",
+        "bar_label_border_width": "Border width",
+        "bar_label_shadow_enabled": "Shadow enabled",
+        "bar_label_shadow_color": "Shadow color",
+        "bar_label_shadow_opacity": "Shadow opacity",
+        "bar_label_shadow_offset_x": "Shadow offset X",
+        "bar_label_shadow_offset_y": "Shadow offset Y",
     }
     if field in category_text_labels:
         return category_text_labels[field]

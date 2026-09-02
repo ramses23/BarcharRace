@@ -1,6 +1,13 @@
 const instances = new WeakMap()
 const clone = value => JSON.parse(JSON.stringify(value))
 
+function colorWithOpacity(color, opacity) {
+  const hex = String(color || "#000000").replace("#", "")
+  const value = Number.parseInt(hex, 16)
+  const alpha = Math.max(0, Math.min(1, Number(opacity)))
+  return `rgb(${(value >> 16) & 255} ${(value >> 8) & 255} ${value & 255} / ${alpha})`
+}
+
 function buildInstance(parentElement) {
   const root = document.createElement("div")
   root.className = "bar-editor"
@@ -88,6 +95,8 @@ function renderActiveSummary(state) {
   if (s.bar_outer_glow_enabled || Number(s.bar_inner_glow_opacity) > 0) items.push("glow")
   if (s.bar_shine_enabled) items.push("shine")
   if (s.bar_track_enabled) items.push("track")
+  if (s.bar_label_border_enabled) items.push("label border")
+  if (s.bar_label_shadow_enabled) items.push("label shadow")
   items.push(`logo ${s.bar_logo_position.replaceAll("_", " ")}`)
   if (s.bar_secondary_logo_enabled) items.push(`second logo ${s.bar_secondary_logo_layout.replaceAll("_", " ")}`)
   items.push(`labels ${s.bar_label_position.replaceAll("_", " ")}`)
@@ -127,6 +136,12 @@ function renderPreview(state) {
     const name = document.createElement("span")
     name.className = "bar-preview-name"
     name.textContent = "Category"
+    name.style.webkitTextStroke = state.settings.bar_label_border_enabled
+      ? `${state.settings.bar_label_border_width}px ${colorWithOpacity(state.settings.bar_label_border_color, state.settings.bar_label_border_opacity)}`
+      : "0 transparent"
+    name.style.textShadow = state.settings.bar_label_shadow_enabled
+      ? `${state.settings.bar_label_shadow_offset_x}px ${state.settings.bar_label_shadow_offset_y}px 0 ${colorWithOpacity(state.settings.bar_label_shadow_color, state.settings.bar_label_shadow_opacity)}`
+      : "none"
     const track = document.createElement("div")
     track.className = "bar-preview-track"
     const fill = document.createElement("div")
