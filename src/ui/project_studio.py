@@ -3192,7 +3192,8 @@ def _canvas_text_section(
         if date_style == "flip_calendar":
             st.caption(
                 "YEAR, MONTH, and DAY are always visible. Position uses the "
-                "existing Date X/Y controls; Date opacity affects the whole unit."
+                "existing Date X/Y controls. Flip text opacity affects only "
+                "calendar text; Card opacity controls the mechanical structure."
             )
             scale_column, duration_column, radius_column = st.columns(3)
             with scale_column:
@@ -3432,8 +3433,20 @@ def _canvas_text_section(
                 key=_widget_key("time_label_text_color"),
             )
             time_label_opacity = _opacity_percent_slider(
-                "Date opacity", values.get("time_label_opacity"), 0.22,
+                (
+                    "Flip text opacity"
+                    if date_style == "flip_calendar"
+                    else "Date opacity"
+                ),
+                values.get("time_label_opacity"),
+                0.22,
                 _widget_key("time_label_opacity"),
+                help=(
+                    "Controls YEAR, MONTH, and DAY text only."
+                    if date_style == "flip_calendar"
+                    else "Base text opacity. Animation and fade opacity are "
+                    "multiplied afterward."
+                ),
             )
 
         with source_column:

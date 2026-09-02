@@ -221,17 +221,26 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         card_opacity = next(
             control for control in app.slider if control.label == "Card opacity"
         )
+        flip_text_opacity = next(
+            control
+            for control in app.slider
+            if control.label == "Flip text opacity"
+        )
 
         self.assertEqual(card_opacity.value, 100)
         self.assertEqual(card_opacity.min, 0)
         self.assertEqual(card_opacity.max, 100)
         self.assertEqual(card_opacity.step, 5)
+        self.assertEqual(flip_text_opacity.value, 22)
+        self.assertNotIn("Date opacity", {control.label for control in app.slider})
         card_opacity.set_value(55)
+        flip_text_opacity.set_value(65)
         app.run()
 
         self.assertFalse(app.exception)
         project_data = json.loads(app.json[0].value)
         self.assertEqual(project_data["chart"]["flip_calendar_card_opacity"], 0.55)
+        self.assertEqual(project_data["chart"]["time_label_opacity"], 0.65)
         self.assertEqual(project_data["chart"]["date_style"], "flip_calendar")
 
     def test_appearance_presets_save_apply_and_delete_current_visuals(self):

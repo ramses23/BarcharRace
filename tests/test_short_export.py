@@ -564,6 +564,7 @@ class ShortExportTest(unittest.TestCase):
                 title_enabled=False,
                 subtitle_enabled=False,
                 time_label_font_size=70,
+                time_label_opacity=0.65,
                 source_font_size=13,
                 logos_enabled=False,
                 value_grid_enabled=True,
@@ -594,6 +595,7 @@ class ShortExportTest(unittest.TestCase):
                     "title_enabled": chart.title_enabled,
                     "subtitle_enabled": chart.subtitle_enabled,
                     "time_label_font_size": chart.time_label_font_size,
+                    "time_label_opacity": chart.time_label_opacity,
                     "source_font_size": chart.source_font_size,
                     "logos_enabled": chart.logos_enabled,
                     "value_grid_enabled": chart.value_grid_enabled,
@@ -677,6 +679,11 @@ class ShortExportTest(unittest.TestCase):
                 render_config.flip_calendar_card_opacity,
             )
             self.assertEqual(preview_config.flip_calendar_card_opacity, 0.55)
+            self.assertEqual(
+                preview_config.time_label_opacity,
+                render_config.time_label_opacity,
+            )
+            self.assertEqual(preview_config.time_label_opacity, 0.65)
 
     def test_short_preview_renders_real_vertical_canvas_with_intro(self):
         with tempfile.TemporaryDirectory() as temp_dir:

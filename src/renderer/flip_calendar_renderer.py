@@ -1,7 +1,8 @@
 from collections import OrderedDict
+import math
 
 import numpy as np
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageEnhance, ImageFont
 
 from core.display_calendar import flip_calendar_dimensions
 
@@ -61,14 +62,24 @@ class FlipCalendarRenderer:
         day_left = month_width + gap
         radius = int(round(config.flip_calendar_corner_radius * scale * aa))
         border_width = max(1, int(round(1.2 * scale * aa)))
+        card_opacity = _clamped_opacity(config.flip_calendar_card_opacity)
+        text_opacity = _clamped_opacity(config.time_label_opacity)
         background = _with_opacity(
             _rgba(config.flip_calendar_card_background),
-            config.flip_calendar_card_opacity,
+            card_opacity,
         )
-        border = _rgba(config.flip_calendar_border_color)
-        text_color = _rgba(config.flip_calendar_text_color)
+        border = _with_opacity(
+            _rgba(config.flip_calendar_border_color),
+            card_opacity,
+        )
+        text_color = _with_opacity(
+            _rgba(config.flip_calendar_text_color),
+            text_opacity,
+        )
         shadow = (0, 0, 0, int(round(
-            255 * max(0.0, min(1.0, config.flip_calendar_shadow_opacity))
+            255
+            * _clamped_opacity(config.flip_calendar_shadow_opacity)
+            * card_opacity
         )))
         specs = (
             ("YEAR", state.year, (0, 0, canvas.width, year_height)),
@@ -92,11 +103,7 @@ class FlipCalendarRenderer:
                 aa=aa,
             )
 
-        opacity = max(0.0, min(1.0, float(config.time_label_opacity)))
         canvas = canvas.resize((width, height), Image.Resampling.LANCZOS)
-        if opacity < 0.999:
-            alpha = np.asarray(canvas.getchannel("A"), dtype=np.float32)
-            canvas.putalpha(Image.fromarray(np.uint8(alpha * opacity)))
         return np.array(
             np.asarray(canvas)[::-1],
             dtype=np.uint8,
@@ -135,17 +142,10 @@ class FlipCalendarRenderer:
         )
         card_right = right - shadow_offset
         card_bottom = bottom - shadow_offset
-        card_box = (left, top, card_right, card_bottom)
-        draw.rounded_rectangle(
-            card_box,
-            radius=radius,
-            fill=background,
-            outline=border,
-            width=border_width,
-        )
         card_width = max(1, card_right - left)
         card_height = max(1, card_bottom - top)
-        seam_y = top + (card_height // 2)
+        half = max(1, card_height // 2)
+        seam_y = top + half
         scale_aa = card_height / (104.0 if label == "YEAR" else 115.0)
         value_size = max(
             18,
@@ -154,48 +154,115 @@ class FlipCalendarRenderer:
         label_size = max(9, int(round(10 * scale_aa)))
         value_font = ImageFont.truetype(font_path, value_size)
         label_font = ImageFont.truetype(font_path, label_size)
-        old_layer = self._text_layer(
+        structure_layer = self._structure_layer(
+            card_width,
+            card_height,
+            background,
+            border,
+            radius,
+            border_width,
+        )
+        old_text_layer = self._text_layer(
+            label,
             module.old_value,
             card_width,
             card_height,
             value_font,
+            label_font,
             text_color,
+            background,
+            aa,
         )
-        new_layer = self._text_layer(
+        new_text_layer = self._text_layer(
+            label,
             module.new_value,
             card_width,
             card_height,
             value_font,
+            label_font,
             text_color,
+            background,
+            aa,
         )
         phase = max(0.0, min(1.0, float(module.phase)))
-        half = max(1, card_height // 2)
-        top_mask = Image.new("L", (card_width, card_height), 0)
-        ImageDraw.Draw(top_mask).rectangle((0, 0, card_width, half), fill=255)
-        bottom_mask = Image.new("L", (card_width, card_height), 0)
-        ImageDraw.Draw(bottom_mask).rectangle(
-            (0, half, card_width, card_height), fill=255
-        )
         module_layer = Image.new("RGBA", (card_width, card_height), (0, 0, 0, 0))
         if module.old_value == module.new_value or phase >= 0.999:
-            module_layer.alpha_composite(new_layer)
+            module_layer.alpha_composite(structure_layer)
+            module_layer.alpha_composite(new_text_layer)
         elif phase <= 0.5:
-            module_layer.paste(old_layer, (0, 0), bottom_mask)
-            fold = old_layer.crop((0, 0, card_width, half))
-            fold_height = max(1, int(round(half * (1.0 - (phase * 2.0)))))
-            fold = fold.resize((card_width, fold_height), Image.Resampling.BICUBIC)
-            fold.putalpha(Image.eval(fold.getchannel("A"), lambda a: int(a * 0.82)))
-            module_layer.alpha_composite(fold, (0, half - fold_height))
+            _, fold_height, fold_top, depth = flap_projection(phase, half)
+            self._composite_surface_section(
+                module_layer,
+                structure_layer,
+                new_text_layer,
+                crop=(0, 0, card_width, half - fold_height),
+                destination_y=0,
+                brightness=0.78,
+            )
+            self._composite_surface_section(
+                module_layer,
+                structure_layer,
+                old_text_layer,
+                crop=(0, half, card_width, card_height),
+                destination_y=half,
+            )
+            self._draw_fold_shadow(
+                module_layer,
+                y=fold_top,
+                depth=depth,
+                shadow=shadow,
+                aa=aa,
+            )
+            self._composite_surface_section(
+                module_layer,
+                structure_layer,
+                old_text_layer,
+                crop=(0, 0, card_width, half),
+                destination_y=fold_top,
+                destination_height=fold_height,
+                brightness=1.0 - (0.48 * depth),
+            )
         else:
-            module_layer.paste(new_layer, (0, 0), top_mask)
-            fold = new_layer.crop((0, half, card_width, card_height))
-            fold_height = max(1, int(round(half * ((phase - 0.5) * 2.0))))
-            fold = fold.resize((card_width, fold_height), Image.Resampling.BICUBIC)
-            module_layer.alpha_composite(fold, (0, half))
+            _, fold_height, fold_top, depth = flap_projection(phase, half)
+            self._composite_surface_section(
+                module_layer,
+                structure_layer,
+                new_text_layer,
+                crop=(0, 0, card_width, half),
+                destination_y=0,
+            )
+            self._composite_surface_section(
+                module_layer,
+                structure_layer,
+                old_text_layer,
+                crop=(0, half + fold_height, card_width, card_height),
+                destination_y=half + fold_height,
+                brightness=0.78,
+            )
+            self._draw_fold_shadow(
+                module_layer,
+                y=half + fold_height,
+                depth=depth,
+                shadow=shadow,
+                aa=aa,
+            )
+            self._composite_surface_section(
+                module_layer,
+                structure_layer,
+                new_text_layer,
+                crop=(0, half, card_width, card_height),
+                destination_y=fold_top,
+                destination_height=fold_height,
+                brightness=1.0 - (0.48 * depth),
+            )
         canvas.alpha_composite(module_layer, (left, top))
 
         draw = ImageDraw.Draw(canvas)
-        seam_color = _blend(border, (0, 0, 0, 255), 0.42)
+        seam_color = _blend(
+            border,
+            (0, 0, 0, border[3]),
+            0.42,
+        )
         draw.line(
             (left + border_width, seam_y, card_right - border_width, seam_y),
             fill=seam_color,
@@ -210,33 +277,145 @@ class FlipCalendarRenderer:
                     hinge_x + hinge_radius,
                     seam_y + hinge_radius,
                 ),
-                fill=_blend(border, (255, 255, 255, 255), 0.15),
+                fill=_blend(
+                    border,
+                    (255, 255, 255, border[3]),
+                    0.15,
+                ),
             )
+
+    @staticmethod
+    def _structure_layer(
+        width,
+        height,
+        background,
+        border,
+        radius,
+        border_width,
+    ):
+        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).rounded_rectangle(
+            (0, 0, width - 1, height - 1),
+            radius=radius,
+            fill=background,
+            outline=border,
+            width=border_width,
+        )
+        return layer
+
+    @staticmethod
+    def _text_layer(
+        label,
+        value,
+        width,
+        height,
+        value_font,
+        label_font,
+        color,
+        background,
+        aa,
+    ):
+        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
         draw.text(
-            (left + max(8, int(round(10 * aa))), top + max(5, int(round(6 * aa)))),
+            (width / 2, height / 2 + (height * 0.05)),
+            str(value),
+            font=value_font,
+            fill=color,
+            anchor="mm",
+            stroke_width=1,
+            stroke_fill=_blend(color, (0, 0, 0, color[3]), 0.32),
+        )
+        draw.text(
+            (max(8, int(round(10 * aa))), max(5, int(round(6 * aa)))),
             label,
             font=label_font,
             fill=_blend(
-                text_color,
-                (*background[:3], text_color[3]),
+                color,
+                (*background[:3], color[3]),
                 0.45,
             ),
             anchor="la",
         )
+        return layer
 
     @staticmethod
-    def _text_layer(value, width, height, font, color):
-        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        ImageDraw.Draw(layer).text(
-            (width / 2, height / 2 + (height * 0.05)),
-            str(value),
-            font=font,
-            fill=color,
-            anchor="mm",
-            stroke_width=1,
-            stroke_fill=_blend(color, (0, 0, 0, 255), 0.32),
+    def _composite_surface_section(
+        destination,
+        structure,
+        text,
+        *,
+        crop,
+        destination_y,
+        destination_height=None,
+        brightness=1.0,
+    ):
+        left, top, right, bottom = crop
+        if right <= left or bottom <= top:
+            return
+        structure_section = structure.crop(crop)
+        text_section = text.crop(crop)
+        if destination_height is not None:
+            destination_height = max(1, int(destination_height))
+            size = (structure_section.width, destination_height)
+            structure_section = structure_section.resize(
+                size,
+                Image.Resampling.BICUBIC,
+            )
+            text_section = text_section.resize(size, Image.Resampling.BICUBIC)
+        brightness = max(0.0, min(1.0, float(brightness)))
+        if brightness < 0.999:
+            structure_section = ImageEnhance.Brightness(
+                structure_section
+            ).enhance(brightness)
+            text_section = ImageEnhance.Brightness(text_section).enhance(
+                brightness
+            )
+        destination.alpha_composite(
+            structure_section,
+            (left, int(destination_y)),
         )
-        return layer
+        destination.alpha_composite(text_section, (left, int(destination_y)))
+
+    @staticmethod
+    def _draw_fold_shadow(destination, *, y, depth, shadow, aa):
+        if shadow[3] <= 0 or depth <= 0:
+            return
+        band = max(1, int(round((2.0 + (5.0 * depth)) * aa)))
+        alpha = int(round(shadow[3] * depth))
+        top = max(0, min(destination.height - 1, int(y) - (band // 2)))
+        bottom = max(top, min(destination.height - 1, top + band))
+        overlay = Image.new("RGBA", destination.size, (0, 0, 0, 0))
+        ImageDraw.Draw(overlay).rectangle(
+            (0, top, destination.width - 1, bottom),
+            fill=(0, 0, 0, alpha),
+        )
+        destination.alpha_composite(overlay)
+
+
+def flap_projection(phase, half_height):
+    """Return moving piece, visible height, top edge, and edge-on depth."""
+    phase = max(0.0, min(1.0, float(phase)))
+    half_height = max(1, int(half_height))
+    if phase <= 0.5:
+        progress = phase * 2.0
+        angle = progress * (math.pi / 2.0)
+        visible_height = max(1, int(round(half_height * math.cos(angle))))
+        return (
+            "old_top",
+            visible_height,
+            half_height - visible_height,
+            math.sin(angle),
+        )
+    progress = (phase - 0.5) * 2.0
+    angle = progress * (math.pi / 2.0)
+    visible_height = max(1, int(round(half_height * math.sin(angle))))
+    return (
+        "new_bottom",
+        visible_height,
+        half_height,
+        math.cos(angle),
+    )
 
 
 def _rgba(value):
@@ -247,8 +426,12 @@ def _rgba(value):
 
 
 def _with_opacity(color, opacity):
-    opacity = max(0.0, min(1.0, float(opacity)))
+    opacity = _clamped_opacity(opacity)
     return (*color[:3], int(round(color[3] * opacity)))
+
+
+def _clamped_opacity(value):
+    return max(0.0, min(1.0, float(value)))
 
 
 def _blend(first, second, amount):
