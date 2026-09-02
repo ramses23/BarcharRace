@@ -3191,7 +3191,7 @@ def _canvas_text_section(
         )
         if date_style == "flip_calendar":
             st.caption(
-                "YEAR, MONTH, and DAY are always visible. Position uses the "
+                "Year, month, and day values are always visible. Position uses the "
                 "existing Date X/Y controls. Flip text opacity affects only "
                 "calendar text; Card opacity controls the mechanical structure."
             )
@@ -3213,7 +3213,11 @@ def _canvas_text_section(
                     max_value=12,
                     value=int(flip_calendar_flip_duration_frames),
                     step=1,
-                    help="Visual phase only; frame count and video duration do not change.",
+                    help=(
+                        "Preferred maximum visual duration. Dense calendar "
+                        "changes use a deterministic shorter window; frame "
+                        "count and video duration do not change."
+                    ),
                     key=_widget_key("flip_calendar_flip_duration_frames"),
                 )
             with radius_column:

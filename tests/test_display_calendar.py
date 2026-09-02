@@ -1,10 +1,12 @@
 import unittest
 from datetime import datetime
+from unittest import mock
 
 import _test_path
 import numpy as np
 import pandas as pd
 from matplotlib import font_manager
+from PIL import ImageDraw, ImageFont
 
 from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
@@ -208,11 +210,10 @@ class DisplayCalendarResolverTest(unittest.TestCase):
         self.assertEqual(states[0], states[1])
         self.assertEqual(states[1], states[2])
 
-    def test_one_and_twelve_frame_flip_durations_are_bounded(self):
+    def test_configured_flip_duration_is_a_bounded_visual_maximum(self):
         _, timeline = self._timeline(
             ((1, "2023-04-17"), (2, "2023-04-24"))
         )
-        phases = []
         for duration in (1, 12):
             resolver = DisplayCalendarResolver.from_timeline(
                 timeline,
@@ -220,9 +221,15 @@ class DisplayCalendarResolverTest(unittest.TestCase):
                 steps_per_transition=8,
                 flip_duration_frames=duration,
             )
-            phases.append(resolver.state_at(1).day.phase)
+            events = resolver.event_windows("day")
             self.assertEqual(resolver.frame_count, 8)
-        self.assertEqual(phases, [0.55, 0.9])
+            self.assertTrue(events)
+            self.assertTrue(all(
+                1 <= event.effective_duration_frames <= duration
+                for event in events
+            ))
+            self.assertFalse(resolver.state_at(0).day.is_flipping)
+            self.assertFalse(resolver.state_at(7).day.is_flipping)
 
     def test_skipped_dates_flip_directly_without_artificial_daily_frames(self):
         _, timeline = self._timeline(
@@ -241,6 +248,198 @@ class DisplayCalendarResolverTest(unittest.TestCase):
         self.assertEqual(
             (middle.day.old_value, middle.day.new_value),
             ("17", "20"),
+        )
+
+    def test_year_checkpoint_events_include_both_halves_and_settle(self):
+        _, timeline = self._timeline(
+            ((1, "2019"), (2, "2020"), (3, "2021"))
+        )
+        for continuous_motion in (False, True):
+            with self.subTest(continuous_motion=continuous_motion):
+                resolver = DisplayCalendarResolver.from_timeline(
+                    timeline,
+                    timeline.get_years(),
+                    steps_per_transition=30,
+                    continuous_motion=continuous_motion,
+                    flip_duration_frames=12,
+                )
+                events = resolver.event_windows("year")
+
+                self.assertEqual(
+                    [(event.old_value, event.new_value) for event in events],
+                    [("2019", "2020"), ("2020", "2021")],
+                )
+                for event in events:
+                    self.assertEqual(event.effective_duration_frames, 12)
+                    self.assertEqual(event.phases[0], 0.0)
+                    self.assertEqual(event.phases[-1], 1.0)
+                    self.assertTrue(any(
+                        0.0 < phase < 0.5
+                        for phase in event.phases
+                    ))
+                    second_half = [
+                        phase for phase in event.phases if 0.5 < phase < 1.0
+                    ]
+                    self.assertGreaterEqual(len(second_half), 4)
+                    heights = [
+                        flap_projection(phase, 50)[1]
+                        for phase in second_half
+                    ]
+                    self.assertTrue(all(
+                        first < second
+                        for first, second in zip(heights, heights[1:])
+                    ))
+                    boundary = resolver.state_at(event.change_frame)
+                    self.assertEqual(boundary.display_date.month, 1)
+                    self.assertEqual(boundary.display_date.day, 1)
+                    self.assertGreater(boundary.year.phase, 0.5)
+                    if event.end_frame > event.change_frame:
+                        self.assertTrue(any(
+                            resolver.state_at(index).year.is_flipping
+                            and resolver.state_at(index).year.phase > 0.5
+                            for index in range(
+                                event.change_frame + 1,
+                                event.end_frame,
+                            )
+                        ))
+
+                for state in (
+                    resolver.state_at(0),
+                    resolver.state_at(resolver.frame_count - 1),
+                ):
+                    self.assertTrue(all(
+                        not module.is_flipping
+                        for module in (state.year, state.month, state.day)
+                    ))
+
+    def test_dense_day_events_adapt_without_overlap_or_static_restart(self):
+        _, timeline = self._timeline(
+            ((1, "2019"), (2, "2020"), (3, "2021"))
+        )
+        resolver = DisplayCalendarResolver.from_timeline(
+            timeline,
+            timeline.get_years(),
+            steps_per_transition=30,
+            flip_duration_frames=12,
+        )
+        events = resolver.event_windows("day")
+        change_distances = [
+            right.change_frame - left.change_frame
+            for left, right in zip(events, events[1:])
+        ]
+
+        self.assertEqual(
+            (min(change_distances), int(np.median(change_distances))),
+            (1, 1),
+        )
+        self.assertLessEqual(max(change_distances), 2)
+        self.assertEqual(
+            {event.effective_duration_frames for event in events},
+            {1, 2},
+        )
+        self.assertTrue(all(
+            left.end_frame < right.start_frame
+            for left, right in zip(events, events[1:])
+        ))
+        one_frame_phases = {
+            event.phases[0]
+            for event in events[:-1]
+            if event.effective_duration_frames == 1
+        }
+        self.assertGreaterEqual(len(one_frame_phases), 3)
+        self.assertTrue(all(0.5 < phase <= 1.0 for phase in one_frame_phases))
+        self.assertFalse(resolver.state_at(0).day.is_flipping)
+        self.assertFalse(
+            resolver.state_at(resolver.frame_count - 1).day.is_flipping
+        )
+
+    def test_duration_one_six_and_twelve_are_safe_for_year_and_dense_day(self):
+        _, timeline = self._timeline(
+            ((1, "2019"), (2, "2020"), (3, "2021"))
+        )
+        for duration in (1, 6, 12):
+            with self.subTest(duration=duration):
+                resolver = DisplayCalendarResolver.from_timeline(
+                    timeline,
+                    timeline.get_years(),
+                    steps_per_transition=30,
+                    flip_duration_frames=duration,
+                )
+                self.assertTrue(all(
+                    event.effective_duration_frames <= duration
+                    for module in ("year", "month", "day")
+                    for event in resolver.event_windows(module)
+                ))
+                self.assertTrue(all(
+                    not module.is_flipping
+                    for state in (
+                        resolver.state_at(0),
+                        resolver.state_at(resolver.frame_count - 1),
+                    )
+                    for module in (state.year, state.month, state.day)
+                ))
+                if duration > 1:
+                    self.assertTrue(any(
+                        0.5 < phase < 1.0
+                        for event in resolver.event_windows("year")
+                        for phase in event.phases
+                    ))
+
+    def test_month_november_december_and_january_events_remain_mechanical(self):
+        _, timeline = self._timeline(
+            ((1, "2019-11"), (2, "2019-12"), (3, "2020-01"))
+        )
+        resolver = DisplayCalendarResolver.from_timeline(
+            timeline,
+            timeline.get_years(),
+            steps_per_transition=12,
+            flip_duration_frames=6,
+        )
+        events = resolver.event_windows("month")
+
+        self.assertEqual(
+            [(event.old_value, event.new_value) for event in events],
+            [("NOV", "DEC"), ("DEC", "JAN")],
+        )
+        self.assertTrue(all(
+            any(phase < 0.5 for phase in event.phases)
+            and any(phase > 0.5 for phase in event.phases)
+            for event in events
+        ))
+
+    def test_effective_subrange_has_independent_safe_boundaries(self):
+        _, timeline = self._timeline(
+            ((1, "2019"), (2, "2020"), (3, "2021"), (4, "2022"))
+        )
+        resolver = DisplayCalendarResolver.from_timeline(
+            timeline,
+            (2, 3),
+            steps_per_transition=30,
+            flip_duration_frames=12,
+        )
+
+        self.assertEqual(
+            resolver.state_at(0).display_date.isoformat(),
+            "2020-01-01",
+        )
+        self.assertEqual(
+            resolver.state_at(resolver.frame_count - 1).display_date.isoformat(),
+            "2021-01-01",
+        )
+        self.assertTrue(all(
+            not module.is_flipping
+            for state in (
+                resolver.state_at(0),
+                resolver.state_at(resolver.frame_count - 1),
+            )
+            for module in (state.year, state.month, state.day)
+        ))
+        self.assertEqual(
+            [
+                (event.old_value, event.new_value)
+                for event in resolver.event_windows("year")
+            ],
+            [("2020", "2021")],
         )
 
 
@@ -334,6 +533,93 @@ class FlipCalendarRendererTest(unittest.TestCase):
             not np.array_equal(first, second)
             for first, second in zip(images, images[1:])
         ))
+
+    def test_dense_day_frames_change_non_text_card_surface_pixels(self):
+        _, timeline = DisplayCalendarResolverTest._timeline(
+            ((1, "2019"), (2, "2020"), (3, "2021"))
+        )
+        resolver = DisplayCalendarResolver.from_timeline(
+            timeline,
+            timeline.get_years(),
+            steps_per_transition=30,
+            flip_duration_frames=12,
+        )
+        candidates = []
+        for index in range(1, resolver.frame_count - 1):
+            current = resolver.state_at(index)
+            following = resolver.state_at(index + 1)
+            if (
+                current.day.is_flipping
+                and following.day.is_flipping
+                and current.day.phase != following.day.phase
+            ):
+                candidates.append((current, following))
+        first, second = candidates[0]
+        config = ChartConfig(
+            date_style="flip_calendar",
+            time_label_opacity=0.0,
+            flip_calendar_shadow_opacity=1.0,
+        )
+        renderer = FlipCalendarRenderer()
+        font_path = font_manager.findfont("DejaVu Sans")
+        first_image = renderer.command(
+            first, config, font_path=font_path
+        )[0][::-1]
+        second_image = renderer.command(
+            second, config, font_path=font_path
+        )[0][::-1]
+        day_roi = (slice(116, 236), slice(210, 360))
+        changed = np.any(first_image[day_roi] != second_image[day_roi], axis=2)
+
+        self.assertGreater(np.count_nonzero(changed), 100)
+        self.assertEqual(config.time_label_opacity, 0.0)
+
+    def test_renderer_emits_only_centered_calendar_values_without_headers(self):
+        recorded = []
+        original_text = ImageDraw.ImageDraw.text
+
+        def record_text(draw, xy, value, *args, **kwargs):
+            recorded.append((xy, str(value), kwargs.get("anchor")))
+            return original_text(draw, xy, value, *args, **kwargs)
+
+        font_path = font_manager.findfont("DejaVu Sans")
+        renderer = FlipCalendarRenderer()
+        config = ChartConfig(date_style="flip_calendar")
+        with mock.patch.object(ImageDraw.ImageDraw, "text", new=record_text):
+            first = renderer.command(
+                self._state(1.0), config, font_path=font_path
+            )[0]
+            second = renderer.command(
+                self._state(1.0), config, font_path=font_path
+            )[0]
+
+        emitted = [value for _, value, _ in recorded]
+        self.assertEqual(emitted, ["2023", "2023", "MAY", "JUN", "1", "2"])
+        self.assertTrue({"YEAR", "MONTH", "DAY"}.isdisjoint(emitted))
+        self.assertTrue(all(anchor == "mm" for _, _, anchor in recorded))
+        self.assertTrue(np.array_equal(first, second))
+        self.assertEqual(len(renderer._cache), 1)
+
+    def test_value_text_layer_uses_exact_card_center_without_header_padding(self):
+        recorded = []
+        original_text = ImageDraw.ImageDraw.text
+
+        def record_text(draw, xy, value, *args, **kwargs):
+            recorded.append((xy, str(value), kwargs.get("anchor")))
+            return original_text(draw, xy, value, *args, **kwargs)
+
+        font = ImageFont.truetype(font_manager.findfont("DejaVu Sans"), 42)
+        with mock.patch.object(ImageDraw.ImageDraw, "text", new=record_text):
+            layer = FlipCalendarRenderer._text_layer(
+                "2020",
+                200,
+                100,
+                font,
+                (255, 255, 255, 255),
+            )
+
+        self.assertEqual(recorded, [((100.0, 50.0), "2020", "mm")])
+        self.assertGreater(np.count_nonzero(np.asarray(layer)[:, :, 3]), 0)
 
     def test_standard_and_short_positions_keep_calendar_on_canvas(self):
         font_path = font_manager.findfont("DejaVu Sans")
@@ -544,11 +830,14 @@ class FlipCalendarRendererTest(unittest.TestCase):
             first[1] < second[1]
             for first, second in zip(late, late[1:])
         ))
-        self.assertEqual(early[0][1:], (100, 0, 0.0))
-        self.assertEqual(early[-1][1], 1)
-        self.assertEqual(early[-1][2] + early[-1][1], half)
-        self.assertEqual(late[1][2], half)
-        self.assertEqual(late[-1][1], half)
+        self.assertEqual(early[0][0], "old_top")
+        self.assertAlmostEqual(early[0][1], 100.0)
+        self.assertAlmostEqual(early[0][2], 0.0)
+        self.assertEqual(early[0][3], 0.0)
+        self.assertEqual(early[-1][1], 1.0)
+        self.assertAlmostEqual(early[-1][2] + early[-1][1], half)
+        self.assertAlmostEqual(late[1][2], half)
+        self.assertAlmostEqual(late[-1][1], half)
 
     def test_physical_card_surface_changes_while_static_half_stays_stable(self):
         phases = (0.0, 0.15, 0.30, 0.50, 0.70, 0.85, 1.0)
@@ -611,9 +900,9 @@ class FlipCalendarRendererTest(unittest.TestCase):
             piece, height, top, _ = flap_projection(phase, 57)
             self.assertGreaterEqual(height, 1)
             if piece == "old_top":
-                self.assertEqual(top + height, 57)
+                self.assertAlmostEqual(top + height, 57.0)
             else:
-                self.assertEqual(top, 57)
+                self.assertAlmostEqual(top, 57.0)
 
     def test_only_modules_whose_values_change_use_mechanical_motion(self):
         regions = {

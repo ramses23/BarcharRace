@@ -82,14 +82,14 @@ class FlipCalendarRenderer:
             * card_opacity
         )))
         specs = (
-            ("YEAR", state.year, (0, 0, canvas.width, year_height)),
-            ("MONTH", state.month, (0, bottom_top, month_width, canvas.height)),
-            ("DAY", state.day, (day_left, bottom_top, canvas.width, canvas.height)),
+            ("year", state.year, (0, 0, canvas.width, year_height)),
+            ("month", state.month, (0, bottom_top, month_width, canvas.height)),
+            ("day", state.day, (day_left, bottom_top, canvas.width, canvas.height)),
         )
-        for label, module, box in specs:
+        for module_kind, module, box in specs:
             self._draw_module(
                 canvas,
-                label,
+                module_kind,
                 module,
                 box,
                 font_path=font_path,
@@ -114,7 +114,7 @@ class FlipCalendarRenderer:
     def _draw_module(
         self,
         canvas,
-        label,
+        module_kind,
         module,
         box,
         *,
@@ -146,14 +146,12 @@ class FlipCalendarRenderer:
         card_height = max(1, card_bottom - top)
         half = max(1, card_height // 2)
         seam_y = top + half
-        scale_aa = card_height / (104.0 if label == "YEAR" else 115.0)
+        scale_aa = card_height / (104.0 if module_kind == "year" else 115.0)
         value_size = max(
             18,
-            int(round((48 if label == "YEAR" else 42) * scale_aa)),
+            int(round((48 if module_kind == "year" else 42) * scale_aa)),
         )
-        label_size = max(9, int(round(10 * scale_aa)))
         value_font = ImageFont.truetype(font_path, value_size)
-        label_font = ImageFont.truetype(font_path, label_size)
         structure_layer = self._structure_layer(
             card_width,
             card_height,
@@ -163,26 +161,18 @@ class FlipCalendarRenderer:
             border_width,
         )
         old_text_layer = self._text_layer(
-            label,
             module.old_value,
             card_width,
             card_height,
             value_font,
-            label_font,
             text_color,
-            background,
-            aa,
         )
         new_text_layer = self._text_layer(
-            label,
             module.new_value,
             card_width,
             card_height,
             value_font,
-            label_font,
             text_color,
-            background,
-            aa,
         )
         phase = max(0.0, min(1.0, float(module.phase)))
         module_layer = Image.new("RGBA", (card_width, card_height), (0, 0, 0, 0))
@@ -190,7 +180,9 @@ class FlipCalendarRenderer:
             module_layer.alpha_composite(structure_layer)
             module_layer.alpha_composite(new_text_layer)
         elif phase <= 0.5:
-            _, fold_height, fold_top, depth = flap_projection(phase, half)
+            _, projected_height, _, depth = flap_projection(phase, half)
+            fold_height = max(1, int(round(projected_height)))
+            fold_top = half - fold_height
             self._composite_surface_section(
                 module_layer,
                 structure_layer,
@@ -223,7 +215,9 @@ class FlipCalendarRenderer:
                 brightness=1.0 - (0.48 * depth),
             )
         else:
-            _, fold_height, fold_top, depth = flap_projection(phase, half)
+            _, projected_height, _, depth = flap_projection(phase, half)
+            fold_height = max(1, int(round(projected_height)))
+            fold_top = half
             self._composite_surface_section(
                 module_layer,
                 structure_layer,
@@ -305,37 +299,22 @@ class FlipCalendarRenderer:
 
     @staticmethod
     def _text_layer(
-        label,
         value,
         width,
         height,
         value_font,
-        label_font,
         color,
-        background,
-        aa,
     ):
         layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
         draw.text(
-            (width / 2, height / 2 + (height * 0.05)),
+            (width / 2, height / 2),
             str(value),
             font=value_font,
             fill=color,
             anchor="mm",
             stroke_width=1,
             stroke_fill=_blend(color, (0, 0, 0, color[3]), 0.32),
-        )
-        draw.text(
-            (max(8, int(round(10 * aa))), max(5, int(round(6 * aa)))),
-            label,
-            font=label_font,
-            fill=_blend(
-                color,
-                (*background[:3], color[3]),
-                0.45,
-            ),
-            anchor="la",
         )
         return layer
 
@@ -396,11 +375,11 @@ class FlipCalendarRenderer:
 def flap_projection(phase, half_height):
     """Return moving piece, visible height, top edge, and edge-on depth."""
     phase = max(0.0, min(1.0, float(phase)))
-    half_height = max(1, int(half_height))
+    half_height = max(1.0, float(half_height))
     if phase <= 0.5:
         progress = phase * 2.0
         angle = progress * (math.pi / 2.0)
-        visible_height = max(1, int(round(half_height * math.cos(angle))))
+        visible_height = max(1.0, half_height * math.cos(angle))
         return (
             "old_top",
             visible_height,
@@ -409,7 +388,7 @@ def flap_projection(phase, half_height):
         )
     progress = (phase - 0.5) * 2.0
     angle = progress * (math.pi / 2.0)
-    visible_height = max(1, int(round(half_height * math.sin(angle))))
+    visible_height = max(1.0, half_height * math.sin(angle))
     return (
         "new_bottom",
         visible_height,
