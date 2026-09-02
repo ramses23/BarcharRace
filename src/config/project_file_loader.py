@@ -1147,6 +1147,14 @@ def _convert_fun_fact_value(key, value):
                 "Fun facts field 'editorial_collision_gap' must be >= 0."
             )
         return value
+    if key == "editorial_protect_top_n":
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 10:
+            raise ProjectFileError("editorial_protect_top_n must be from 0 to 10.")
+        return value
+    if key == "editorial_bar_clearance":
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 60:
+            raise ProjectFileError("editorial_bar_clearance must be from 0 to 60.")
+        return value
     if key in (
         "editorial_border_width", "editorial_shadow_blur",
         "editorial_shadow_offset",

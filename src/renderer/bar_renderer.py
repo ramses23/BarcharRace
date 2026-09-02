@@ -702,6 +702,10 @@ class BarRenderer(TextCompositorMixin):
                 self.config,
                 self.fun_fact_config,
             )
+            if getattr(active_fact, "resolved_x", None) is not None:
+                left = active_fact.resolved_x
+            if getattr(active_fact, "resolved_y", None) is not None:
+                panel_top = active_fact.resolved_y
         else:
             left, _, panel_width = panel_geometry(self.config, self.fun_fact_config)
             panel_top = self.fun_fact_config.panel_margin
@@ -870,14 +874,34 @@ class BarRenderer(TextCompositorMixin):
         credit_color = self._rgba_with_opacity(
             credit_color, self.fun_fact_config.editorial_credit_opacity,
         )
+        image_height = 0
+        if fact.image_path:
+            ratio = self.fun_fact_config.editorial_image_area_ratio if self.fun_fact_config.layout in ("editorial_right", "editorial_floating") else 0.34
+            image_height = max(1, round(height * ratio))
+        credit_height = (
+            (self._line_height(draw, credit_font) * 2) + 2
+            if fact.credit
+            else 0
+        )
+        headline_line_height = self._line_height(draw, headline_font)
+        headline_spacing = max(4, round(headline_font.size * 0.15))
+        headline_budget = max(
+            headline_line_height,
+            min(
+                round(height * 0.36),
+                height - y - padding - credit_height - image_height,
+            ),
+        )
         headline_lines = self._wrapped_text_lines(
             draw,
             fact.headline,
             headline_font,
             content_width,
-            max_lines=4,
+            max_lines=max(
+                1,
+                headline_budget // max(1, headline_line_height + headline_spacing),
+            ),
         )
-        headline_spacing = max(4, round(headline_font.size * 0.15))
         y = self._draw_wrapped_lines(
             draw,
             headline_lines,
@@ -892,15 +916,6 @@ class BarRenderer(TextCompositorMixin):
         )
         y += max(12, padding // 2)
 
-        image_height = 0
-        if fact.image_path:
-            ratio = self.fun_fact_config.editorial_image_area_ratio if self.fun_fact_config.layout in ("editorial_right", "editorial_floating") else 0.34
-            image_height = max(1, round(height * ratio))
-        credit_height = (
-            (self._line_height(draw, credit_font) * 2) + 2
-            if fact.credit
-            else 0
-        )
         bottom_reserved = padding + credit_height + (12 if fact.credit else 0)
         body_bottom = height - bottom_reserved - image_height
         if fact.image_path:
@@ -963,16 +978,17 @@ class BarRenderer(TextCompositorMixin):
             credit_y = height - padding - (
                 len(credit_lines) * self._line_height(draw, credit_font)
             )
-            self._draw_wrapped_lines(
-                draw,
-                credit_lines,
-                canvas=canvas,
-                x=padding,
-                y=max(padding, credit_y),
-                font=credit_font,
-                fill=credit_color,
-                spacing=2,
-            )
+            if credit_y >= y:
+                self._draw_wrapped_lines(
+                    draw,
+                    credit_lines,
+                    canvas=canvas,
+                    x=padding,
+                    y=max(padding, credit_y),
+                    font=credit_font,
+                    fill=credit_color,
+                    spacing=2,
+                )
 
         result = np.array(
             np.asarray(canvas)[::-1],
@@ -1080,12 +1096,24 @@ class BarRenderer(TextCompositorMixin):
             if fact.credit
             else 0
         )
+        headline_line_height = self._line_height(draw, headline_font)
+        headline_spacing = max(4, round(headline_font.size * 0.15))
+        headline_budget = max(
+            headline_line_height,
+            min(
+                round(content_height * 0.38),
+                padding + content_height - credit_height - y,
+            ),
+        )
         headline_lines = self._wrapped_text_lines(
             draw,
             fact.headline,
             headline_font,
             text_width,
-            max_lines=3,
+            max_lines=max(
+                1,
+                headline_budget // max(1, headline_line_height + headline_spacing),
+            ),
         )
         y = self._draw_wrapped_lines(
             draw,
@@ -1095,7 +1123,7 @@ class BarRenderer(TextCompositorMixin):
             y=y,
             font=headline_font,
             fill=headline_color,
-            spacing=max(4, round(headline_font.size * 0.15)),
+            spacing=headline_spacing,
             max_width=text_width,
             alignment=self.fun_fact_config.editorial_headline_alignment,
         )
@@ -1154,16 +1182,17 @@ class BarRenderer(TextCompositorMixin):
             credit_y = height - padding - (
                 len(credit_lines) * self._line_height(draw, credit_font)
             )
-            self._draw_wrapped_lines(
-                draw,
-                credit_lines,
-                canvas=canvas,
-                x=text_x,
-                y=max(padding, credit_y),
-                font=credit_font,
-                fill=credit_color,
-                spacing=2,
-            )
+            if credit_y >= y:
+                self._draw_wrapped_lines(
+                    draw,
+                    credit_lines,
+                    canvas=canvas,
+                    x=text_x,
+                    y=max(padding, credit_y),
+                    font=credit_font,
+                    fill=credit_color,
+                    spacing=2,
+                )
 
         return np.array(
             np.asarray(canvas)[::-1],

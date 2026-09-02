@@ -169,6 +169,13 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             chart_config,
             fun_fact_config,
         )
+        if scene.fun_fact is not None:
+            resolved_x = getattr(scene.fun_fact, "resolved_x", None)
+            resolved_y = getattr(scene.fun_fact, "resolved_y", None)
+            if resolved_x is not None:
+                left = resolved_x
+            if resolved_y is not None:
+                top = resolved_y
         editorial_rect = SceneRect(left, top, width, height)
         if fun_fact_config.editorial_layout_mode == "reserved":
             collision_left = max(

@@ -20,6 +20,11 @@ class FunFactScheduler:
             )
         self.facts = self._resolve(collection)
         self._facts_by_id = {resolved.fact.id: resolved for resolved in self.facts}
+        self._placement_resolver = None
+
+    def set_placement_resolver(self, resolver):
+        """Attach an immutable precomputed lookup; no frame history is used."""
+        self._placement_resolver = resolver
 
     def active_at(self, period_a, period_b=None, progress=0.0):
         position = self.timeline.get_timeline_position(
@@ -32,7 +37,7 @@ class FunFactScheduler:
             if resolved.start_index <= position < end_exclusive:
                 opacity = self._opacity(resolved, position)
                 if opacity > 0:
-                    return ActiveFunFact(resolved.fact, opacity)
+                    return self._active(resolved.fact, opacity)
         return None
 
     def active_for_period(self, period):
@@ -41,7 +46,7 @@ class FunFactScheduler:
             if resolved.start_index <= position < resolved.end_index + 1.0:
                 opacity = self._opacity(resolved, position)
                 if opacity > 0:
-                    return ActiveFunFact(resolved.fact, opacity)
+                    return self._active(resolved.fact, opacity)
         return None
 
     def force(self, fact_id):
@@ -51,7 +56,21 @@ class FunFactScheduler:
             raise FunFactScheduleError(
                 f"Unknown fun fact id {fact_id!r}."
             ) from exc
-        return ActiveFunFact(fact=fact, opacity=1.0, forced=True)
+        return self._active(fact, 1.0, forced=True)
+
+    def _active(self, fact, opacity, *, forced=False):
+        position = (
+            self._placement_resolver.position_for(fact.id)
+            if self._placement_resolver is not None
+            else None
+        )
+        return ActiveFunFact(
+            fact=fact,
+            opacity=opacity,
+            forced=forced,
+            resolved_x=(position[0] if position is not None else None),
+            resolved_y=(position[1] if position is not None else None),
+        )
 
     def _resolve(self, collection):
         resolved = []

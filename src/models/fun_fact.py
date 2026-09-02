@@ -36,3 +36,5 @@ class ActiveFunFact:
     fact: FunFact
     opacity: float
     forced: bool = False
+    resolved_x: int | None = None
+    resolved_y: int | None = None

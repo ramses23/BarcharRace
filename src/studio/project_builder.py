@@ -836,6 +836,7 @@ def project_form_values(project_data=None):
                 "editorial_border_opacity", "editorial_border_width",
                 "editorial_corner_radius", "editorial_shadow_opacity",
                 "editorial_shadow_blur", "editorial_shadow_offset",
+                "editorial_protect_top_n", "editorial_bar_clearance",
             )
         },
     }

@@ -257,6 +257,13 @@ def validate_fun_fact_layout(chart_config, fun_fact_config):
         "bottom_center", "bottom_right", "smart",
     ):
         raise FunFactLayoutError("Editorial placement mode is invalid.")
+    if (
+        fun_fact_config.editorial_placement_mode == "smart"
+        and fun_fact_config.editorial_layout_mode != "overlay"
+    ):
+        raise FunFactLayoutError(
+            "Smart editorial placement requires Overlay layout mode."
+        )
     if fun_fact_config.editorial_background_texture not in (
         "none", "grain", "paper", "dots", "diagonal",
     ):
@@ -279,6 +286,14 @@ def validate_fun_fact_layout(chart_config, fun_fact_config):
     if fun_fact_config.editorial_collision_gap < 0:
         raise FunFactLayoutError(
             "fun_facts.editorial_collision_gap must be >= 0."
+        )
+    if not 0 <= fun_fact_config.editorial_protect_top_n <= 10:
+        raise FunFactLayoutError(
+            "fun_facts.editorial_protect_top_n must be from 0 to 10."
+        )
+    if not 0 <= fun_fact_config.editorial_bar_clearance <= 60:
+        raise FunFactLayoutError(
+            "fun_facts.editorial_bar_clearance must be from 0 to 60."
         )
     if margin < 0:
         raise FunFactLayoutError("fun_facts.panel_margin must be >= 0.")

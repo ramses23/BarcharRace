@@ -2188,6 +2188,8 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         "editorial_shadow_opacity": _opacity_or_default(values.get("fun_facts_editorial_shadow_opacity"), 0.0),
         "editorial_shadow_blur": _int_in_range_or_default(values.get("fun_facts_editorial_shadow_blur"), 0, 0, 40),
         "editorial_shadow_offset": _int_in_range_or_default(values.get("fun_facts_editorial_shadow_offset"), 0, 0, 30),
+        "editorial_protect_top_n": _int_in_range_or_default(values.get("fun_facts_editorial_protect_top_n"), 3, 0, 10),
+        "editorial_bar_clearance": _int_in_range_or_default(values.get("fun_facts_editorial_bar_clearance"), 16, 0, 60),
     }
 
 
@@ -2221,6 +2223,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         settings.update(documentary_values)
         for field, value in documentary_values.items():
             st.session_state[_widget_key(f"fun_facts_{field}")] = value
+        st.session_state[_widget_key("fun_facts_editorial_headline_bold")] = True
     editorial_editor_key = _widget_key("fun_facts_editorial_layout_editor")
     editorial_event_key = f"{editorial_editor_key}_consumed_event"
     current_rect = {
@@ -2359,8 +2362,10 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             placement_options = (
                 "manual", "top_left", "top_center", "top_right",
                 "middle_left", "center", "middle_right", "bottom_left",
-                "bottom_center", "bottom_right", "smart",
+                "bottom_center", "bottom_right",
             )
+            if editorial["editorial_layout_mode"] == "overlay":
+                placement_options += ("smart",)
             editorial["editorial_placement_mode"] = placement_column.selectbox(
                 "Placement",
                 placement_options,
@@ -2377,6 +2382,18 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                 value=settings["editorial_keep_inside_safe_area"],
                 key=_widget_key("fun_facts_editorial_keep_inside_safe_area"),
             )
+            if editorial["editorial_placement_mode"] == "smart":
+                protect_column, clearance_column = st.columns(2)
+                editorial["editorial_protect_top_n"] = protect_column.slider(
+                    "Protect Top N bars", 0, 10,
+                    settings["editorial_protect_top_n"],
+                    key=_widget_key("fun_facts_editorial_protect_top_n"),
+                )
+                editorial["editorial_bar_clearance"] = clearance_column.slider(
+                    "Bar clearance", 0, 60,
+                    settings["editorial_bar_clearance"],
+                    key=_widget_key("fun_facts_editorial_bar_clearance"),
+                )
             if layout == "editorial_floating":
                 st.markdown("**Card composition**")
                 orientation_column, image_side_column = st.columns(2)

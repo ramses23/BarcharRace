@@ -57,3 +57,5 @@ class FunFactConfig:
     editorial_shadow_opacity: float = 0.0
     editorial_shadow_blur: int = 0
     editorial_shadow_offset: int = 0
+    editorial_protect_top_n: int = 3
+    editorial_bar_clearance: int = 16

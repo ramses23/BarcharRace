@@ -10,6 +10,7 @@ from core.bar_selector import BarSelector
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.display_calendar import DisplayCalendarResolver
 from core.layout_engine import LayoutEngine
+from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
 from core.value_axis import ValueAxisTracker
@@ -219,6 +220,15 @@ class RenderJob:
         bar_scale_resolver = BarValueScaleResolver.from_config(
             chart_config,
             sprites_by_year.values(),
+        )
+        build_smart_editorial_placement_resolver(
+            chart_config=chart_config,
+            fun_fact_config=fun_fact_config,
+            scheduler=fun_fact_scheduler,
+            periods=years,
+            sprites_by_period=sprites_by_year,
+            source_label=self.data_source_config.source_label,
+            calendar_resolver=calendar_resolver,
         )
 
         frame_id = 0

@@ -14,7 +14,7 @@ from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
 
 
-APPEARANCE_PRESET_SCHEMA_VERSION = 14
+APPEARANCE_PRESET_SCHEMA_VERSION = 15
 CANVAS_APPEARANCE_FIELDS = (
     "layout_preset",
     "theme",
@@ -170,6 +170,8 @@ FUN_FACT_APPEARANCE_FIELDS = (
     "editorial_shadow_opacity",
     "editorial_shadow_blur",
     "editorial_shadow_offset",
+    "editorial_protect_top_n",
+    "editorial_bar_clearance",
 )
 ANIMATION_APPEARANCE_FIELDS = (
     "rank_movement_duration",
@@ -221,6 +223,14 @@ _ROOT_FIELDS_BY_VERSION = {
         "animation",
     },
     14: {
+        "schema_version",
+        "name",
+        "canvas",
+        "bars",
+        "fun_facts",
+        "animation",
+    },
+    15: {
         "schema_version",
         "name",
         "canvas",
@@ -628,6 +638,13 @@ def _validated_preset(data):
                 "editorial_shadow_opacity": 0.0,
                 "editorial_shadow_blur": 0,
                 "editorial_shadow_offset": 0,
+                "editorial_protect_top_n": 3,
+                "editorial_bar_clearance": 16,
+            }
+        elif schema_version == 14:
+            fun_fact_defaults = {
+                "editorial_protect_top_n": 3,
+                "editorial_bar_clearance": 16,
             }
         if schema_version <= 5:
             fun_fact_defaults.update({

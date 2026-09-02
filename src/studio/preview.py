@@ -5,6 +5,7 @@ from core.bar_selector import BarSelector
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.display_calendar import DisplayCalendarResolver
 from core.layout_engine import LayoutEngine
+from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
 from core.value_axis import ValueAxisTracker
@@ -95,6 +96,23 @@ def render_project_preview(
         fun_fact_config=fun_fact_config,
     )
     preview_mode = _preview_mode(preview_mode, years)
+    if (
+        fun_fact_scheduler is not None
+        and fun_fact_config.editorial_placement_mode == "smart"
+    ):
+        smart_sprites_by_period = {
+            period: _sprites_for_year(timeline, selector, layout, period)
+            for period in years
+        }
+        build_smart_editorial_placement_resolver(
+            chart_config=chart_config,
+            fun_fact_config=fun_fact_config,
+            scheduler=fun_fact_scheduler,
+            periods=years,
+            sprites_by_period=smart_sprites_by_period,
+            source_label=source_label,
+            calendar_resolver=calendar_resolver,
+        )
 
     if preview_mode == "transition":
         year_a, year_b = _selected_transition_years(year, years)
