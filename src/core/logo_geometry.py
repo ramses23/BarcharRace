@@ -83,6 +83,34 @@ def final_visual_bar_sprite(
     )
 
 
+def resolved_bar_visual_sprite(
+    config,
+    sprite,
+    *,
+    primary_logo_available=False,
+):
+    """Resolve the one final sprite used by body, text, and both logos."""
+    resolved_availability = bool(primary_logo_available)
+    availability_resolver = primary_logo_available
+    if callable(primary_logo_available):
+        def availability_resolver(visual_sprite, logo_width):
+            nonlocal resolved_availability
+            resolved_availability = bool(primary_logo_available(
+                visual_sprite,
+                logo_width,
+            ))
+            return resolved_availability
+
+    visual = final_visual_bar_sprite(
+        config,
+        sprite,
+        primary_logo_available=availability_resolver,
+    )
+    if primary_logo_is_inside(config, sprite) and not resolved_availability:
+        visual = replace(visual, logo_path=None)
+    return visual
+
+
 def continuous_logo_minimum_width(
     data_width,
     structural_width,

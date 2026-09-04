@@ -107,7 +107,7 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
 
         self.assertEqual(
             signature,
-            "f0ef2e00f95b6deadfba1412cd3c081435f7a5a6108abc8972745c30bb742ee4",
+            "f9315b7d8260454e8edb97587cd2a8ead14bcf5c3f6d641675fe823052dfca7b",
         )
 
     def test_unified_classic_gradient_matches_legacy_simple_signature(self):

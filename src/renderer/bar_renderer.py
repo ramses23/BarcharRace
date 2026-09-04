@@ -25,9 +25,9 @@ from core.bar_appearance import (
     uses_vector_bar_gradient,
 )
 from core.logo_geometry import (
-    final_visual_bar_sprite,
     primary_logo_is_inside,
     primary_logo_horizontal_bounds,
+    resolved_bar_visual_sprite,
     resolved_primary_logo_size,
 )
 from core.rank_motion import (
@@ -37,6 +37,7 @@ from core.bar_text_geometry import resolve_value_text_geometry
 from core.source_text_geometry import resolve_source_text_layout
 from renderer.artists import (
     BarArtists,
+    BarVisualGroupArtists,
     ImageCommandsArtist,
     StaticImageArtist,
 )
@@ -81,6 +82,7 @@ class BarRenderer(TextCompositorMixin):
         self._advanced_shadow_collection = None
         self._advanced_glow_collection = None
         self._bar_artists = []
+        self._bar_visual_groups = []
         self._advanced_fill_cache = OrderedDict()
         self._advanced_material_cache = OrderedDict()
         self._advanced_resized_fill_cache = OrderedDict()
@@ -162,6 +164,7 @@ class BarRenderer(TextCompositorMixin):
             self._advanced_shadow_collection = None
             self._advanced_glow_collection = None
             self._bar_artists = []
+            self._bar_visual_groups = []
             self.logo_cache.clear()
             self._advanced_fill_cache.clear()
             self._advanced_material_cache.clear()
@@ -411,30 +414,67 @@ class BarRenderer(TextCompositorMixin):
         ]
         visual_sprites = [visual for visual, _ in visual_geometry]
         logo_sprites = [logo for _, logo in visual_geometry]
-        self._update_text_composites(replace(scene, bars=visual_sprites))
+        self._update_text_composites(
+            replace(scene, bars=visual_sprites),
+            include_bar_commands=False,
+        )
 
         self._ensure_bar_artist_capacity(ax, len(ordered_sprites))
 
         if self._uses_advanced_appearance():
-            self._update_advanced_underlay_collections(
-                ordered_sprites,
-                visual_sprites,
-            )
-            self._update_advanced_composite(visual_sprites)
+            self._update_advanced_track_collection(ordered_sprites)
 
-        self._update_logo_composite(logo_sprites)
-
-        for artists, sprite in zip(self._bar_artists, visual_sprites):
+        for index, (artists, group, sprite, logo_sprite) in enumerate(zip(
+            self._bar_artists,
+            self._bar_visual_groups,
+            visual_sprites,
+            logo_sprites,
+        )):
+            self._set_bar_group_depth(group, index, len(visual_sprites))
             self._update_bar_artists(artists, sprite)
+            self._update_bar_visual_group(group, sprite, logo_sprite)
+
+        self._mirror_bar_group_commands(len(visual_sprites))
 
         if self._uses_simple_gradient():
             self._update_gradient_artist(visual_sprites)
+            self._gradient_artist.set_visible(False)
 
-        for artists in self._bar_artists[len(ordered_sprites):]:
+        for artists, group in zip(
+            self._bar_artists[len(ordered_sprites):],
+            self._bar_visual_groups[len(ordered_sprites):],
+        ):
             self._set_bar_artists_visible(artists, False)
+            self._set_bar_visual_group_visible(group, False)
 
         self._update_fun_fact_overlay(scene.fun_fact)
         self._update_short_overlay(scene.short_overlay)
+
+    def _mirror_bar_group_commands(self, count):
+        groups = self._bar_visual_groups[:count]
+        self._logo_composite_artist.set_commands(
+            command
+            for group in groups
+            for command in group.logos.commands
+        )
+        self._logo_composite_artist.set_visible(False)
+        self._text_bar_artist.set_commands(
+            command
+            for group in groups
+            for command in group.text.commands
+        )
+        self._text_bar_artist.set_visible(False)
+        if self._uses_advanced_appearance():
+            self._advanced_composite_artist.set_commands(
+                command
+                for group in groups
+                for command in group.advanced_body.commands
+            )
+            self._advanced_composite_artist.set_visible(False)
+            self._advanced_shadow_collection.set_verts([])
+            self._advanced_shadow_collection.set_visible(False)
+            self._advanced_glow_collection.set_verts([])
+            self._advanced_glow_collection.set_visible(False)
 
     def _final_visual_geometry(self, sprite):
         primary_available = False
@@ -448,19 +488,95 @@ class BarRenderer(TextCompositorMixin):
             )
             return primary_available
 
-        visual_sprite = final_visual_bar_sprite(
+        visual_sprite = resolved_bar_visual_sprite(
             self.config,
             sprite,
             primary_logo_available=resolve_primary_asset,
         )
-        if primary_logo_is_inside(self.config, sprite) and not primary_available:
-            visual_sprite = replace(visual_sprite, logo_path=None)
-        logo_sprite = (
-            visual_sprite
-            if primary_available and primary_logo_is_inside(self.config, sprite)
-            else sprite
-        )
-        return visual_sprite, logo_sprite
+        return visual_sprite, visual_sprite
+
+    @staticmethod
+    def _bar_group_zorders(index, count):
+        span = 3.0 / max(1, count)
+        base = 1.0 + (index * span)
+        return {
+            "glow": base + (span * 0.05),
+            "shadow": base + (span * 0.10),
+            "body": base + (span * 0.30),
+            "border": base + (span * 0.42),
+            "logos": base + (span * 0.62),
+            "text": base + (span * 0.82),
+        }
+
+    def _set_bar_group_depth(self, group, index, count):
+        zorders = self._bar_group_zorders(index, count)
+        for artist in (group.advanced_glow, *group.bar.glow):
+            if artist is not None:
+                artist.set_zorder(zorders["glow"])
+        for artist in (group.advanced_shadow, group.bar.shadow):
+            if artist is not None:
+                artist.set_zorder(zorders["shadow"])
+        for artist in (
+            group.bar.bar,
+            group.bar.fill_clip,
+            group.bar.fill_image,
+            group.gradient,
+            group.advanced_body,
+        ):
+            if artist is not None:
+                artist.set_zorder(zorders["body"])
+        if group.bar.border is not None:
+            group.bar.border.set_zorder(zorders["border"])
+        group.logos.set_zorder(zorders["logos"])
+        group.text.set_zorder(zorders["text"])
+        for artist in (
+            group.bar.rank_label,
+            group.bar.name_label,
+            group.bar.value_label,
+        ):
+            if artist is not None:
+                artist.set_zorder(zorders["text"])
+
+    def _update_bar_visual_group(self, group, sprite, logo_sprite):
+        if group.gradient is not None:
+            self._update_gradient_artist([sprite], artist=group.gradient)
+        if group.advanced_body is not None:
+            commands = []
+            if self._opacity(sprite) > 0 and sprite.width > 0 and sprite.height > 0:
+                composite, extent = self._compose_advanced_sprite(sprite)
+                commands.append((
+                    np.array(composite, dtype=np.uint8, copy=True, order="C"),
+                    extent[0],
+                    extent[3],
+                ))
+            group.advanced_body.set_commands(commands)
+            self._update_advanced_shadow_collection(
+                [sprite], collection=group.advanced_shadow
+            )
+            self._update_advanced_glow_collection(
+                [sprite], collection=group.advanced_glow
+            )
+
+        logo_commands = []
+        if self.config.logos_enabled:
+            for slot, logo_path, layout, _ in self._logo_layouts_for_sprite(
+                logo_sprite
+            ):
+                command = self._logo_composite_command(
+                    logo_sprite,
+                    slot=slot,
+                    logo_path=logo_path,
+                    layout=layout,
+                )
+                if command is not None:
+                    logo_commands.append(command)
+        group.logos.set_commands(logo_commands)
+        group.text.set_commands(self._bar_text_commands(sprite))
+
+    @staticmethod
+    def _set_bar_visual_group_visible(group, visible):
+        for artist in group.depth_artists():
+            artist.set_visible(visible)
 
     def _update_value_axis(self, ax, value_axis):
         if self._value_grid_collection is None:
@@ -1552,7 +1668,49 @@ class BarRenderer(TextCompositorMixin):
 
     def _ensure_bar_artist_capacity(self, ax, count):
         while len(self._bar_artists) < count:
-            self._bar_artists.append(self._create_bar_artists(ax))
+            bar_artists = self._create_bar_artists(ax)
+            self._bar_artists.append(bar_artists)
+            self._bar_visual_groups.append(
+                self._create_bar_visual_group_artists(ax, bar_artists)
+            )
+
+    def _create_bar_visual_group_artists(self, ax, bar_artists):
+        gradient = None
+        advanced_shadow = None
+        advanced_glow = None
+        advanced_body = None
+        if self._uses_simple_gradient():
+            gradient = PolyCollection(
+                [],
+                closed=True,
+                edgecolors="none",
+                antialiaseds=False,
+            )
+            gradient.set_visible(False)
+            ax.add_collection(gradient)
+        elif self._uses_advanced_appearance():
+            advanced_shadow = self._create_advanced_collection(ax, zorder=1)
+            advanced_glow = self._create_advanced_collection(
+                ax,
+                zorder=1,
+                facecolors="none",
+            )
+            advanced_body = ImageCommandsArtist(self.config.height)
+            ax.add_artist(advanced_body)
+
+        logos = ImageCommandsArtist(self.config.height)
+        text = ImageCommandsArtist(self.config.height)
+        ax.add_artist(logos)
+        ax.add_artist(text)
+        return BarVisualGroupArtists(
+            bar=bar_artists,
+            gradient=gradient,
+            advanced_shadow=advanced_shadow,
+            advanced_glow=advanced_glow,
+            advanced_body=advanced_body,
+            logos=logos,
+            text=text,
+        )
 
     def _create_bar_artists(self, ax):
         empty_path = Path(np.empty((0, 2)))
@@ -1741,16 +1899,18 @@ class BarRenderer(TextCompositorMixin):
         self._advanced_track_collection.set_verts(vertices, closed=True)
         self._advanced_track_collection.set_facecolors(colors)
 
-    def _update_advanced_shadow_collection(self, sprites):
+    def _update_advanced_shadow_collection(self, sprites, *, collection=None):
+        if collection is None:
+            collection = self._advanced_shadow_collection
         visible = (
             self.config.bar_shadow_enabled
             and self.config.bar_shadow_alpha > 0
             and bool(sprites)
         )
-        self._advanced_shadow_collection.set_visible(visible)
+        collection.set_visible(visible)
 
         if not visible:
-            self._advanced_shadow_collection.set_verts([])
+            collection.set_verts([])
             return
 
         vertices = []
@@ -1767,20 +1927,22 @@ class BarRenderer(TextCompositorMixin):
                 self.config.bar_shadow_alpha * self._opacity(sprite),
             ))
 
-        self._advanced_shadow_collection.set_verts(vertices, closed=True)
-        self._advanced_shadow_collection.set_facecolors(colors)
+        collection.set_verts(vertices, closed=True)
+        collection.set_facecolors(colors)
 
-    def _update_advanced_glow_collection(self, sprites):
+    def _update_advanced_glow_collection(self, sprites, *, collection=None):
+        if collection is None:
+            collection = self._advanced_glow_collection
         visible = (
             self.config.bar_outer_glow_enabled
             and self.config.bar_glow_opacity > 0
             and self.config.bar_glow_blur > 0
             and bool(sprites)
         )
-        self._advanced_glow_collection.set_visible(visible)
+        collection.set_visible(visible)
 
         if not visible:
-            self._advanced_glow_collection.set_verts([])
+            collection.set_verts([])
             return
 
         vertices = []
@@ -1804,10 +1966,10 @@ class BarRenderer(TextCompositorMixin):
                 ))
                 widths.append(max(1.0, spread))
 
-        self._advanced_glow_collection.set_verts(vertices, closed=True)
-        self._advanced_glow_collection.set_facecolors("none")
-        self._advanced_glow_collection.set_edgecolors(colors)
-        self._advanced_glow_collection.set_linewidths(widths)
+        collection.set_verts(vertices, closed=True)
+        collection.set_facecolors("none")
+        collection.set_edgecolors(colors)
+        collection.set_linewidths(widths)
 
     def _compose_advanced_sprite(self, sprite):
         left = max(0, int(np.floor(sprite.x)))
@@ -1890,18 +2052,12 @@ class BarRenderer(TextCompositorMixin):
         if sprite.width <= 0 or sprite.height <= 0:
             return None
 
-        if primary_logo_is_inside(self.config, sprite):
-            left = int(round(sprite.x))
-            right = int(round(sprite.x + sprite.width))
-            top = int(round(sprite.y - (sprite.height / 2)))
-            bottom = int(round(sprite.y + (sprite.height / 2)))
-            pixel_width = max(1, right - left)
-            pixel_height = max(1, bottom - top)
-        else:
-            pixel_width = max(1, int(round(sprite.width)))
-            pixel_height = max(1, int(round(sprite.height)))
-            left = int(round(sprite.x))
-            top = int(round(sprite.y - (sprite.height / 2)))
+        left = int(round(sprite.x))
+        right = int(round(sprite.x + sprite.width))
+        top = int(round(sprite.y - (sprite.height / 2)))
+        bottom = int(round(sprite.y + (sprite.height / 2)))
+        pixel_width = max(1, right - left)
+        pixel_height = max(1, bottom - top)
         mask = self._advanced_shape_mask(
             pixel_width,
             pixel_height,
@@ -2316,7 +2472,9 @@ class BarRenderer(TextCompositorMixin):
         ))
         artist.set_linewidth(width)
 
-    def _update_gradient_artist(self, sprites):
+    def _update_gradient_artist(self, sprites, *, artist=None):
+        if artist is None:
+            artist = self._gradient_artist
         vertices = []
         facecolors = []
         segment_count = 64
@@ -2348,9 +2506,9 @@ class BarRenderer(TextCompositorMixin):
                     gradient[0] + ((gradient[-1] - gradient[0]) * progress)
                 )
 
-        self._gradient_artist.set_verts(vertices, closed=True)
-        self._gradient_artist.set_facecolors(facecolors)
-        self._gradient_artist.set_visible(bool(vertices))
+        artist.set_verts(vertices, closed=True)
+        artist.set_facecolors(facecolors)
+        artist.set_visible(bool(vertices))
 
     def _bar_gradient_edges(self, sprite, segment_count):
         left = sprite.x
@@ -2691,20 +2849,9 @@ class BarRenderer(TextCompositorMixin):
             slot == "primary"
             and position in ("inside_left", "inside_right")
         )
-        if locked_primary:
-            pixel_top = int(round(layout["top"]))
-            pixel_bottom = int(round(layout["bottom"]))
-            pixel_size = max(1, pixel_bottom - pixel_top)
-        else:
-            pixel_top = int(round(layout["top"]))
-            pixel_size = max(
-                1,
-                (
-                    int(np.floor(layout["size"]))
-                    if slot == "primary"
-                    else int(round(layout["size"]))
-                ),
-            )
+        pixel_top = int(round(layout["top"]))
+        pixel_bottom = int(round(layout["bottom"]))
+        pixel_size = max(1, pixel_bottom - pixel_top)
         image = self._load_logo(logo_path, pixel_size)
 
         if image is None:

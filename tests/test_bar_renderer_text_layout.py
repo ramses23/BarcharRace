@@ -1700,8 +1700,14 @@ class BarRendererTextLayoutTest(unittest.TestCase):
             self.assertIsNone(artists.fill_clip)
             self.assertEqual(artists.glow, ())
             self.assertTrue(renderer._advanced_track_collection.get_visible())
-            self.assertTrue(renderer._advanced_shadow_collection.get_visible())
-            self.assertTrue(renderer._advanced_glow_collection.get_visible())
+            self.assertFalse(renderer._advanced_shadow_collection.get_visible())
+            self.assertFalse(renderer._advanced_glow_collection.get_visible())
+            self.assertTrue(
+                renderer._bar_visual_groups[0].advanced_shadow.get_visible()
+            )
+            self.assertTrue(
+                renderer._bar_visual_groups[0].advanced_glow.get_visible()
+            )
             self.assertEqual(
                 len(renderer._advanced_composite_artist.commands),
                 1,

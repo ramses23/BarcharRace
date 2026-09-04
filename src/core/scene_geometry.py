@@ -6,6 +6,7 @@ from core.logo_geometry import (
     normalized_primary_logo_position,
     primary_logo_is_inside,
     primary_logo_horizontal_bounds,
+    resolved_bar_visual_sprite,
     resolved_primary_logo_size,
 )
 from core.bar_text_geometry import resolve_value_text_geometry
@@ -66,15 +67,7 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         )
         for sprite, available in zip(sprites, primary_logo_available)
     )
-    logo_sprites = tuple(
-        visual if available and primary_logo_is_inside(chart_config, sprite)
-        else sprite
-        for sprite, visual, available in zip(
-            sprites,
-            visual_sprites,
-            primary_logo_available,
-        )
-    )
+    logo_sprites = visual_sprites
     canvas = SceneRect(0, 0, chart_config.width, chart_config.height)
     rows = tuple(
         SceneRect(
@@ -336,22 +329,14 @@ def build_smart_scene_geometry(
         for sprite in sprites
     )
     visual_sprites = tuple(
-        final_visual_bar_sprite(
+        resolved_bar_visual_sprite(
             chart_config,
             sprite,
             primary_logo_available=available,
         )
         for sprite, available in zip(sprites, availability)
     )
-    logo_sprites = tuple(
-        visual if available and primary_logo_is_inside(chart_config, sprite)
-        else sprite
-        for sprite, visual, available in zip(
-            sprites,
-            visual_sprites,
-            availability,
-        )
-    )
+    logo_sprites = visual_sprites
     _, _, logo_groups = _logo_rects(chart_config, logo_sprites)
     obstacles = []
     for sprite, logo_group in zip(visual_sprites, logo_groups):

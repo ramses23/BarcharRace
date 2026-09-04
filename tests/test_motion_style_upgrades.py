@@ -524,6 +524,230 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertEqual(logo_image.shape[:2], (26, 26))
         self.assertEqual(bar_image.shape[0], 26)
 
+    def test_primary_and_secondary_logos_follow_one_fractional_bar_geometry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            primary = Path(temp_dir) / "primary.png"
+            secondary = Path(temp_dir) / "secondary.png"
+            Image.new("RGBA", (32, 32), "#22AAEE").save(primary)
+            Image.new("RGBA", (32, 32), "#FFCC00").save(secondary)
+
+            for position in ("inside_left", "inside_right", "outside_left"):
+                for duration in (1.0, 0.7, 0.5):
+                    with self.subTest(position=position, duration=duration):
+                        config = ChartConfig(
+                            width=320,
+                            height=180,
+                            dpi=72,
+                            logos_enabled=True,
+                            logo_size=70,
+                            bar_logo_position=position,
+                            bar_secondary_logo_enabled=True,
+                            bar_secondary_logo_layout="independent",
+                            bar_secondary_logo_position="inside_right",
+                            bar_secondary_logo_size=15,
+                            bar_secondary_logo_padding=0,
+                            bar_secondary_logo_border_enabled=False,
+                        )
+                        start = [BarSprite(
+                            name="A",
+                            value=100,
+                            color="#CC3300",
+                            x=70.25,
+                            y=50.125,
+                            width=130.35,
+                            height=24,
+                            rank=1,
+                            logo_path=str(primary),
+                            secondary_logo_path=str(secondary),
+                            bar_available_width=220,
+                        )]
+                        end = [replace(start[0], y=110.875, rank=2)]
+                        frames = MotionEngine(AnimationConfig(
+                            rank_movement_duration=duration,
+                        )).interpolate_sprites(start, end, steps=9)
+                        renderer = BarRenderer(config=config)
+                        try:
+                            previous_primary_error = None
+                            for frame in frames:
+                                visual, logo_sprite = renderer._final_visual_geometry(
+                                    frame[0]
+                                )
+                                self.assertEqual(visual, logo_sprite)
+                                geometry = build_scene_geometry(
+                                    config,
+                                    FunFactConfig(),
+                                    Scene(title="", bars=[frame[0]]),
+                                )
+                                bar_rect = geometry["bar_rects"][0]
+                                bar_center_y = (
+                                    bar_rect["y"] + (bar_rect["height"] / 2)
+                                )
+                                for key in (
+                                    "primary_logo_rects",
+                                    "secondary_logo_rects",
+                                ):
+                                    logo_rect = geometry[key][0]
+                                    self.assertAlmostEqual(
+                                        logo_rect["y"]
+                                        + (logo_rect["height"] / 2),
+                                        bar_center_y,
+                                        delta=0.001,
+                                    )
+                                layouts = renderer._logo_layouts_for_sprite(logo_sprite)
+                                self.assertEqual(len(layouts), 2)
+                                for slot, path, layout, _ in layouts:
+                                    if slot == "primary" or position != "outside_left":
+                                        self.assertAlmostEqual(
+                                            (layout["top"] + layout["bottom"]) / 2,
+                                            visual.y,
+                                        )
+                                    command = renderer._logo_composite_command(
+                                        logo_sprite,
+                                        slot=slot,
+                                        logo_path=path,
+                                        layout=layout,
+                                    )
+                                    image, _, top = command
+                                    self.assertEqual(top, round(layout["top"]))
+                                    self.assertEqual(
+                                        top + image.shape[0],
+                                        round(layout["bottom"]),
+                                    )
+                                    if slot == "primary":
+                                        error = (
+                                            top + (image.shape[0] / 2.0) - visual.y
+                                        )
+                                        self.assertLessEqual(abs(error), 0.5)
+                                        if previous_primary_error is not None:
+                                            self.assertLess(
+                                                abs(error - previous_primary_error),
+                                                1.0,
+                                            )
+                                        previous_primary_error = error
+                        finally:
+                            renderer.close()
+
+    def test_crossing_depth_is_atomic_for_body_text_effects_and_both_logos(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            primary = Path(temp_dir) / "primary.png"
+            secondary = Path(temp_dir) / "secondary.png"
+            Image.new("RGBA", (16, 16), "#FFFFFF").save(primary)
+            Image.new("RGBA", (16, 16), "#FFFF00").save(secondary)
+            falling = BarSprite(
+                name="Falling",
+                value=100,
+                color="#FF0000",
+                x=40,
+                y=80.25,
+                width=180,
+                height=28,
+                rank=2,
+                logo_path=str(primary),
+                secondary_logo_path=str(secondary),
+                rank_motion_state="falling",
+                rank_motion_progress=0.5,
+                rank_motion_target=2,
+                bar_available_width=240,
+            )
+            rising = replace(
+                falling,
+                name="Rising",
+                color="#0000FF",
+                rank=1,
+                rank_motion_state="rising",
+                rank_motion_target=1,
+            )
+            modes = (
+                dict(bar_appearance_mode="simple", bar_gradient_enabled=False),
+                dict(
+                    bar_appearance_mode="unified",
+                    bar_fill_type="gradient",
+                    bar_gradient_color_count=2,
+                ),
+                dict(bar_appearance_mode="advanced", bar_fill_type="solid"),
+            )
+            for options in modes:
+                with self.subTest(options=options):
+                    renderer = BarRenderer(config=ChartConfig(
+                        width=280,
+                        height=160,
+                        dpi=72,
+                        background_color_override="#FFFFFF",
+                        title_enabled=False,
+                        subtitle_enabled=False,
+                        source_label_enabled=False,
+                        time_label_enabled=False,
+                        logos_enabled=True,
+                        logo_size=70,
+                        bar_logo_position="inside_left",
+                        bar_secondary_logo_enabled=True,
+                        bar_secondary_logo_layout="independent",
+                        bar_secondary_logo_position="inside_right",
+                        bar_secondary_logo_size=14,
+                        category_labels_enabled=True,
+                        bar_label_position="inside_center",
+                        bar_label_border_enabled=True,
+                        bar_label_border_width=2,
+                        bar_label_shadow_enabled=True,
+                        value_labels_enabled=True,
+                        bar_value_position="inside_right",
+                        bar_value_border_enabled=True,
+                        bar_value_shadow_enabled=True,
+                        rank_labels_enabled=True,
+                        bar_shadow_enabled=True,
+                        **options,
+                    ))
+                    try:
+                        first = renderer.render_rgba(
+                            Scene(title="", bars=[rising, falling])
+                        )
+                        lower, upper = renderer._bar_visual_groups[:2]
+                        lower_z = [
+                            artist.get_zorder() for artist in lower.depth_artists()
+                        ]
+                        upper_z = [
+                            artist.get_zorder() for artist in upper.depth_artists()
+                        ]
+                        self.assertLess(max(lower_z), min(upper_z))
+                        self.assertEqual(len(lower.logos.commands), 2)
+                        self.assertEqual(len(upper.logos.commands), 2)
+                        self.assertEqual(len(lower.text.commands), 3)
+                        self.assertEqual(len(upper.text.commands), 3)
+
+                        second = renderer.render_rgba(
+                            Scene(title="", bars=[falling, rising])
+                        )
+                        self.assertEqual(first, second)
+
+                        settled = [
+                            replace(
+                                rising,
+                                rank_motion_state="stable",
+                                rank_motion_target=None,
+                            ),
+                            replace(
+                                falling,
+                                rank_motion_state="stable",
+                                rank_motion_target=None,
+                            ),
+                        ]
+                        renderer.render_rgba(Scene(title="", bars=settled))
+                        settled_lower, settled_upper = (
+                            renderer._bar_visual_groups[:2]
+                        )
+                        self.assertLess(
+                            max(
+                                artist.get_zorder()
+                                for artist in settled_lower.depth_artists()
+                            ),
+                            min(
+                                artist.get_zorder()
+                                for artist in settled_upper.depth_artists()
+                            ),
+                        )
+                    finally:
+                        renderer.close()
+
     def test_rank_motion_swap_matches_preview_and_render_job(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -8,7 +8,7 @@ from utils.value_formatter import format_value
 
 class TextCompositorMixin:
 
-    def _update_text_composites(self, scene):
+    def _update_text_composites(self, scene, *, include_bar_commands=True):
         background_commands = []
         bar_commands = []
         foreground_commands = []
@@ -112,100 +112,106 @@ class TextCompositorMixin:
             if command is not None:
                 foreground_commands.append(command)
 
-        for sprite in scene.bars:
-            opacity = self._opacity(sprite)
-            if opacity <= 0:
-                continue
-
-            if self.config.rank_labels_enabled and sprite.rank is not None:
-                command = self._text_command(
-                    self._format_rank(sprite.rank),
-                    self._rank_label_x(),
-                    sprite.y,
-                    ha="right",
-                    va="center",
-                    font_size=self.config.rank_label_font_size,
-                    font_family=self.config.rank_label_font_family,
-                    font_weight=self.config.rank_label_font_weight,
-                    font_style=self.config.rank_label_font_style,
-                    color=self.config.resolved_rank_label_text_color,
-                    opacity=opacity * self.config.rank_label_text_opacity,
-                )
-                if command is not None:
-                    bar_commands.append(command)
-
-            if self.config.category_labels_enabled:
-                name_layout = self._bar_label_layout(sprite)
-                command = self._text_command(
-                    name_layout["text"],
-                    name_layout["x"],
-                    name_layout["y"],
-                    ha=name_layout["ha"],
-                    va=name_layout["va"],
-                    font_size=self.config.label_font_size,
-                    font_family=self.config.label_font_family,
-                    font_weight=self.config.label_font_weight,
-                    font_style=self.config.label_font_style,
-                    color=name_layout["color"],
-                    opacity=opacity * self.config.label_text_opacity,
-                    stroke_width=(
-                        self.config.bar_label_border_width
-                        if self.config.bar_label_border_enabled
-                        else 0
-                    ),
-                    stroke_color=self.config.bar_label_border_color,
-                    stroke_opacity=self.config.bar_label_border_opacity,
-                    shadow_offset=(
-                        self.config.bar_label_shadow_offset_x,
-                        self.config.bar_label_shadow_offset_y,
-                    )
-                    if self.config.bar_label_shadow_enabled
-                    else None,
-                    shadow_color=self.config.bar_label_shadow_color,
-                    shadow_opacity=self.config.bar_label_shadow_opacity,
-                )
-                if command is not None:
-                    bar_commands.append(command)
-
-            if self.config.value_labels_enabled:
-                value_text = format_value(
-                    sprite.value,
-                    value_format=self.config.value_format,
-                )
-                value_layout = self._value_label_layout(sprite, value_text)
-                command = self._text_command(
-                    value_layout["text"],
-                    value_layout["x"],
-                    value_layout.get("y", sprite.y),
-                    ha=value_layout["ha"],
-                    va=value_layout.get("va", "center"),
-                    font_size=self.config.value_font_size,
-                    font_family=self.config.value_font_family,
-                    font_weight=self.config.value_font_weight,
-                    font_style=self.config.value_font_style,
-                    color=value_layout["color"],
-                    opacity=opacity * self.config.value_text_opacity,
-                    stroke_width=(
-                        self.config.bar_value_border_width
-                        if self.config.bar_value_border_enabled
-                        else 0
-                    ),
-                    stroke_color=self.config.bar_value_border_color,
-                    shadow_offset=(
-                        self.config.bar_value_shadow_offset_x,
-                        self.config.bar_value_shadow_offset_y,
-                    )
-                    if self.config.bar_value_shadow_enabled
-                    else None,
-                    shadow_color=self.config.bar_value_shadow_color,
-                    shadow_opacity=0.72,
-                )
-                if command is not None:
-                    bar_commands.append(command)
+        if include_bar_commands:
+            for sprite in scene.bars:
+                bar_commands.extend(self._bar_text_commands(sprite))
 
         self._text_background_artist.set_commands(background_commands)
         self._text_bar_artist.set_commands(bar_commands)
         self._text_foreground_artist.set_commands(foreground_commands)
+
+    def _bar_text_commands(self, sprite):
+        opacity = self._opacity(sprite)
+        if opacity <= 0:
+            return []
+
+        commands = []
+        if self.config.rank_labels_enabled and sprite.rank is not None:
+            command = self._text_command(
+                self._format_rank(sprite.rank),
+                self._rank_label_x(),
+                sprite.y,
+                ha="right",
+                va="center",
+                font_size=self.config.rank_label_font_size,
+                font_family=self.config.rank_label_font_family,
+                font_weight=self.config.rank_label_font_weight,
+                font_style=self.config.rank_label_font_style,
+                color=self.config.resolved_rank_label_text_color,
+                opacity=opacity * self.config.rank_label_text_opacity,
+            )
+            if command is not None:
+                commands.append(command)
+
+        if self.config.category_labels_enabled:
+            name_layout = self._bar_label_layout(sprite)
+            command = self._text_command(
+                name_layout["text"],
+                name_layout["x"],
+                name_layout["y"],
+                ha=name_layout["ha"],
+                va=name_layout["va"],
+                font_size=self.config.label_font_size,
+                font_family=self.config.label_font_family,
+                font_weight=self.config.label_font_weight,
+                font_style=self.config.label_font_style,
+                color=name_layout["color"],
+                opacity=opacity * self.config.label_text_opacity,
+                stroke_width=(
+                    self.config.bar_label_border_width
+                    if self.config.bar_label_border_enabled
+                    else 0
+                ),
+                stroke_color=self.config.bar_label_border_color,
+                stroke_opacity=self.config.bar_label_border_opacity,
+                shadow_offset=(
+                    self.config.bar_label_shadow_offset_x,
+                    self.config.bar_label_shadow_offset_y,
+                )
+                if self.config.bar_label_shadow_enabled
+                else None,
+                shadow_color=self.config.bar_label_shadow_color,
+                shadow_opacity=self.config.bar_label_shadow_opacity,
+            )
+            if command is not None:
+                commands.append(command)
+
+        if self.config.value_labels_enabled:
+            value_text = format_value(
+                sprite.value,
+                value_format=self.config.value_format,
+            )
+            value_layout = self._value_label_layout(sprite, value_text)
+            command = self._text_command(
+                value_layout["text"],
+                value_layout["x"],
+                value_layout.get("y", sprite.y),
+                ha=value_layout["ha"],
+                va=value_layout.get("va", "center"),
+                font_size=self.config.value_font_size,
+                font_family=self.config.value_font_family,
+                font_weight=self.config.value_font_weight,
+                font_style=self.config.value_font_style,
+                color=value_layout["color"],
+                opacity=opacity * self.config.value_text_opacity,
+                stroke_width=(
+                    self.config.bar_value_border_width
+                    if self.config.bar_value_border_enabled
+                    else 0
+                ),
+                stroke_color=self.config.bar_value_border_color,
+                shadow_offset=(
+                    self.config.bar_value_shadow_offset_x,
+                    self.config.bar_value_shadow_offset_y,
+                )
+                if self.config.bar_value_shadow_enabled
+                else None,
+                shadow_color=self.config.bar_value_shadow_color,
+                shadow_opacity=0.72,
+            )
+            if command is not None:
+                commands.append(command)
+        return commands
 
     def _text_command(
         self,

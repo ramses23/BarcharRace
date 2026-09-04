@@ -45,6 +45,34 @@ class BarArtists:
         )
 
 
+@dataclass
+class BarVisualGroupArtists:
+    bar: BarArtists
+    gradient: object = None
+    advanced_shadow: object = None
+    advanced_glow: object = None
+    advanced_body: object = None
+    logos: object = None
+    text: object = None
+
+    def depth_artists(self):
+        return tuple(
+            artist
+            for artist in (
+                self.advanced_glow,
+                self.advanced_shadow,
+                self.bar.shadow,
+                self.bar.bar,
+                self.gradient,
+                self.advanced_body,
+                self.bar.border,
+                self.logos,
+                self.text,
+            )
+            if artist is not None
+        )
+
+
 @dataclass(frozen=True)
 class TextSprite:
     image: np.ndarray
