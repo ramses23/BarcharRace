@@ -1,6 +1,7 @@
 import math
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,6 +51,68 @@ def sprite(name, value, *, width=600, x=200, y=200, opacity=1.0):
 
 
 class ValueAxisTest(unittest.TestCase):
+    def test_vertical_frame_is_structural_while_leader_and_rank_motion_change(self):
+        for width, height, top_margin, bottom_margin in (
+            (1920, 1080, 260, 140),
+            (1080, 1920, 330, 180),
+        ):
+            for mode in ("dynamic", "static"):
+                for rank_motion_strength in (1.0, 0.7, 0.5):
+                    config = self._config(
+                        width=width,
+                        height=height,
+                        top_margin=top_margin,
+                        bottom_margin=bottom_margin,
+                        value_grid_mode=mode,
+                    )
+                    before = [
+                        sprite("A", 100, width=600, y=320),
+                        sprite("B", 80, width=480, y=410),
+                    ]
+                    crossing = [
+                        replace(
+                            before[0],
+                            value=90,
+                            width=520,
+                            y=410.375,
+                            height=42 - (6 * rank_motion_strength),
+                        ),
+                        replace(
+                            before[1],
+                            value=300,
+                            width=650,
+                            y=320.625,
+                            height=42 + (6 * rank_motion_strength),
+                        ),
+                    ]
+                    after = [
+                        replace(crossing[1], y=320, height=42),
+                        replace(crossing[0], y=410, height=42),
+                    ]
+                    tracker = ValueAxisTracker.from_config(
+                        config, [before, crossing, after]
+                    )
+                    states = [tracker.next(frame) for frame in (before, crossing, after)]
+
+                    vertical_frames = {
+                        (state.line_top, state.line_bottom, state.label_y)
+                        for state in states
+                    }
+                    self.assertEqual(len(vertical_frames), 1)
+                    if mode == "dynamic":
+                        before_ticks = {tick.value: tick.x for tick in states[0].ticks}
+                        crossing_ticks = {tick.value: tick.x for tick in states[1].ticks}
+                        shared = set(before_ticks) & set(crossing_ticks) - {0.0}
+                        self.assertTrue(shared)
+                        self.assertTrue(any(
+                            before_ticks[value] != crossing_ticks[value]
+                            for value in shared
+                        ))
+                        self.assertNotEqual(
+                            states[0].scale.domain_max,
+                            states[1].scale.domain_max,
+                        )
+
     def test_progressive_dynamic_grid_uses_current_leader_semantic_scale(self):
         config = self._config(
             start_bars_at_zero=True,

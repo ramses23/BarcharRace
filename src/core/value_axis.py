@@ -5,6 +5,7 @@ from core.bar_value_scale import (
     progressive_bar_scale_active,
     structural_bar_width,
 )
+from core.layout_engine import structural_race_vertical_bounds
 from models.value_axis import (
     GridDisplayScale,
     SemanticDataScale,
@@ -302,10 +303,7 @@ class ValueAxisTracker:
             effective_tick_count,
         )
         self._update_tick_opacities(desired_ticks)
-        line_top, line_bottom, label_y = _vertical_geometry(
-            self.chart_config,
-            sprites,
-        )
+        line_top, line_bottom, label_y = _vertical_geometry(self.chart_config)
         tick_tolerance = max(1e-6, scale.width * 1e-9)
         ticks = []
         for value, opacity in sorted(self._tick_opacities.items()):
@@ -388,15 +386,8 @@ def _tick_decimal_places(scaled_step):
     return 6
 
 
-def _vertical_geometry(config, sprites):
-    row_top = min(
-        (sprite.y - (sprite.height / 2.0) for sprite in sprites),
-        default=float(config.top_margin),
-    )
-    row_bottom = max(
-        (sprite.y + (sprite.height / 2.0) for sprite in sprites),
-        default=float(config.height - config.bottom_margin),
-    )
+def _vertical_geometry(config):
+    row_top, row_bottom = structural_race_vertical_bounds(config)
     font_pixels = max(
         1.0,
         float(config.value_grid_tick_font_size) * float(config.dpi) / 72.0,
