@@ -8,7 +8,6 @@ from core.layout_engine import LayoutEngine
 from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
-from core.value_axis import ValueAxisTracker
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
@@ -24,6 +23,7 @@ from studio.short_export import (
     short_overlay_for_frame,
 )
 from studio.workspace_paths import assert_user_write_path
+from studio.value_axis_preview import get_preview_value_axis_bundle
 from validators.dataset_validator import DatasetValidator
 
 
@@ -418,61 +418,29 @@ def _preview_value_scales(
     target_frame_index,
     target_sprites,
 ):
-    sprites_by_year = {
-        year: _sprites_for_year(timeline, selector, layout, year)
-        for year in years
-    }
-    bar_value_scale = BarValueScaleResolver.from_config(
-        chart_config,
-        sprites_by_year.values(),
-    ).for_sprites(target_sprites, frame_index=target_frame_index)
     if not chart_config.value_grid_enabled:
+        sprites_by_year = {
+            year: _sprites_for_year(timeline, selector, layout, year)
+            for year in years
+        }
+        bar_value_scale = BarValueScaleResolver.from_config(
+            chart_config,
+            sprites_by_year.values(),
+        ).for_sprites(target_sprites, frame_index=target_frame_index)
         return bar_value_scale, None
 
-    tracker = ValueAxisTracker.from_config(
+    bundle = get_preview_value_axis_bundle(
         chart_config,
-        sprites_by_year.values(),
+        timeline,
+        years,
+        selector,
+        layout,
     )
-    if len(years) < 2:
-        return bar_value_scale, tracker.next(sprites_by_year[years[0]])
-
-    motion = MotionEngine(animation_config=chart_config.animation)
-    current_frame_index = 0
-    latest_state = None
-    for index in range(len(years) - 1):
-        year_a = years[index]
-        year_b = years[index + 1]
-        start_sprites = sprites_by_year[year_a]
-        end_sprites = sprites_by_year[year_b]
-        if chart_config.animation.continuous_motion:
-            previous_year = years[index - 1] if index > 0 else year_a
-            next_year = (
-                years[index + 2]
-                if index + 2 < len(years)
-                else year_b
-            )
-            frames = motion.interpolate_sprites_continuous(
-                sprites_by_year[previous_year],
-                start_sprites,
-                end_sprites,
-                sprites_by_year[next_year],
-                steps=chart_config.steps_per_transition,
-                include_start=index == 0,
-            )
-        else:
-            frames = motion.interpolate_sprites(
-                start_sprites,
-                end_sprites,
-                steps=chart_config.steps_per_transition,
-            )
-
-        for frame_sprites in frames:
-            latest_state = tracker.next(frame_sprites)
-            if current_frame_index >= target_frame_index:
-                return bar_value_scale, latest_state
-            current_frame_index += 1
-
-    return bar_value_scale, latest_state
+    bar_value_scale = bundle.bar_scale_resolver.for_sprites(
+        target_sprites,
+        frame_index=target_frame_index,
+    )
+    return bar_value_scale, bundle.resolver.state_at(target_frame_index)
 
 
 def _sprites_for_year(timeline, selector, layout, year):
