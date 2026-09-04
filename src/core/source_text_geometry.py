@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 
 from core.display_calendar import flip_calendar_dimensions
 from studio.fun_fact_layout import editorial_geometry
@@ -240,6 +241,7 @@ def _date_rect(chart_config, *, time_label, display_calendar):
     )
 
 
+@lru_cache(maxsize=4096)
 def _anchored_text_rect(text, font, *, x, y, horizontal_anchor):
     anchor = "lm" if horizontal_anchor == "left" else "rm"
     left, top, right, bottom = font.getbbox(str(text), anchor=anchor)

@@ -17,7 +17,12 @@ from core.bar_value_scale import BarValueScaleResolver
 from core.editorial_placement import (
     SmartEditorialPlacementResolver,
     _effective_frame_geometry,
+    _logo_asset_inventory,
+    _smart_cache_put,
+    _smart_geometry_fingerprint,
     build_smart_editorial_placement_resolver,
+    clear_smart_editorial_placement_cache,
+    smart_editorial_placement_cache_info,
 )
 from core.fun_fact_scheduler import FunFactScheduler
 from core.scene_geometry import build_scene_geometry
@@ -55,6 +60,7 @@ def geometry(width=1000, height=600, bars=(), date=None, source=None, logos=()):
 
 class EditorialSmartPlacementTest(unittest.TestCase):
     def setUp(self):
+        clear_smart_editorial_placement_cache()
         self.chart = ChartConfig(width=1000, height=600)
         self.config = FunFactConfig(
             enabled=True,
@@ -770,6 +776,135 @@ class EditorialSmartPlacementTest(unittest.TestCase):
         self.assertEqual(protected_names[0], "A")
         self.assertEqual(protected_names[-1], "B")
         self.assertIn("B", protected_names[1:-1])
+
+    def _fingerprint(self, chart, config, scheduler, periods, sprites):
+        _, signatures = _logo_asset_inventory(periods, sprites)
+        return _smart_geometry_fingerprint(
+            chart_config=chart,
+            fun_fact_config=config,
+            scheduler=scheduler,
+            periods=periods,
+            sprites_by_period=sprites,
+            source_label="Source",
+            calendar_resolver=None,
+            asset_signatures=signatures,
+        )
+
+    def test_geometry_fingerprint_excludes_colors_and_includes_geometry(self):
+        chart, config, scheduler, sprites = self._full_window_fixture()
+        periods = (1, 2)
+        baseline = self._fingerprint(
+            chart, config, scheduler, periods, sprites,
+        )
+        for changed in (
+            replace(chart, bar_fill_color_start="#ABCDEF"),
+            replace(chart, background_color_override="#102030"),
+            replace(chart, label_text_color="#ABCDEF"),
+            replace(chart, value_text_color="#ABCDEF"),
+        ):
+            self.assertEqual(
+                self._fingerprint(changed, config, scheduler, periods, sprites),
+                baseline,
+            )
+        for changed_chart in (
+            replace(chart, value_font_size=chart.value_font_size + 1),
+            replace(chart, logo_size=chart.logo_size + 1),
+            replace(chart, width=chart.width + 1),
+            replace(
+                chart,
+                animation=replace(
+                    chart.animation,
+                    rank_movement_duration=0.7,
+                ),
+            ),
+        ):
+            self.assertNotEqual(
+                self._fingerprint(
+                    changed_chart, config, scheduler, periods, sprites,
+                ),
+                baseline,
+            )
+        for changed_config in (
+            replace(config, editorial_bar_clearance=1),
+            replace(config, editorial_protect_top_n=2),
+        ):
+            self.assertNotEqual(
+                self._fingerprint(
+                    chart, changed_config, scheduler, periods, sprites,
+                ),
+                baseline,
+            )
+
+    def test_fingerprint_invalidates_dataset_range_and_asset_version(self):
+        chart, config, scheduler, sprites = self._full_window_fixture()
+        baseline = self._fingerprint(
+            chart, config, scheduler, (1, 2), sprites,
+        )
+        changed_sprites = {
+            period: [replace(sprite) for sprite in values]
+            for period, values in sprites.items()
+        }
+        changed_sprites[2][0].value += 1
+        self.assertNotEqual(
+            self._fingerprint(
+                chart, config, scheduler, (1, 2), changed_sprites,
+            ),
+            baseline,
+        )
+        self.assertNotEqual(
+            self._fingerprint(chart, config, scheduler, (1,), sprites),
+            baseline,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logo = Path(temp_dir) / "logo.png"
+            logo.write_bytes(b"first")
+            sprites[1][0].logo_path = str(logo)
+            sprites[2][0].logo_path = str(logo)
+            first = self._fingerprint(
+                chart, config, scheduler, (1, 2), sprites,
+            )
+            logo.write_bytes(b"second-version")
+            second = self._fingerprint(
+                chart, config, scheduler, (1, 2), sprites,
+            )
+            self.assertNotEqual(first, second)
+
+    def test_resolver_cache_hits_for_identical_and_color_only_inputs(self):
+        chart, config, scheduler, sprites = self._full_window_fixture()
+        arguments = dict(
+            fun_fact_config=config,
+            scheduler=scheduler,
+            periods=(1, 2),
+            sprites_by_period=sprites,
+            source_label="",
+        )
+        first = build_smart_editorial_placement_resolver(
+            chart_config=chart, **arguments,
+        )
+        second = build_smart_editorial_placement_resolver(
+            chart_config=chart, **arguments,
+        )
+        color_only = build_smart_editorial_placement_resolver(
+            chart_config=replace(chart, background_color_override="#123456"),
+            **arguments,
+        )
+        invalidated = build_smart_editorial_placement_resolver(
+            chart_config=replace(chart, value_font_size=24), **arguments,
+        )
+        self.assertFalse(first.precompute_stats["cache_hit"])
+        self.assertTrue(second.precompute_stats["cache_hit"])
+        self.assertTrue(color_only.precompute_stats["cache_hit"])
+        self.assertFalse(invalidated.precompute_stats["cache_hit"])
+        self.assertEqual(first.decision_for("card"), second.decision_for("card"))
+
+    def test_smart_resolver_cache_is_bounded_lru(self):
+        for index in range(7):
+            _smart_cache_put(f"key-{index}", ({}, {}))
+        info = smart_editorial_placement_cache_info()
+        self.assertEqual(info["size"], 6)
+        self.assertEqual(info["max_size"], 6)
+        self.assertNotIn("key-0", info["fingerprints"])
+        self.assertIn("key-6", info["fingerprints"])
 
 
 if __name__ == "__main__":

@@ -1,9 +1,14 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from math import ceil, floor
 
-from PIL import Image, ImageDraw
 from core.bar_appearance import uses_configurable_bar_content
-from utils.text_fit import fit_text_to_width, measure_text_width, measurement_font
+from utils.text_fit import (
+    fit_text_to_width,
+    formatted_value_bbox,
+    measure_text_width,
+    measurement_font,
+)
 
 
 @dataclass(frozen=True)
@@ -57,8 +62,7 @@ def resolve_value_text_geometry(
     max_right = float(config.width - config.value_label_edge_padding)
     min_x = _value_label_min_x(config, max_right)
     max_width = max(0.0, max_right - min_x)
-    text = fit_text_to_width(value_text, max_width=max_width, font=font)
-    text_width = measure_text_width(text, font) if text else 0.0
+    text, text_width = _fit_value_text(value_text, max_width, font)
     outside_x = float(sprite.x + sprite.width + config.value_label_gap)
     if inside_right_logo_extent:
         outside_x = max(
@@ -102,8 +106,7 @@ def resolve_value_text_geometry(
         va = "bottom"
     elif configurable and config.bar_value_position == "outside":
         available_width = max(0.0, max_right - outside_x)
-        text = fit_text_to_width(text, max_width=available_width, font=font)
-        text_width = measure_text_width(text, font) if text else 0.0
+        text, text_width = _fit_value_text(text, available_width, font)
         if config.bar_label_position in ("outside", "outside_right"):
             y += float(sprite.height) * 0.2
     elif outside_x + text_width <= max_right:
@@ -147,6 +150,20 @@ def resolve_value_text_geometry(
         top=top,
         width=right - left,
         height=bottom - top,
+    )
+
+
+def _fit_value_text(text, max_width, font):
+    text = str(text)
+    if not text or max_width <= 0:
+        return "", 0.0
+    width = measure_text_width(text, font)
+    if width <= max_width:
+        return text, width
+    fitted = fit_text_to_width(text, max_width=max_width, font=font)
+    return (
+        fitted,
+        measure_text_width(fitted, font) if fitted else 0.0,
     )
 
 
@@ -198,30 +215,19 @@ def _rendered_text_bbox(
     )
     if not text:
         return float(round(x)), float(round(y)), float(round(x)), float(round(y))
-    probe = Image.new("L", (1, 1))
-    draw = ImageDraw.Draw(probe)
-    left, top, right, bottom = draw.textbbox(
-        (0, 0),
-        text,
-        font=font,
-        anchor=anchor,
-        stroke_width=stroke_pixels,
-    )
+    shadow_offset = None
     if config.bar_value_shadow_enabled:
         shadow_offset = (
             int(round(float(config.bar_value_shadow_offset_x) * (config.dpi / 72))),
             int(round(float(config.bar_value_shadow_offset_y) * (config.dpi / 72))),
         )
-        shadow = draw.textbbox(
-            shadow_offset,
-            text,
-            font=font,
-            anchor=anchor,
-        )
-        left = min(left, shadow[0])
-        top = min(top, shadow[1])
-        right = max(right, shadow[2])
-        bottom = max(bottom, shadow[3])
+    left, top, right, bottom = _cached_rendered_text_extents(
+        text,
+        font,
+        anchor,
+        stroke_pixels,
+        shadow_offset,
+    )
     local_left = floor(left) - 1
     local_top = floor(top) - 1
     width = max(1, (ceil(right) + 1) - local_left)
@@ -234,3 +240,45 @@ def _rendered_text_bbox(
         float(rendered_left + width),
         float(rendered_top + height),
     )
+
+
+@lru_cache(maxsize=8192)
+def _cached_rendered_text_extents(
+    text,
+    font,
+    anchor,
+    stroke_pixels,
+    shadow_offset,
+):
+    left, top, right, bottom = formatted_value_bbox(
+        text,
+        font,
+        anchor=anchor,
+        stroke_width=stroke_pixels,
+    )
+    if shadow_offset is not None:
+        shadow_left, shadow_top, shadow_right, shadow_bottom = formatted_value_bbox(
+            text,
+            font,
+            anchor=anchor,
+        )
+        shadow = (
+            shadow_left + shadow_offset[0],
+            shadow_top + shadow_offset[1],
+            shadow_right + shadow_offset[0],
+            shadow_bottom + shadow_offset[1],
+        )
+        left = min(left, shadow[0])
+        top = min(top, shadow[1])
+        right = max(right, shadow[2])
+        bottom = max(bottom, shadow[3])
+    return left, top, right, bottom
+
+
+def value_text_metric_cache_info():
+    """Return bounded metric-cache counters for profiling diagnostics."""
+    return _cached_rendered_text_extents.cache_info()
+
+
+def clear_value_text_metric_cache():
+    _cached_rendered_text_extents.cache_clear()

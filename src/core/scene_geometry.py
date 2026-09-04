@@ -38,6 +38,19 @@ class SceneRect:
         }
 
 
+@dataclass(frozen=True)
+class SmartBarObstacle:
+    rank: float | None
+    opacity: float
+    components: tuple[SceneRect, ...]
+
+
+@dataclass(frozen=True)
+class SmartFrameGeometry:
+    bar_obstacles: tuple[SmartBarObstacle, ...]
+    text_bounds: tuple[SceneRect, ...]
+
+
 def build_scene_geometry(chart_config, fun_fact_config, scene):
     """Describe a rendered scene in final-canvas pixels for Studio editors."""
     sprites = tuple(scene.bars or ())
@@ -301,6 +314,168 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             for sprite in sprites
         ],
     }
+
+
+def build_smart_scene_geometry(
+    chart_config,
+    fun_fact_config,
+    scene,
+    *,
+    logo_availability=None,
+    text_bounds=None,
+):
+    """Build only the obstacles consumed by Smart Editorial Placement.
+
+    Unlike ``build_scene_geometry`` this deliberately omits editor-only lanes,
+    examples, axes, and serialized scene metadata.  Its output uses the same
+    geometry helpers as the full path so placement scoring stays pixel-exact.
+    """
+    sprites = tuple(scene.bars or ())
+    availability = tuple(
+        _resolved_logo_availability(sprite, logo_availability)
+        for sprite in sprites
+    )
+    visual_sprites = tuple(
+        final_visual_bar_sprite(
+            chart_config,
+            sprite,
+            primary_logo_available=available,
+        )
+        for sprite, available in zip(sprites, availability)
+    )
+    logo_sprites = tuple(
+        visual if available and primary_logo_is_inside(chart_config, sprite)
+        else sprite
+        for sprite, visual, available in zip(
+            sprites,
+            visual_sprites,
+            availability,
+        )
+    )
+    _, _, logo_groups = _logo_rects(chart_config, logo_sprites)
+    obstacles = []
+    for sprite, logo_group in zip(visual_sprites, logo_groups):
+        value_geometry = None
+        if (
+            chart_config.value_labels_enabled
+            and chart_config.value_text_opacity > 0
+            and sprite.opacity > 0
+        ):
+            value_geometry = resolve_value_text_geometry(
+                chart_config,
+                sprite,
+                format_value(sprite.value, chart_config.value_format),
+                inside_left_logo_extent=_rect_extent(
+                    logo_group["inside_left"]
+                ),
+                inside_right_logo_extent=_rect_extent(
+                    logo_group["inside_right"]
+                ),
+            )
+        category_rect = (
+            _rounded_scene_rect(_category_text_rect(chart_config, sprite))
+            if (
+                chart_config.category_labels_enabled
+                and chart_config.label_text_opacity > 0
+                and sprite.opacity > 0
+            )
+            else None
+        )
+        components = [_rounded_scene_rect(SceneRect(
+                sprite.x,
+                sprite.y - (sprite.height / 2),
+                max(0, sprite.width),
+                sprite.height,
+            ))]
+        if category_rect is not None:
+            components.append(category_rect)
+        if value_geometry is not None:
+            components.append(_rounded_scene_rect(SceneRect(
+                value_geometry.left,
+                value_geometry.top,
+                value_geometry.width,
+                value_geometry.height,
+            )))
+        components.extend(
+            _rounded_scene_rect(rect) for rect in logo_group["primary"]
+        )
+        components.extend(
+            _rounded_scene_rect(rect) for rect in logo_group["secondary"]
+        )
+        obstacles.append(SmartBarObstacle(
+            rank=sprite.rank,
+            opacity=round(float(sprite.opacity), 6),
+            components=tuple(components),
+        ))
+    if text_bounds is None:
+        text_bounds = build_smart_text_bounds(
+            chart_config, fun_fact_config, scene,
+        )
+    return SmartFrameGeometry(
+        bar_obstacles=tuple(obstacles),
+        text_bounds=tuple(text_bounds),
+    )
+
+
+def build_smart_text_bounds(chart_config, fun_fact_config, scene):
+    """Resolve the small static/dynamic text obstacle set used by Smart."""
+    source_layout = resolve_source_text_layout(
+        chart_config,
+        fun_fact_config,
+        scene.source_label,
+        time_label=scene.time_label,
+        display_calendar=scene.display_calendar,
+    )
+    return (
+        _rounded_scene_rect(_text_rect(
+            scene.title,
+            _title_x(chart_config),
+            chart_config.title_y,
+            chart_config.title_font_size,
+            chart_config.title_font_family,
+            chart_config.dpi,
+            chart_config.title_font_weight,
+            chart_config.title_font_style,
+        )),
+        _rounded_scene_rect(_text_rect(
+            scene.subtitle,
+            _subtitle_x(chart_config),
+            chart_config.subtitle_y,
+            chart_config.subtitle_font_size,
+            chart_config.subtitle_font_family,
+            chart_config.dpi,
+            chart_config.subtitle_font_weight,
+            chart_config.subtitle_font_style,
+        )),
+        _rounded_scene_rect(_date_rect(chart_config, scene)),
+        _rounded_scene_rect(_text_rect(
+            source_layout.fitted_text,
+            chart_config.source_x,
+            chart_config.source_y,
+            chart_config.source_font_size,
+            chart_config.source_font_family,
+            chart_config.dpi,
+            chart_config.source_font_weight,
+            chart_config.source_font_style,
+        )),
+    )
+
+
+def _rounded_scene_rect(rect):
+    return SceneRect(
+        round(float(rect.x), 3),
+        round(float(rect.y), 3),
+        max(0.0, round(float(rect.width), 3)),
+        max(0.0, round(float(rect.height), 3)),
+    )
+
+
+def _resolved_logo_availability(sprite, availability):
+    path = getattr(sprite, "logo_path", None)
+    normalized = str(path) if path else path
+    if availability is not None and normalized in availability:
+        return availability[normalized]
+    return _primary_logo_file_available(sprite)
 
 
 def _date_rect(chart_config, scene):
