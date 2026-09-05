@@ -436,10 +436,10 @@ def _preview_value_scales(
         selector,
         layout,
     )
-    bar_value_scale = bundle.bar_scale_resolver.for_sprites(
-        target_sprites,
-        frame_index=target_frame_index,
-    )
+    bar_value_scale = BarValueScaleResolver.from_config(
+        chart_config,
+        bundle.sprite_sets,
+    ).for_sprites(target_sprites, frame_index=target_frame_index)
     return bar_value_scale, bundle.resolver.state_at(target_frame_index)
 
 

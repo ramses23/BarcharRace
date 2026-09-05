@@ -1,6 +1,7 @@
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from math import ceil
 
 import _test_path
 import pandas as pd
@@ -10,11 +11,16 @@ from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
 from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
+from core.bar_value_scale import (
+    BarValueScaleResolver,
+    progressive_growth_envelope,
+)
 from core.layout_engine import LayoutEngine
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
 from core.value_axis import ValueAxisTracker
 from models.bar_sprite import BarSprite
+from studio.preview import _preview_value_scales
 from studio.value_axis_preview import (
     clear_value_axis_preview_cache,
     get_preview_value_axis_bundle,
@@ -114,6 +120,193 @@ class ValueAxisPreviewCacheTest(unittest.TestCase):
                 sprite("C", 95, 400, available=available),
             ),
         )
+
+    def _timeline_fixture(self):
+        dataset = DatasetConfig()
+        frame = pd.DataFrame({
+            "year": [
+                2000, 2000, 2000,
+                2001, 2001, 2001,
+                2002, 2002, 2002,
+                2003, 2003, 2003,
+            ],
+            "country": ["A", "B", "C"] * 4,
+            "value": [
+                100.0, 70.0, 45.0,
+                145.0, 145.0, 40.0,
+                82.0, 125.0, 90.0,
+                190.0, 110.0, 95.0,
+            ],
+        })
+        timeline = Timeline(frame, dataset)
+        return timeline, timeline.get_years(), FunFactConfig()
+
+    @staticmethod
+    def _all_frames(config, sprite_sets):
+        motion = MotionEngine(animation_config=config.animation)
+        frames = []
+        for index in range(len(sprite_sets) - 1):
+            frames.extend(motion.interpolate_sprites_continuous(
+                sprite_sets[index - 1] if index > 0 else sprite_sets[index],
+                sprite_sets[index],
+                sprite_sets[index + 1],
+                (
+                    sprite_sets[index + 2]
+                    if index + 2 < len(sprite_sets)
+                    else sprite_sets[index + 1]
+                ),
+                steps=config.steps_per_transition,
+                include_start=index == 0,
+            ))
+        return frames
+
+    def _preview_scale_at(self, config, timeline, years, fun_fact, frame_index):
+        selector = BarSelector(config.selection)
+        layout = LayoutEngine(config, fun_fact)
+        sprite_sets = tuple(
+            layout.build(selector.select(timeline.get_frame(year)))
+            for year in years
+        )
+        frames = self._all_frames(config, sprite_sets)
+        scale, axis = _preview_value_scales(
+            timeline=timeline,
+            selector=selector,
+            layout=layout,
+            chart_config=config,
+            years=years,
+            target_frame_index=frame_index,
+            target_sprites=frames[frame_index],
+        )
+        fresh = BarValueScaleResolver.from_config(
+            config, sprite_sets
+        ).for_sprites(frames[frame_index], frame_index=frame_index)
+        return scale, axis, fresh, frames[frame_index], sprite_sets
+
+    def test_warm_axis_bundle_uses_current_bar_scale_for_all_full_width_points(self):
+        timeline, years, fun_fact = self._timeline_fixture()
+        base = self._config(start_bars_at_zero=True)
+        first_bundle = None
+        first_axis = None
+        sequence = (0.5, 0.75, 0.5, 0.25, 1.0, 0.75)
+
+        for point in sequence:
+            config = replace(base, leader_full_width_point=point)
+            selector = BarSelector(config.selection)
+            layout = LayoutEngine(config, fun_fact)
+            bundle = get_preview_value_axis_bundle(
+                config, timeline, years, selector, layout
+            )
+            if first_bundle is None:
+                first_bundle = bundle
+            else:
+                self.assertIs(bundle, first_bundle)
+
+            frame_count = (len(years) - 1) * config.steps_per_transition + 1
+            last = frame_count - 1
+            target = ceil(point * last)
+            indexes = tuple(dict.fromkeys((
+                1,
+                max(0, target - 1),
+                target,
+                min(last, target + 1),
+                last,
+            )))
+            for frame_index in indexes:
+                with self.subTest(point=point, frame=frame_index):
+                    scale, axis, fresh, sprites, _ = self._preview_scale_at(
+                        config, timeline, years, fun_fact, frame_index
+                    )
+                    self.assertEqual(scale, fresh)
+                    if first_axis is None and frame_index == 1:
+                        first_axis = axis
+                    elif frame_index == 1:
+                        self.assertEqual(axis, first_axis)
+
+                    leader = max(sprite.value for sprite in sprites)
+                    if frame_index >= target:
+                        self.assertAlmostEqual(
+                            scale.width_for_value(leader), scale.width
+                        )
+                    non_leaders = [
+                        sprite.value for sprite in sprites
+                        if 0.0 < sprite.value < leader
+                    ]
+                    if frame_index >= target and non_leaders:
+                        value = non_leaders[0]
+                        self.assertAlmostEqual(
+                            scale.width_for_value(value)
+                            / scale.width_for_value(leader),
+                            value / leader,
+                        )
+
+        info = value_axis_preview_cache_info()
+        self.assertEqual(info["bundle_misses"], 1)
+        self.assertGreater(info["bundle_hits"], 1)
+
+    def test_growth_envelope_never_uses_previous_warm_bundle_configuration(self):
+        timeline, years, fun_fact = self._timeline_fixture()
+        base = self._config(start_bars_at_zero=True)
+        last = (len(years) - 1) * base.steps_per_transition
+        frame_index = round(0.6 * last)
+
+        for previous, current in ((0.5, 0.75), (0.75, 0.5), (0.25, 1.0)):
+            clear_value_axis_preview_cache()
+            self._preview_scale_at(
+                replace(base, leader_full_width_point=previous),
+                timeline,
+                years,
+                fun_fact,
+                frame_index,
+            )
+            scale, axis, fresh, _, _ = self._preview_scale_at(
+                replace(base, leader_full_width_point=current),
+                timeline,
+                years,
+                fun_fact,
+                frame_index,
+            )
+            with self.subTest(previous=previous, current=current):
+                self.assertEqual(scale, fresh)
+                self.assertAlmostEqual(
+                    scale.growth_envelope,
+                    progressive_growth_envelope(
+                        scale.timeline_progress,
+                        current,
+                        enabled=True,
+                    ),
+                )
+                if current > scale.timeline_progress:
+                    self.assertLess(scale.growth_envelope, 1.0)
+                self.assertIsNotNone(axis)
+                self.assertEqual(value_axis_preview_cache_info()["bundle_misses"], 1)
+
+    def test_start_zero_and_axis_modes_use_current_bar_scale_with_warm_cache(self):
+        timeline, years, fun_fact = self._timeline_fixture()
+        frame_index = 1
+        for mode in ("dynamic", "static"):
+            base = self._config(
+                value_grid_mode=mode,
+                leader_full_width_point=0.75,
+                start_bars_at_zero=False,
+            )
+            without_zero, axis_before, fresh_before, _, _ = self._preview_scale_at(
+                base, timeline, years, fun_fact, frame_index
+            )
+            with_zero, axis_after, fresh_after, _, _ = self._preview_scale_at(
+                replace(base, start_bars_at_zero=True),
+                timeline,
+                years,
+                fun_fact,
+                frame_index,
+            )
+            with self.subTest(mode=mode):
+                self.assertEqual(without_zero, fresh_before)
+                self.assertEqual(with_zero, fresh_after)
+                self.assertNotEqual(
+                    without_zero.leader_occupancy,
+                    with_zero.leader_occupancy,
+                )
+                self.assertEqual(axis_before, axis_after)
 
     def test_random_access_matches_every_sequential_frame_exactly(self):
         for animation in (

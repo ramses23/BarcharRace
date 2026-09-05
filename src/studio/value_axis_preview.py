@@ -11,7 +11,6 @@ from pandas.util import hash_pandas_object
 
 from core.bar_appearance import uses_configurable_bar_content
 from core.bar_value_scale import (
-    BarValueScaleResolver,
     progressive_bar_scale_active,
 )
 from core.motion_engine import MotionEngine
@@ -57,7 +56,7 @@ class _FrameMeasurements:
 @dataclass(frozen=True, slots=True)
 class PreviewValueAxisBundle:
     resolver: object
-    bar_scale_resolver: BarValueScaleResolver
+    sprite_sets: tuple
 
 
 class ValueAxisPreviewResolver:
@@ -419,9 +418,7 @@ def get_preview_value_axis_bundle(
             resolver=get_value_axis_preview_resolver(
                 chart_config, sprite_sets
             ),
-            bar_scale_resolver=BarValueScaleResolver.from_config(
-                chart_config, sprite_sets
-            ),
+            sprite_sets=sprite_sets,
         )
         _preview_bundle_cache[fingerprint] = bundle
         while len(_preview_bundle_cache) > _CACHE_MAX_ENTRIES:
