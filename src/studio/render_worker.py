@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 import traceback
 from dataclasses import asdict, is_dataclass, replace
@@ -16,6 +15,11 @@ from pipeline.render_job import RenderJob
 from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_runtime import resolve_project_preset_paths
 from studio.project_storage import atomic_write_json
+from studio.render_output import (
+    RenderOutputPromotionError,
+    promote_render_output,
+    temporary_render_output_path,
+)
 from studio.short_export import resolve_export_output_path
 from studio.workspace_paths import load_workspace_settings
 from utils.cpu_limiter import CpuLimitConfig
@@ -58,9 +62,7 @@ def run_worker(
         getattr(preset, "export_config", None),
     )
     final_output.parent.mkdir(parents=True, exist_ok=True)
-    temporary_output = final_output.with_name(
-        f".{final_output.stem}.{job_id}.partial{final_output.suffix}"
-    )
+    temporary_output = temporary_render_output_path(final_output)
     base_status = {
         "job_id": job_id,
         "state": "running",
@@ -99,7 +101,7 @@ def run_worker(
             cpu_limit_config=cpu_limit_config,
             output_file_is_effective=True,
         ).run()
-        os.replace(temporary_output, final_output)
+        promote_render_output(temporary_output, final_output)
         result = replace(result, output_file=str(final_output))
         completed_status = {
             **base_status,
@@ -112,15 +114,23 @@ def run_worker(
         atomic_write_json(completed_status, status_path)
         return 0
     except BaseException as exc:
-        temporary_output.unlink(missing_ok=True)
+        promotion_failed = isinstance(exc, RenderOutputPromotionError)
+        if not promotion_failed:
+            temporary_output.unlink(missing_ok=True)
         traceback.print_exc()
         failed_status = {
             **base_status,
             "state": "failed",
             "stage": "failed",
-            "message": "Render failed.",
+            "message": (
+                "Render completed but final file promotion failed."
+                if promotion_failed
+                else "Render failed."
+            ),
             "error": f"{type(exc).__name__}: {exc}",
         }
+        if promotion_failed:
+            failed_status["temporary_output_preserved"] = exc.partial_preserved
         atomic_write_json(failed_status, status_path)
         return 1
 

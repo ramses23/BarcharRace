@@ -11,6 +11,7 @@ from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from pipeline.render_job import RenderProfile, RenderResult
+from studio.render_output import RenderOutputPromotionError
 from studio.render_worker import _progress_writer, run_worker
 
 
@@ -52,6 +53,7 @@ class RenderWorkerTest(unittest.TestCase):
             class SuccessfulRenderJob:
                 def __init__(self, config, **_):
                     self.config = config
+                    rendered_paths.append(Path(config.output_file))
 
                 def run(self):
                     Path(self.config.output_file).write_bytes(b"complete-video")
@@ -63,6 +65,7 @@ class RenderWorkerTest(unittest.TestCase):
                         profile=RenderProfile(total_seconds=1.0),
                     )
 
+            rendered_paths = []
             with patch(
                 "studio.render_worker.load_project_file",
                 return_value=preset,
@@ -80,9 +83,13 @@ class RenderWorkerTest(unittest.TestCase):
             final_output = root / "output" / "video.mp4"
             self.assertEqual(return_code, 0)
             self.assertEqual(final_output.read_bytes(), b"complete-video")
-            self.assertFalse(
-                (root / "output" / ".video.job123.partial.mp4").exists()
+            self.assertEqual(len(rendered_paths), 1)
+            self.assertEqual(rendered_paths[0].parent, final_output.parent)
+            self.assertRegex(
+                rendered_paths[0].name,
+                r"^\.render\.[0-9a-f]{16}\.partial\.mp4$",
             )
+            self.assertEqual(tuple(final_output.parent.glob("*.partial.mp4")), ())
             self.assertIn('"state": "completed"', status_path.read_text())
 
     def test_failure_preserves_previous_video_and_removes_partial(self):
@@ -126,10 +133,81 @@ class RenderWorkerTest(unittest.TestCase):
 
             self.assertEqual(return_code, 1)
             self.assertEqual(final_output.read_bytes(), b"previous-video")
-            self.assertFalse(
-                (root / "output" / ".video.job456.partial.mp4").exists()
-            )
+            self.assertEqual(tuple(final_output.parent.glob("*.partial.mp4")), ())
             self.assertIn('"state": "failed"', status_path.read_text())
+
+    def test_promotion_failure_preserves_completed_partial_and_previous_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project_path = root / "project.json"
+            project_path.write_text("{}", encoding="utf-8")
+            status_path = root / "status.json"
+            final_output = root / "output" / "video.mp4"
+            final_output.parent.mkdir(parents=True)
+            final_output.write_bytes(b"previous-video")
+            preset = SimpleNamespace(
+                chart_config=ChartConfig(output_file="output/video.mp4"),
+                data_source_config=DataSourceConfig(),
+                dataset_config=DatasetConfig(),
+            )
+
+            class SuccessfulRenderJob:
+                def __init__(self, config, **_):
+                    self.config = config
+
+                def run(self):
+                    Path(self.config.output_file).write_bytes(b"complete-video")
+                    return RenderResult(
+                        frames_rendered=2,
+                        transitions_rendered=1,
+                        removed_frames=0,
+                        output_file=self.config.output_file,
+                        profile=RenderProfile(total_seconds=1.0),
+                    )
+
+            def fail_promotion(partial_path, destination_path):
+                cause = FileNotFoundError(3, "synthetic WinError 3")
+                raise RenderOutputPromotionError(
+                    partial_path,
+                    destination_path,
+                    cause,
+                )
+
+            with patch(
+                "studio.render_worker.load_project_file",
+                return_value=preset,
+            ), patch(
+                "studio.render_worker.RenderJob",
+                SuccessfulRenderJob,
+            ), patch(
+                "studio.render_worker.promote_render_output",
+                side_effect=fail_promotion,
+            ), patch(
+                "studio.render_worker.traceback.print_exc",
+            ):
+                return_code = run_worker(
+                    project_path,
+                    root,
+                    status_path,
+                    "job-promotion-failure",
+                )
+
+            partials = tuple(final_output.parent.glob("*.partial.mp4"))
+            status = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(return_code, 1)
+            self.assertEqual(final_output.read_bytes(), b"previous-video")
+            self.assertEqual(len(partials), 1)
+            self.assertEqual(partials[0].read_bytes(), b"complete-video")
+            self.assertEqual(status["state"], "failed")
+            self.assertEqual(
+                status["message"],
+                "Render completed but final file promotion failed.",
+            )
+            self.assertTrue(status["temporary_output_preserved"])
+            self.assertEqual(Path(status["temporary_output"]), partials[0])
+            self.assertIn(str(partials[0]), status["error"])
+            self.assertIn(str(final_output), status["error"])
+            self.assertIn("synthetic WinError 3", status["error"])
 
     def test_short_render_uses_suffixed_output_and_preserves_standard_video(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -183,9 +261,7 @@ class RenderWorkerTest(unittest.TestCase):
             self.assertEqual(return_code, 0)
             self.assertEqual(standard_output.read_bytes(), b"standard-video")
             self.assertEqual(short_output.read_bytes(), b"short-video")
-            self.assertFalse(
-                (root / "output" / ".race_short.job789.partial.mp4").exists()
-            )
+            self.assertEqual(tuple(short_output.parent.glob("*.partial.mp4")), ())
             self.assertEqual(
                 Path(status["output_file"]).resolve(),
                 short_output.resolve(),

@@ -725,7 +725,13 @@ class ProductionRenderExecutor:
         legacy_partial = workspace.video_path.with_name(
             f".{workspace.video_path.stem}.partial{workspace.video_path.suffix}"
         )
+        short_pattern = f".render.*.partial{workspace.video_path.suffix}"
         partials = tuple(workspace.render_dir.glob(pattern))
+        short_partials = tuple(workspace.render_dir.glob(short_pattern))
+        partials = (
+            *partials,
+            *(path for path in short_partials if path not in partials),
+        )
         if legacy_partial.exists() and legacy_partial not in partials:
             partials = (*partials, legacy_partial)
         if status is not None:

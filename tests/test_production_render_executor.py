@@ -228,6 +228,23 @@ class ProductionRenderExecutorTest(unittest.TestCase):
 
         start.assert_not_called()
 
+    def test_preexisting_short_named_render_partial_is_rejected(self):
+        partial = (
+            self.context.workspace.render_dir
+            / ".render.0123456789abcdef.partial.mp4"
+        )
+        partial.write_bytes(b"recoverable-render")
+
+        with mock.patch.object(
+            render_executor_module,
+            "start_background_render",
+        ) as start:
+            with self.assertRaises(ProductionRenderError):
+                self.run_executor()
+
+        start.assert_not_called()
+        self.assertEqual(partial.read_bytes(), b"recoverable-render")
+
     def test_worker_error_preserves_structured_information(self):
         handle = FakeBackgroundRender(
             (
