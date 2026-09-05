@@ -117,7 +117,15 @@ def run_worker(
         promotion_failed = isinstance(exc, RenderOutputPromotionError)
         if not promotion_failed:
             temporary_output.unlink(missing_ok=True)
-        traceback.print_exc()
+        if promotion_failed:
+            traceback.print_exception(
+                type(exc),
+                exc,
+                exc.__traceback__,
+                chain=False,
+            )
+        else:
+            traceback.print_exc()
         failed_status = {
             **base_status,
             "state": "failed",

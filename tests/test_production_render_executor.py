@@ -56,6 +56,7 @@ class FakeBackgroundRender:
         self.on_status = on_status
         self.status_calls = 0
         self.cancel_calls = 0
+        self.preserve_temporary_output_on_cancel = None
         self.pid = 1234
         self.status_path = Path("worker-status.json")
         self.log_path = Path("render.log")
@@ -71,8 +72,9 @@ class FakeBackgroundRender:
     def is_running(self):
         return False
 
-    def cancel(self):
+    def cancel(self, *, preserve_temporary_output=False):
         self.cancel_calls += 1
+        self.preserve_temporary_output_on_cancel = preserve_temporary_output
         return {
             "state": "canceled",
             "stage": "canceled",
@@ -312,6 +314,47 @@ class ProductionRenderExecutorTest(unittest.TestCase):
         self.assertIsInstance(raised.exception.__cause__, FileExistsError)
         self.assertTrue(partial.exists())
 
+    def test_recoverable_worker_partial_is_preserved_and_reported(self):
+        partial = (
+            self.context.workspace.render_dir
+            / ".render.0123456789abcdef.partial.mp4"
+        )
+        final_path = self.context.workspace.video_path
+        worker_error = (
+            "A recoverable temporary video was preserved at: "
+            f"{partial}. Expected final destination: {final_path}."
+        )
+
+        def create_partial(_status):
+            partial.write_bytes(b"completed-video")
+
+        handle = FakeBackgroundRender(
+            (
+                {
+                    "state": "failed",
+                    "stage": "failed",
+                    "message": "Render output could not be finalized.",
+                    "error": worker_error,
+                    "temporary_output": str(partial),
+                    "temporary_output_preserved": True,
+                },
+            ),
+            on_status=create_partial,
+        )
+
+        with mock.patch.object(
+            render_executor_module,
+            "start_background_render",
+            return_value=handle,
+        ):
+            with self.assertRaises(ProductionRenderError) as raised:
+                self.run_executor()
+
+        self.assertIsInstance(raised.exception.__cause__, RuntimeError)
+        self.assertEqual(raised.exception.worker_error, worker_error)
+        self.assertNotIn("\\\\?\\", raised.exception.worker_error)
+        self.assertEqual(partial.read_bytes(), b"completed-video")
+
     def test_cancellation_uses_background_render_cancel(self):
         handle = FakeBackgroundRender(
             (
@@ -342,12 +385,50 @@ class ProductionRenderExecutorTest(unittest.TestCase):
             )
 
         self.assertEqual(handle.cancel_calls, 1)
+        self.assertFalse(handle.preserve_temporary_output_on_cancel)
         self.assertEqual(result.status, "canceled")
         self.assertIsNone(result.video_sha256)
         self.assertIsNone(result.profile)
         manifest = self.read_json(result.manifest_path)
         self.assertEqual(manifest["result"], {"status": "canceled"})
         self.assertIsNone(manifest["video"])
+
+    def test_monitoring_failure_preserves_potentially_recoverable_output(self):
+        handle = FakeBackgroundRender(
+            (
+                {
+                    "state": "running",
+                    "stage": "export_video",
+                    "message": "Exporting MP4.",
+                    "progress": 0.92,
+                    "current": 10,
+                    "total": 10,
+                },
+            )
+        )
+
+        def fail_monitoring(_progress):
+            raise RuntimeError("monitoring callback failed")
+
+        executor = ProductionRenderExecutor(
+            poll_interval_seconds=0,
+            progress_callback=fail_monitoring,
+        )
+        with mock.patch.object(
+            render_executor_module,
+            "start_background_render",
+            return_value=handle,
+        ):
+            with self.assertRaises(ProductionRenderError) as raised:
+                executor.run(
+                    assembly_result=self.context.assembly,
+                    preflight_result=self.context.preflight,
+                    project_root_dir=self.project_root,
+                )
+
+        self.assertEqual(raised.exception.stage, "monitoring")
+        self.assertEqual(handle.cancel_calls, 1)
+        self.assertTrue(handle.preserve_temporary_output_on_cancel)
 
     def test_missing_mp4_after_reported_success_is_error(self):
         handle = self.success_handle(self.context, create_video=False)

@@ -10,6 +10,7 @@ import _test_path
 from studio.render_output import (
     RenderOutputPromotionError,
     _filesystem_path,
+    display_path,
     promote_render_output,
     temporary_render_output_path,
 )
@@ -97,7 +98,13 @@ class RenderOutputTest(unittest.TestCase):
             final_path = Path(temp_dir) / "race.mp4"
             partial_path = temporary_render_output_path(final_path)
             partial_path.write_bytes(b"recoverable-render")
-            cause = FileNotFoundError(3, "synthetic WinError 3")
+            cause = FileNotFoundError(
+                2,
+                "synthetic missing path",
+                _filesystem_path(partial_path),
+                3,
+                _filesystem_path(final_path),
+            )
 
             with patch("studio.render_output.os.replace", side_effect=cause):
                 with self.assertRaises(RenderOutputPromotionError) as raised:
@@ -108,7 +115,10 @@ class RenderOutputTest(unittest.TestCase):
             message = str(raised.exception)
             self.assertIn(str(partial_path), message)
             self.assertIn(str(final_path), message)
-            self.assertIn("synthetic WinError 3", message)
+            self.assertIn("WinError 3", message)
+            self.assertIn("synthetic missing path", message)
+            self.assertNotIn("\\\\?\\", message)
+            self.assertIs(raised.exception.cause, cause)
 
     def test_missing_partial_is_reported_before_promotion(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,12 +141,32 @@ class RenderOutputTest(unittest.TestCase):
             _filesystem_path(r"\\server\share\output\race.mp4"),
             r"\\?\UNC\server\share\output\race.mp4",
         )
+        self.assertEqual(
+            _filesystem_path(r"\\?\C:\output\race.mp4"),
+            r"\\?\C:\output\race.mp4",
+        )
+
+    @unittest.skipUnless(os.name == "nt", "Windows display paths only")
+    def test_display_path_normalizes_drive_and_unc_device_paths(self):
+        self.assertEqual(
+            display_path(r"\\?\C:\output\race.mp4"),
+            r"C:\output\race.mp4",
+        )
+        self.assertEqual(
+            display_path(r"\\?\UNC\server\share\output\race.mp4"),
+            r"\\server\share\output\race.mp4",
+        )
+        self.assertEqual(
+            display_path(r"C:\output\race.mp4"),
+            r"C:\output\race.mp4",
+        )
 
     def test_non_windows_filesystem_path_is_unchanged(self):
         normal_path = os.fspath(Path("output") / "race.mp4")
 
         with patch("studio.render_output.os.name", "posix"):
             self.assertEqual(_filesystem_path(normal_path), normal_path)
+            self.assertEqual(display_path(normal_path), normal_path)
 
     @staticmethod
     def _directory_with_absolute_length(root, minimum_length):

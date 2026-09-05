@@ -20,6 +20,7 @@ from automation.production_preflight import (
 from automation.workspace import ProductionWorkspace
 from config.project_file_loader import load_project_file
 from pipeline.render_job import RenderProfile, RenderResult
+from studio.render_output import render_output_exists
 from ui.render_controller import render_result_from_status, start_background_render
 
 
@@ -697,6 +698,17 @@ class ProductionRenderExecutor:
     def _verify_failed_render_cleanup(status: dict, *, plan: _RenderPlan) -> None:
         if plan.workspace.video_path.exists():
             raise ValueError("Failed render unexpectedly produced the final MP4.")
+        if status.get("temporary_output_preserved") is True:
+            temporary_output = status.get("temporary_output")
+            if not isinstance(temporary_output, str) or not temporary_output:
+                raise ValueError("Recoverable render status has no temporary output.")
+            status_partial = Path(temporary_output).resolve(strict=False)
+            if not status_partial.is_relative_to(plan.workspace.render_dir):
+                raise ValueError("Recoverable render partial is outside render_dir.")
+            if not render_output_exists(status_partial):
+                raise FileNotFoundError("Recoverable render partial does not exist.")
+            ProductionRenderExecutor._require_unchanged_production_status(plan)
+            return
         ProductionRenderExecutor._require_no_partial_output(
             plan.workspace,
             status=status,
@@ -758,7 +770,7 @@ class ProductionRenderExecutor:
         if not callable(cancel):
             return
         try:
-            cancel()
+            cancel(preserve_temporary_output=True)
         except Exception as cancel_error:
             original_error.add_note(
                 "BackgroundRender.cancel() also failed: "

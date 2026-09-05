@@ -25,7 +25,7 @@ class RenderOutputPromotionError(OSError):
             "Render completed but final file promotion failed. "
             f"{partial_detail}"
             f"Final destination: {self.final_path}. "
-            f"Original error: {type(cause).__name__}: {cause}"
+            f"Original error: {_display_exception(cause)}"
         )
 
 
@@ -81,3 +81,35 @@ def _filesystem_path(path):
     if absolute_path.startswith("\\\\"):
         return f"\\\\?\\UNC\\{absolute_path[2:]}"
     return f"\\\\?\\{absolute_path}"
+
+
+def display_path(path):
+    """Return a normal user-facing path without the Win32 device prefix."""
+    path_string = os.fspath(path)
+    if os.name != "nt":
+        return path_string
+    if path_string.startswith("\\\\?\\UNC\\"):
+        return f"\\\\{path_string[8:]}"
+    if path_string.startswith("\\\\?\\"):
+        return path_string[4:]
+    return path_string
+
+
+def render_output_exists(path):
+    """Check a render path using the internal long-path representation."""
+    return os.path.isfile(_filesystem_path(path))
+
+
+def _display_exception(exc):
+    if not isinstance(exc, OSError):
+        return f"{type(exc).__name__}: {exc}"
+
+    error_code = getattr(exc, "winerror", None)
+    if error_code is not None:
+        code = f"[WinError {error_code}] "
+    elif exc.errno is not None:
+        code = f"[Errno {exc.errno}] "
+    else:
+        code = ""
+    detail = exc.strerror or "Filesystem operation failed."
+    return f"{type(exc).__name__}: {code}{detail}"

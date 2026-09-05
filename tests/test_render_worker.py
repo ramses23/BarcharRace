@@ -11,7 +11,7 @@ from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from pipeline.render_job import RenderProfile, RenderResult
-from studio.render_output import RenderOutputPromotionError
+from studio.render_output import RenderOutputPromotionError, _filesystem_path
 from studio.render_worker import _progress_writer, run_worker
 
 
@@ -166,7 +166,13 @@ class RenderWorkerTest(unittest.TestCase):
                     )
 
             def fail_promotion(partial_path, destination_path):
-                cause = FileNotFoundError(3, "synthetic WinError 3")
+                cause = FileNotFoundError(
+                    2,
+                    "synthetic missing path",
+                    _filesystem_path(partial_path),
+                    3,
+                    _filesystem_path(destination_path),
+                )
                 raise RenderOutputPromotionError(
                     partial_path,
                     destination_path,
@@ -183,8 +189,8 @@ class RenderWorkerTest(unittest.TestCase):
                 "studio.render_worker.promote_render_output",
                 side_effect=fail_promotion,
             ), patch(
-                "studio.render_worker.traceback.print_exc",
-            ):
+                "studio.render_worker.traceback.print_exception",
+            ) as print_exception:
                 return_code = run_worker(
                     project_path,
                     root,
@@ -207,7 +213,10 @@ class RenderWorkerTest(unittest.TestCase):
             self.assertEqual(Path(status["temporary_output"]), partials[0])
             self.assertIn(str(partials[0]), status["error"])
             self.assertIn(str(final_output), status["error"])
-            self.assertIn("synthetic WinError 3", status["error"])
+            self.assertIn("WinError 3", status["error"])
+            self.assertIn("synthetic missing path", status["error"])
+            self.assertNotIn("\\\\?\\", status["error"])
+            self.assertFalse(print_exception.call_args.kwargs["chain"])
 
     def test_short_render_uses_suffixed_output_and_preserves_standard_video(self):
         with tempfile.TemporaryDirectory() as temp_dir:

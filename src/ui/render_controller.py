@@ -10,6 +10,7 @@ from uuid import uuid4
 from pipeline.render_job import RenderProfile, RenderResult
 from studio.package_paths import ProjectPathError, resolve_project_path
 from studio.project_storage import atomic_write_json
+from studio.render_output import display_path, render_output_exists
 from studio.workspace_paths import assert_user_write_path
 
 
@@ -42,22 +43,56 @@ class BackgroundRender:
             **status,
             "state": "failed",
             "message": f"Render worker exited with code {return_code}.",
-            "error": f"See render log: {self.log_path}",
+            "error": f"See render log: {display_path(self.log_path)}",
         }
         temporary_output = failed_status.get("temporary_output")
-        if temporary_output:
-            Path(temporary_output).unlink(missing_ok=True)
+        if temporary_output and render_output_exists(temporary_output):
+            render_completed = status.get("stage") == "complete"
+            recovery_description = (
+                "A recoverable temporary video was preserved at:"
+                if render_completed
+                else "A potentially recoverable temporary video was preserved at:"
+            )
+            final_output = status.get("output_file")
+            destination_detail = (
+                f" Expected final destination: {display_path(final_output)}."
+                if final_output
+                else ""
+            )
+            failed_status.update(
+                {
+                    "message": (
+                        "Render output could not be finalized."
+                        if render_completed
+                        else "Render worker exited unexpectedly."
+                    ),
+                    "error": (
+                        f"{recovery_description} {display_path(temporary_output)}."
+                        f"{destination_detail} Worker process exited with code "
+                        f"{return_code}. See render log: {display_path(self.log_path)}"
+                    ),
+                    "temporary_output_preserved": True,
+                    "temporary_output_recovery": (
+                        "completed" if render_completed else "potential"
+                    ),
+                }
+            )
         atomic_write_json(failed_status, self.status_path)
         return failed_status
 
-    def cancel(self):
+    def cancel(self, *, preserve_temporary_output=False):
         status = self.status()
         if status.get("state") in {"completed", "failed", "canceled"}:
             return status
 
         _terminate_process_tree(self.process)
         temporary_output = status.get("temporary_output")
-        if temporary_output:
+        temporary_preserved = bool(
+            preserve_temporary_output
+            and temporary_output
+            and render_output_exists(temporary_output)
+        )
+        if temporary_output and not preserve_temporary_output:
             Path(temporary_output).unlink(missing_ok=True)
 
         canceled_status = {
@@ -66,6 +101,36 @@ class BackgroundRender:
             "message": "Render canceled by the user.",
             "progress": float(status.get("progress", 0.0)),
         }
+        if temporary_preserved:
+            render_completed = status.get("stage") == "complete"
+            recovery_description = (
+                "A recoverable temporary video was preserved at:"
+                if render_completed
+                else "A potentially recoverable temporary video was preserved at:"
+            )
+            final_output = status.get("output_file")
+            destination_detail = (
+                f" Expected final destination: {display_path(final_output)}."
+                if final_output
+                else ""
+            )
+            canceled_status.update(
+                {
+                    "message": (
+                        "Render output could not be finalized."
+                        if render_completed
+                        else "Render monitoring stopped unexpectedly."
+                    ),
+                    "error": (
+                        f"{recovery_description} {display_path(temporary_output)}."
+                        f"{destination_detail}"
+                    ),
+                    "temporary_output_preserved": True,
+                    "temporary_output_recovery": (
+                        "completed" if render_completed else "potential"
+                    ),
+                }
+            )
         atomic_write_json(canceled_status, self.status_path)
         return canceled_status
 
