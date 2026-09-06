@@ -3,7 +3,7 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 from config.animation_config import AnimationConfig
-from config.chart_config import ChartConfig
+from config.chart_config import MIN_STEPS_PER_TRANSITION, ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
@@ -250,6 +250,18 @@ def _convert_chart_value(key, value):
         raise ProjectFileError(
             "Use the top-level 'selection' section instead of 'chart.selection'."
         )
+
+    if key == "steps_per_transition":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < MIN_STEPS_PER_TRANSITION
+        ):
+            raise ProjectFileError(
+                "Chart field 'steps_per_transition' must be at least "
+                f"{MIN_STEPS_PER_TRANSITION}."
+            )
+        return value
 
     if key == "theme":
         if not isinstance(value, str):

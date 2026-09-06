@@ -8,6 +8,34 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_transition_steps_accept_positive_values_without_ui_ceiling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "steps.json"
+            for steps in (1, 1199, 1200, 1201, 1701):
+                with self.subTest(steps=steps):
+                    project_path.write_text(
+                        json.dumps({"chart": {"steps_per_transition": steps}}),
+                        encoding="utf-8",
+                    )
+                    self.assertEqual(
+                        load_project_file(project_path).chart_config.steps_per_transition,
+                        steps,
+                    )
+
+    def test_transition_steps_reject_values_below_canonical_minimum(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "invalid_steps.json"
+            project_path.write_text(
+                json.dumps({"chart": {"steps_per_transition": 0}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ProjectFileError,
+                "steps_per_transition.*at least 1",
+            ):
+                load_project_file(project_path)
+
     def test_flip_calendar_defaults_roundtrip_and_validation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -828,6 +828,63 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(restored_duration, initial_duration)
 
+    def test_persisted_steps_above_old_ui_limit_render_without_clamping(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["steps_0"] = 1701
+
+        self._select_editor_section(app, "Export")
+
+        self.assertFalse(app.exception)
+        steps = next(
+            control
+            for control in app.number_input
+            if control.label == "Steps per transition"
+        )
+        self.assertEqual(steps.value, 1701)
+        self.assertGreater(steps.max, 1701)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["steps_per_transition"], 1701)
+
+        export_format = next(
+            control for control in app.selectbox if control.label == "Format"
+        )
+        export_format.set_value("short")
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(next(
+            control.value
+            for control in app.number_input
+            if control.label == "Steps per transition"
+        ), 1701)
+
+        export_format = next(
+            control for control in app.selectbox if control.label == "Format"
+        )
+        export_format.set_value("standard")
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(next(
+            control.value
+            for control in app.number_input
+            if control.label == "Steps per transition"
+        ), 1701)
+
+    def test_stale_steps_below_minimum_reconcile_to_loaded_value(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["steps_0"] = 0
+
+        self._select_editor_section(app, "Export")
+
+        self.assertFalse(app.exception)
+        steps = next(
+            control
+            for control in app.number_input
+            if control.label == "Steps per transition"
+        )
+        self.assertEqual(steps.value, 24)
+
     def test_value_axis_controls_persist_to_project_draft(self):
         app_path = (
             Path(__file__).resolve().parents[1]

@@ -15,7 +15,11 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from config.chart_config import ChartConfig
+from config.chart_config import (
+    MAX_STEPS_PER_TRANSITION,
+    MIN_STEPS_PER_TRANSITION,
+    ChartConfig,
+)
 from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from config.layout_config import get_layout_preset, list_layout_presets
@@ -4183,13 +4187,23 @@ def _animation_output_section(
         )
 
     with steps_column:
+        steps_value = _positive_int_or_default(
+            values["steps_per_transition"],
+            24,
+        )
+        steps_key = _widget_key("steps")
+        _reconcile_numeric_widget_state(
+            steps_key,
+            steps_value,
+            minimum=MIN_STEPS_PER_TRANSITION,
+            maximum=MAX_STEPS_PER_TRANSITION,
+        )
         steps = st.number_input(
             "Steps per transition",
-            min_value=1,
-            max_value=1200,
-            value=_positive_int_or_default(values["steps_per_transition"], 24),
+            min_value=MIN_STEPS_PER_TRANSITION,
+            max_value=MAX_STEPS_PER_TRANSITION,
             step=1,
-            key=_widget_key("steps"),
+            key=steps_key,
         )
 
     with motion_column:
@@ -5973,6 +5987,21 @@ def _widget_key(name):
 
 def _set_session_value(key, value):
     st.session_state[key] = value
+
+
+def _reconcile_numeric_widget_state(key, loaded_value, *, minimum, maximum):
+    if key not in st.session_state:
+        st.session_state[key] = loaded_value
+        return
+
+    state_value = st.session_state[key]
+    if (
+        isinstance(state_value, bool)
+        or not isinstance(state_value, (int, float))
+        or state_value < minimum
+        or (maximum is not None and state_value > maximum)
+    ):
+        st.session_state[key] = loaded_value
 
 
 def _use_full_vertical_area():

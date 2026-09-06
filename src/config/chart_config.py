@@ -6,6 +6,10 @@ from config.theme_config import ThemeConfig
 from config.value_format_config import ValueFormatConfig
 
 
+MIN_STEPS_PER_TRANSITION = 1
+MAX_STEPS_PER_TRANSITION = None
+
+
 @dataclass(frozen=True)
 class ChartConfig:
     width: int = 1920
