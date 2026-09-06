@@ -16,11 +16,24 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from config.chart_config import (
+    MAX_FPS,
     MAX_STEPS_PER_TRANSITION,
+    MAX_TEXT_FONT_SIZE,
+    MAX_VISIBLE_BARS,
+    MIN_FPS,
     MIN_STEPS_PER_TRANSITION,
+    MIN_TEXT_FONT_SIZE,
+    MIN_VISIBLE_BARS,
     ChartConfig,
 )
+from config.bar_selection_config import MAX_TOP_N, MIN_TOP_N
 from config.dataset_config import DatasetConfig
+from config.fun_fact_config import (
+    MAX_EDITORIAL_FONT_SIZE,
+    MAX_EDITORIAL_SPACING,
+    MIN_EDITORIAL_FONT_SIZE,
+    MIN_EDITORIAL_SPACING,
+)
 from config.export_config import ExportConfig
 from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
@@ -2594,8 +2607,10 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     "Headline opacity", settings["editorial_headline_opacity"], 1.0,
                     _widget_key("fun_facts_editorial_headline_opacity"),
                 )
-                editorial["editorial_headline_size"] = st.number_input(
-                    "Headline size", min_value=8, max_value=160,
+                editorial["editorial_headline_size"] = _reconciled_number_input(
+                    "Headline size",
+                    min_value=MIN_EDITORIAL_FONT_SIZE,
+                    max_value=MAX_EDITORIAL_FONT_SIZE,
                     value=settings["editorial_headline_size"],
                     key=_widget_key("fun_facts_editorial_headline_size"),
                 )
@@ -2623,8 +2638,9 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     "Body opacity", settings["editorial_body_opacity"], 1.0,
                     _widget_key("fun_facts_editorial_body_opacity"),
                 )
-                editorial["editorial_body_size"] = st.number_input(
-                    "Body size", min_value=8, max_value=120,
+                editorial["editorial_body_size"] = _reconciled_number_input(
+                    "Body size", min_value=MIN_EDITORIAL_FONT_SIZE,
+                    max_value=MAX_EDITORIAL_FONT_SIZE,
                     value=settings["editorial_body_size"],
                     key=_widget_key("fun_facts_editorial_body_size"),
                 )
@@ -2652,8 +2668,9 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     "Credit opacity", settings["editorial_credit_opacity"], 1.0,
                     _widget_key("fun_facts_editorial_credit_opacity"),
                 )
-                editorial["editorial_credit_size"] = st.number_input(
-                    "Credit size", min_value=6, max_value=80,
+                editorial["editorial_credit_size"] = _reconciled_number_input(
+                    "Credit size", min_value=MIN_EDITORIAL_FONT_SIZE,
+                    max_value=MAX_EDITORIAL_FONT_SIZE,
                     value=settings["editorial_credit_size"],
                     key=_widget_key("fun_facts_editorial_credit_size"),
                 )
@@ -2674,8 +2691,8 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             st.markdown("**Image and attribution layout**")
             editorial["editorial_image_area_ratio"] = st.slider("Image area", 0.0, 0.8, settings["editorial_image_area_ratio"], 0.05, key=_widget_key("fun_facts_editorial_image_area_ratio"))
             editorial["editorial_image_fit"] = st.selectbox("Image fit", ("contain", "cover"), index=_option_index(("contain", "cover"), settings["editorial_image_fit"]), key=_widget_key("fun_facts_editorial_image_fit"))
-            editorial["editorial_text_image_gap"] = st.number_input("Text/image gap", min_value=0, max_value=200, value=settings["editorial_text_image_gap"], key=_widget_key("fun_facts_editorial_text_image_gap"))
-            editorial["editorial_top_offset"] = st.number_input("Top offset", min_value=0, max_value=500, value=settings["editorial_top_offset"], disabled=layout == "editorial_floating", key=_widget_key("fun_facts_editorial_top_offset"))
+            editorial["editorial_text_image_gap"] = _reconciled_number_input("Text/image gap", min_value=MIN_EDITORIAL_SPACING, max_value=MAX_EDITORIAL_SPACING, value=settings["editorial_text_image_gap"], key=_widget_key("fun_facts_editorial_text_image_gap"))
+            editorial["editorial_top_offset"] = _reconciled_number_input("Top offset", min_value=MIN_EDITORIAL_SPACING, max_value=MAX_EDITORIAL_SPACING, value=settings["editorial_top_offset"], disabled=layout == "editorial_floating", key=_widget_key("fun_facts_editorial_top_offset"))
             editorial["editorial_reposition_time_label"] = st.toggle("Place date with editorial layout", value=settings["editorial_reposition_time_label"], key=_widget_key("fun_facts_editorial_reposition_time_label"))
 
     result = {
@@ -3089,14 +3106,21 @@ def _canvas_text_section(
         st.session_state.pop(CATEGORY_AREA_SPAN_OVERRIDE_STATE, None)
 
     with visible_column:
+        max_visible_value = _non_negative_int_or_default(values["max_visible_bars"], 8)
+        max_visible_key = _widget_key("max_visible")
+        _reconcile_numeric_widget_state(
+            max_visible_key,
+            max_visible_value,
+            minimum=MIN_VISIBLE_BARS,
+            maximum=MAX_VISIBLE_BARS,
+        )
         max_visible = st.number_input(
             "Visible bar slots",
-            min_value=1,
-            max_value=100,
-            value=_positive_int_or_default(values["max_visible_bars"], 8),
+            min_value=MIN_VISIBLE_BARS,
+            max_value=MAX_VISIBLE_BARS,
             step=1,
             help="Maximum number of rows fitted into the selected canvas.",
-            key=_widget_key("max_visible"),
+            key=max_visible_key,
         )
 
     layout_settings = get_layout_preset(layout_preset)
@@ -3969,14 +3993,21 @@ def _bars_categories_section(
         )
 
     with ranking_column:
+        top_n_value = _positive_int_or_default(values["top_n"], 8)
+        top_n_key = _widget_key("top_n")
+        _reconcile_numeric_widget_state(
+            top_n_key,
+            top_n_value,
+            minimum=MIN_TOP_N,
+            maximum=MAX_TOP_N,
+        )
         top_n = st.number_input(
             "Top N categories",
-            min_value=1,
-            max_value=100,
-            value=_positive_int_or_default(values["top_n"], 8),
+            min_value=MIN_TOP_N,
+            max_value=MAX_TOP_N,
             step=1,
             help="Categories selected from the data before layout.",
-            key=_widget_key("top_n"),
+            key=top_n_key,
         )
 
     with aggregate_column:
@@ -4177,13 +4208,20 @@ def _animation_output_section(
     fps_column, steps_column, motion_column = st.columns(3)
 
     with fps_column:
+        fps_value = _positive_int_or_default(values["fps"], 24)
+        fps_key = _widget_key("fps")
+        _reconcile_numeric_widget_state(
+            fps_key,
+            fps_value,
+            minimum=MIN_FPS,
+            maximum=MAX_FPS,
+        )
         fps = st.number_input(
             "FPS",
-            min_value=1,
-            max_value=120,
-            value=_positive_int_or_default(values["fps"], 24),
+            min_value=MIN_FPS,
+            max_value=MAX_FPS,
             step=1,
-            key=_widget_key("fps"),
+            key=fps_key,
         )
 
     with steps_column:
@@ -6004,6 +6042,32 @@ def _reconcile_numeric_widget_state(key, loaded_value, *, minimum, maximum):
         st.session_state[key] = loaded_value
 
 
+def _reconciled_number_input(
+    label,
+    *,
+    min_value,
+    max_value,
+    value,
+    key,
+    disabled=False,
+    step=1,
+):
+    _reconcile_numeric_widget_state(
+        key,
+        value,
+        minimum=min_value,
+        maximum=max_value,
+    )
+    return st.number_input(
+        label,
+        min_value=min_value,
+        max_value=max_value,
+        step=step,
+        key=key,
+        disabled=disabled,
+    )
+
+
 def _use_full_vertical_area():
     st.session_state[_widget_key("bar_vertical_layout_mode")] = "fill_available"
     st.session_state[_widget_key("bar_vertical_top_padding")] = 0
@@ -6035,12 +6099,21 @@ def _positive_int_or_default(value, default):
     return value if value >= 1 else default
 
 
+def _non_negative_int_or_default(value, default):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+
+    return value if value >= 0 else default
+
+
 def _font_size_input(label, value, default, key):
-    return st.number_input(
+    return _reconciled_number_input(
         label,
-        min_value=1,
-        max_value=500,
-        value=_int_in_range_or_default(value, default, 1, 500),
+        min_value=MIN_TEXT_FONT_SIZE,
+        max_value=MAX_TEXT_FONT_SIZE,
+        value=_positive_int_or_default(value, default),
         step=1,
         key=key,
     )

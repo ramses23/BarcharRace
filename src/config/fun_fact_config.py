@@ -1,6 +1,12 @@
 from dataclasses import dataclass
 
 
+MIN_EDITORIAL_FONT_SIZE = 1
+MAX_EDITORIAL_FONT_SIZE = None
+MIN_EDITORIAL_SPACING = 0
+MAX_EDITORIAL_SPACING = None
+
+
 @dataclass(frozen=True)
 class FunFactConfig:
     """Project-level configuration for timeline-bound editorial overlays."""

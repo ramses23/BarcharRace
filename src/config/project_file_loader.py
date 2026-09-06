@@ -3,11 +3,12 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 from config.animation_config import AnimationConfig
-from config.chart_config import MIN_STEPS_PER_TRANSITION, ChartConfig
+from config.bar_selection_config import MIN_TOP_N
+from config.chart_config import MIN_FPS, MIN_STEPS_PER_TRANSITION, ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
-from config.fun_fact_config import FunFactConfig
+from config.fun_fact_config import MIN_EDITORIAL_FONT_SIZE, FunFactConfig
 from config.layout_config import apply_layout_preset, get_layout_preset
 from config.project_preset import ProjectPreset, get_preset
 from config.project_schema import ProjectSchemaError, migrate_project_data
@@ -261,6 +262,11 @@ def _convert_chart_value(key, value):
                 "Chart field 'steps_per_transition' must be at least "
                 f"{MIN_STEPS_PER_TRANSITION}."
             )
+        return value
+
+    if key == "fps":
+        if isinstance(value, bool) or not isinstance(value, int) or value < MIN_FPS:
+            raise ProjectFileError(f"Chart field 'fps' must be at least {MIN_FPS}.")
         return value
 
     if key == "theme":
@@ -892,8 +898,8 @@ def _convert_selection_value(key, value):
         if value is None:
             return None
 
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            raise ProjectFileError("Selection field 'top_n' must be null or >= 1.")
+        if isinstance(value, bool) or not isinstance(value, int) or value < MIN_TOP_N:
+            raise ProjectFileError(f"Selection field 'top_n' must be null or >= {MIN_TOP_N}.")
 
         return value
 
@@ -1132,7 +1138,11 @@ def _convert_fun_fact_value(key, value):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 0.8:
             raise ProjectFileError("Editorial image area ratio must be from 0 to 0.8.")
         return float(value)
-    if key in ("editorial_headline_size", "editorial_body_size", "editorial_credit_size", "editorial_text_image_gap", "editorial_top_offset"):
+    if key in ("editorial_headline_size", "editorial_body_size", "editorial_credit_size"):
+        if isinstance(value, bool) or not isinstance(value, int) or value < MIN_EDITORIAL_FONT_SIZE:
+            raise ProjectFileError(f"Fun facts field '{key}' must be at least {MIN_EDITORIAL_FONT_SIZE}.")
+        return value
+    if key in ("editorial_text_image_gap", "editorial_top_offset"):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProjectFileError(f"Fun facts field '{key}' must be a non-negative integer.")
         return value

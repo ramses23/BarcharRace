@@ -8,6 +8,61 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_fps_accepts_positive_values_without_ui_ceiling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "fps.json"
+            for fps in (1, 24, 30, 60, 120, 121, 144, 240):
+                with self.subTest(fps=fps):
+                    project_path.write_text(json.dumps({"chart": {"fps": fps}}), encoding="utf-8")
+                    self.assertEqual(load_project_file(project_path).chart_config.fps, fps)
+
+    def test_fps_rejects_non_positive_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "fps.json"
+            for fps in (0, -1):
+                with self.subTest(fps=fps):
+                    project_path.write_text(json.dumps({"chart": {"fps": fps}}), encoding="utf-8")
+                    with self.assertRaisesRegex(ProjectFileError, "fps.*at least 1"):
+                        load_project_file(project_path)
+
+    def test_top_n_and_visible_slots_accept_engine_supported_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "selection.json"
+            for value in (1, 10, 50, 100, 101, 150, 500):
+                with self.subTest(top_n=value):
+                    project_path.write_text(json.dumps({
+                        "selection": {"top_n": value},
+                        "chart": {"max_visible_bars": value},
+                    }), encoding="utf-8")
+                    preset = load_project_file(project_path)
+                    self.assertEqual(preset.chart_config.selection.top_n, value)
+                    self.assertEqual(preset.chart_config.max_visible_bars, value)
+
+            project_path.write_text(json.dumps({
+                "chart": {"max_visible_bars": 0},
+            }), encoding="utf-8")
+            self.assertEqual(load_project_file(project_path).chart_config.max_visible_bars, 0)
+
+    def test_editorial_numeric_domains_match_renderer_requirements(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "editorial.json"
+            project_path.write_text(json.dumps({"fun_facts": {
+                "editorial_headline_size": 200,
+                "editorial_body_size": 150,
+                "editorial_credit_size": 90,
+                "editorial_text_image_gap": 250,
+                "editorial_top_offset": 600,
+            }}), encoding="utf-8")
+            config = load_project_file(project_path).fun_fact_config
+            self.assertEqual(config.editorial_headline_size, 200)
+            self.assertEqual(config.editorial_text_image_gap, 250)
+
+            project_path.write_text(json.dumps({"fun_facts": {
+                "editorial_headline_size": 0,
+            }}), encoding="utf-8")
+            with self.assertRaisesRegex(ProjectFileError, "headline_size.*at least 1"):
+                load_project_file(project_path)
+
     def test_transition_steps_accept_positive_values_without_ui_ceiling(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "steps.json"

@@ -8,6 +8,12 @@ from config.value_format_config import ValueFormatConfig
 
 MIN_STEPS_PER_TRANSITION = 1
 MAX_STEPS_PER_TRANSITION = None
+MIN_FPS = 1
+MAX_FPS = None
+MIN_VISIBLE_BARS = 0
+MAX_VISIBLE_BARS = None
+MIN_TEXT_FONT_SIZE = 1
+MAX_TEXT_FONT_SIZE = None
 
 
 @dataclass(frozen=True)

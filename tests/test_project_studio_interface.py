@@ -885,6 +885,62 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(steps.value, 24)
 
+    def test_high_valid_fps_and_top_n_render_without_old_ui_ceilings(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["fps_0"] = 144
+        app.session_state["top_n_0"] = 150
+        app.session_state["max_visible_0"] = 150
+
+        self._select_editor_section(app, "Export")
+        self.assertFalse(app.exception)
+        self.assertEqual(next(x.value for x in app.number_input if x.label == "FPS"), 144)
+
+        self._select_editor_section(app, "Bars")
+        self.assertFalse(app.exception)
+        self.assertEqual(next(x.value for x in app.number_input if x.label == "Top N categories"), 150)
+
+        self._select_editor_section(app, "Canvas")
+        self.assertFalse(app.exception)
+        self.assertEqual(next(x.value for x in app.number_input if x.label == "Visible bar slots"), 150)
+
+    def test_high_valid_editorial_values_render_without_old_ui_ceilings(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["fun_facts_layout_0"] = "editorial_right"
+        expected = {
+            "Headline size": 200,
+            "Body size": 150,
+            "Credit size": 90,
+            "Text/image gap": 250,
+            "Top offset": 600,
+        }
+        keys = {
+            "Headline size": "fun_facts_editorial_headline_size_0",
+            "Body size": "fun_facts_editorial_body_size_0",
+            "Credit size": "fun_facts_editorial_credit_size_0",
+            "Text/image gap": "fun_facts_editorial_text_image_gap_0",
+            "Top offset": "fun_facts_editorial_top_offset_0",
+        }
+        for label, value in expected.items():
+            app.session_state[keys[label]] = value
+
+        self._select_editor_section(app, "Fun facts")
+
+        self.assertFalse(app.exception)
+        actual = {x.label: x.value for x in app.number_input if x.label in expected}
+        self.assertEqual(actual, expected)
+
+    def test_high_valid_canvas_font_size_is_not_silently_clamped(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["title_font_size_0"] = 600
+
+        self._select_editor_section(app, "Canvas")
+
+        self.assertFalse(app.exception)
+        self.assertEqual(next(x.value for x in app.number_input if x.label == "Title size"), 600)
+
     def test_value_axis_controls_persist_to_project_draft(self):
         app_path = (
             Path(__file__).resolve().parents[1]
