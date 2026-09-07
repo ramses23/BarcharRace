@@ -12,6 +12,49 @@ from renderer.bar_renderer import BarRenderer
 
 
 class BarRendererAlphaTest(unittest.TestCase):
+    def test_value_axis_renderer_accepts_canonical_thickness_and_font_domains(self):
+        axis = ValueAxisState(
+            scale=ValueScale(origin_x=20, width=160, domain_max=160),
+            ticks=(ValueAxisTick(value=40, x=60, label="40", opacity=1.0),),
+            tick_step=40,
+            line_top=10,
+            line_bottom=110,
+            label_y=5,
+        )
+        for thickness in (0.01, 0.1, 0.25, 0.49, 0.5, 1.0, 4.0, 4.01, 5.0, 10.0):
+            for font_size in (1, 4, 600):
+                with self.subTest(thickness=thickness, font_size=font_size):
+                    config = self._config(
+                        value_grid_enabled=True,
+                        value_grid_tick_labels_enabled=True,
+                        value_grid_line_thickness=thickness,
+                        value_grid_tick_font_size=font_size,
+                    )
+                    renderer = BarRenderer(config=config)
+                    try:
+                        renderer._draw_scene(
+                            Scene(title="", bars=[], value_axis=axis),
+                            draw_canvas=True,
+                        )
+                        self.assertEqual(
+                            renderer._value_grid_collection.get_linewidths()[0],
+                            max(0.1, thickness),
+                        )
+                        self.assertEqual(
+                            renderer._value_tick_artists[0].get_fontsize(),
+                            font_size,
+                        )
+                        self.assertEqual(
+                            renderer.config.value_grid_line_thickness,
+                            thickness,
+                        )
+                        self.assertEqual(
+                            renderer.config.value_grid_tick_font_size,
+                            font_size,
+                        )
+                    finally:
+                        renderer.close()
+
     def test_solid_vector_fill_alpha_is_independent_of_bar_width(self):
         config = self._config()
         sprites = self._sprites(config, opacity=1.0)

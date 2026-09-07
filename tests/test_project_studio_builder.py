@@ -30,6 +30,30 @@ from studio.project_builder import (
 
 
 class ProjectStudioBuilderTest(unittest.TestCase):
+    def test_value_axis_numeric_values_survive_save_load_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for thickness, font_size in ((0.25, 4), (5.0, 600), (0.1, 1), (10.0, 800)):
+                with self.subTest(thickness=thickness, font_size=font_size):
+                    project_path = Path(temp_dir) / (
+                        f"value-axis-{thickness}-{font_size}.json"
+                    )
+                    project_data = {"chart": {
+                        "value_grid_line_thickness": thickness,
+                        "value_grid_tick_font_size": font_size,
+                    }}
+
+                    saved_path = save_project_data(project_data, project_path)
+                    reloaded = load_project_data(saved_path)
+
+                    self.assertEqual(
+                        reloaded["chart"]["value_grid_line_thickness"],
+                        thickness,
+                    )
+                    self.assertEqual(
+                        reloaded["chart"]["value_grid_tick_font_size"],
+                        font_size,
+                    )
+
     def test_high_bar_geometry_values_survive_save_load_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "high-bar-geometry.json"

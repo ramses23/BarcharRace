@@ -8,6 +8,43 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_value_axis_numeric_domains_accept_all_canonical_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "value-axis.json"
+            for thickness in (0.01, 0.1, 0.25, 0.49, 0.5, 1.0, 4.0, 4.01, 5.0, 10.0):
+                with self.subTest(thickness=thickness):
+                    project_path.write_text(json.dumps({"chart": {
+                        "value_grid_line_thickness": thickness,
+                    }}), encoding="utf-8")
+                    config = load_project_file(project_path).chart_config
+                    self.assertEqual(config.value_grid_line_thickness, thickness)
+
+            for font_size in (1, 2, 4, 7, 8, 72, 73, 100, 600):
+                with self.subTest(font_size=font_size):
+                    project_path.write_text(json.dumps({"chart": {
+                        "value_grid_tick_font_size": font_size,
+                    }}), encoding="utf-8")
+                    config = load_project_file(project_path).chart_config
+                    self.assertEqual(config.value_grid_tick_font_size, font_size)
+
+    def test_value_axis_numeric_domains_reject_invalid_lower_bounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "invalid-value-axis.json"
+            invalid_cases = (
+                ("value_grid_line_thickness", 0),
+                ("value_grid_line_thickness", -1),
+                ("value_grid_tick_font_size", 0),
+                ("value_grid_tick_font_size", -1),
+            )
+            for field, value in invalid_cases:
+                with self.subTest(field=field, value=value):
+                    project_path.write_text(
+                        json.dumps({"chart": {field: value}}),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ProjectFileError, field):
+                        load_project_file(project_path)
+
     def test_bar_geometry_accepts_non_negative_values_without_ui_ceiling(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "bar-geometry.json"

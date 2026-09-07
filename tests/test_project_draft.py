@@ -124,6 +124,30 @@ class ProjectDraftTest(unittest.TestCase):
                     auto_preview_fingerprint(changed),
                 )
 
+    def test_preview_fingerprints_track_value_axis_numeric_values(self):
+        variants = (
+            {"value_grid_line_thickness": 0.25, "value_grid_tick_font_size": 4},
+            {"value_grid_line_thickness": 0.5, "value_grid_tick_font_size": 4},
+            {"value_grid_line_thickness": 4.0, "value_grid_tick_font_size": 72},
+            {"value_grid_line_thickness": 5.0, "value_grid_tick_font_size": 600},
+        )
+        for left, right in zip(variants, variants[1:]):
+            with self.subTest(left=left, right=right):
+                left_data = {"chart": left}
+                right_data = {"chart": right}
+                self.assertNotEqual(
+                    project_fingerprint(left_data),
+                    project_fingerprint(right_data),
+                )
+                self.assertNotEqual(
+                    preview_fingerprint(left_data),
+                    preview_fingerprint(right_data),
+                )
+                self.assertNotEqual(
+                    auto_preview_fingerprint(left_data),
+                    auto_preview_fingerprint(right_data),
+                )
+
     def test_auto_preview_fingerprint_ignores_data_and_export_changes(self):
         project_data = {
             "chart": {

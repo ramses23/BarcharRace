@@ -5257,16 +5257,15 @@ def _value_axis_panel(values, theme_settings):
             disabled=not enabled,
             key=_widget_key("value_grid_line_opacity"),
         )
-        line_thickness = line_columns[2].slider(
+        line_thickness = _reconciled_positive_number_input(
             "Grid line thickness",
-            0.5,
-            4.0,
-            min(4.0, max(0.5, float(values.get(
-                "value_grid_line_thickness", 1.0
-            )))),
-            0.25,
+            value=_positive_float_or_default(
+                values.get("value_grid_line_thickness"), 1.0
+            ),
+            step=0.25,
             disabled=not enabled,
             key=_widget_key("value_grid_line_thickness"),
+            container=line_columns[2],
         )
 
         label_enabled = enabled and show_labels
@@ -5291,16 +5290,17 @@ def _value_axis_panel(values, theme_settings):
             disabled=not label_enabled,
             key=_widget_key("value_grid_tick_text_opacity"),
         )
-        font_size = text_columns[2].number_input(
+        font_size = _reconciled_number_input(
             "Tick font size",
-            min_value=8,
-            max_value=72,
-            value=_int_in_range_or_default(
-                values.get("value_grid_tick_font_size"), 16, 8, 72
+            min_value=MIN_TEXT_FONT_SIZE,
+            max_value=MAX_TEXT_FONT_SIZE,
+            value=_positive_int_or_default(
+                values.get("value_grid_tick_font_size"), 16
             ),
             step=1,
             disabled=not label_enabled,
             key=_widget_key("value_grid_tick_font_size"),
+            container=text_columns[2],
         )
         style_columns = st.columns(3)
         bold = style_columns[0].toggle(
@@ -6065,7 +6065,14 @@ def _set_session_value(key, value):
     st.session_state[key] = value
 
 
-def _reconcile_numeric_widget_state(key, loaded_value, *, minimum, maximum):
+def _reconcile_numeric_widget_state(
+    key,
+    loaded_value,
+    *,
+    minimum,
+    maximum,
+    minimum_inclusive=True,
+):
     if key not in st.session_state:
         st.session_state[key] = loaded_value
         return
@@ -6074,7 +6081,13 @@ def _reconcile_numeric_widget_state(key, loaded_value, *, minimum, maximum):
     if (
         isinstance(state_value, bool)
         or not isinstance(state_value, (int, float))
-        or state_value < minimum
+        or (
+            minimum is not None
+            and (
+                state_value < minimum
+                or (not minimum_inclusive and state_value == minimum)
+            )
+        )
         or (maximum is not None and state_value > maximum)
     ):
         st.session_state[key] = loaded_value
@@ -6090,6 +6103,7 @@ def _reconciled_number_input(
     disabled=False,
     help=None,
     step=1,
+    container=st,
 ):
     _reconcile_numeric_widget_state(
         key,
@@ -6097,10 +6111,38 @@ def _reconciled_number_input(
         minimum=min_value,
         maximum=max_value,
     )
-    return st.number_input(
+    return container.number_input(
         label,
         min_value=min_value,
         max_value=max_value,
+        step=step,
+        key=key,
+        disabled=disabled,
+        help=help,
+    )
+
+
+def _reconciled_positive_number_input(
+    label,
+    *,
+    value,
+    key,
+    disabled=False,
+    help=None,
+    step=None,
+    container=st,
+):
+    _reconcile_numeric_widget_state(
+        key,
+        value,
+        minimum=0,
+        maximum=None,
+        minimum_inclusive=False,
+    )
+    return container.number_input(
+        label,
+        min_value=None,
+        max_value=None,
         step=step,
         key=key,
         disabled=disabled,
@@ -6137,6 +6179,15 @@ def _positive_int_or_default(value, default):
         return default
 
     return value if value >= 1 else default
+
+
+def _positive_float_or_default(value, default):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+    return value if value > 0 else float(default)
 
 
 def _optional_positive_int_or_default(value, default):

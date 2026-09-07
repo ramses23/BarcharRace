@@ -1086,7 +1086,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             if control.label == "Grid line opacity"
         ).set_value(0.4)
         next(
-            control for control in app.slider
+            control for control in app.number_input
             if control.label == "Grid line thickness"
         ).set_value(2.5)
         next(
@@ -1110,6 +1110,54 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self.assertEqual(chart["value_grid_line_thickness"], 2.5)
         self.assertEqual(chart["value_grid_tick_font_size"], 18)
         self.assertEqual(chart["value_grid_target_tick_count"], 6)
+
+    def test_value_axis_numeric_domains_preserve_low_and_high_values(self):
+        app_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "ui"
+            / "project_studio.py"
+        )
+        for thickness, font_size in ((0.25, 4), (5.0, 600)):
+            with self.subTest(thickness=thickness, font_size=font_size):
+                app = AppTest.from_file(str(app_path), default_timeout=30).run()
+                app.session_state["loaded_project_data"] = {"chart": {
+                    "value_grid_enabled": True,
+                    "value_grid_line_thickness": thickness,
+                    "value_grid_tick_font_size": font_size,
+                }}
+                app.session_state["current_project_draft"] = None
+                app.session_state["form_version"] = 1
+                app.session_state["value_grid_line_thickness_1"] = 0
+                app.session_state["value_grid_tick_font_size_1"] = "bad"
+                app.run()
+                self._select_editor_section(app, "Canvas")
+
+                self.assertFalse(app.exception)
+                controls = {x.label: x for x in app.number_input}
+                self.assertEqual(
+                    controls["Grid line thickness"].value,
+                    thickness,
+                )
+                self.assertEqual(controls["Tick font size"].value, font_size)
+                chart = json.loads(app.json[0].value)["chart"]
+                self.assertEqual(chart["value_grid_line_thickness"], thickness)
+                self.assertEqual(chart["value_grid_tick_font_size"], font_size)
+
+                edited_thickness = 0.1 if thickness < 1 else 10.0
+                edited_font_size = 1 if font_size < 10 else 800
+                controls["Grid line thickness"].set_value(edited_thickness)
+                controls["Tick font size"].set_value(edited_font_size)
+                app.run()
+                chart = json.loads(app.json[0].value)["chart"]
+                self.assertEqual(
+                    chart["value_grid_line_thickness"],
+                    edited_thickness,
+                )
+                self.assertEqual(
+                    chart["value_grid_tick_font_size"],
+                    edited_font_size,
+                )
 
     def test_short_export_controls_persist_range_text_and_resolution(self):
         app_path = (
