@@ -532,7 +532,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             Image.new("RGBA", (32, 32), "#FFCC00").save(secondary)
 
             for position in ("inside_left", "inside_right", "outside_left"):
-                for duration in (1.0, 0.7, 0.5):
+                for duration in (1.0, 0.7, 0.5, 0.4):
                     with self.subTest(position=position, duration=duration):
                         config = ChartConfig(
                             width=320,
@@ -608,16 +608,16 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                                         layout=layout,
                                     )
                                     image, _, top = command
-                                    self.assertEqual(top, round(layout["top"]))
-                                    self.assertEqual(
-                                        top + image.shape[0],
-                                        round(layout["bottom"]),
+                                    self.assertAlmostEqual(top, layout["top"])
+                                    self.assertAlmostEqual(
+                                        top + image.shape[0] * command.scale,
+                                        layout["bottom"],
                                     )
                                     if slot == "primary":
                                         error = (
-                                            top + (image.shape[0] / 2.0) - visual.y
+                                            top + (image.shape[0] * command.scale / 2.0) - visual.y
                                         )
-                                        self.assertLessEqual(abs(error), 0.5)
+                                        self.assertLessEqual(abs(error), 1e-10)
                                         if previous_primary_error is not None:
                                             self.assertLess(
                                                 abs(error - previous_primary_error),
@@ -1468,14 +1468,14 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                         )
                         self.assertAlmostEqual(layout["top"], bar_top)
                         self.assertAlmostEqual(layout["bottom"], bar_bottom)
-                        self.assertEqual(
-                            left + image.shape[1],
-                            round(visual.x + visual.width),
+                        self.assertAlmostEqual(
+                            left + image.shape[1] * command.scale,
+                            visual.x + visual.width,
                         )
-                        self.assertEqual(top, round(bar_top))
-                        self.assertEqual(
-                            top + image.shape[0],
-                            round(bar_bottom),
+                        self.assertAlmostEqual(top, bar_top)
+                        self.assertAlmostEqual(
+                            top + image.shape[0] * command.scale,
+                            bar_bottom,
                         )
             finally:
                 renderer.close()
@@ -1568,28 +1568,27 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                             rgba,
                         )
                         badge, left, top = command
-                        right = left + badge.shape[1]
-                        bottom = top + badge.shape[0]
-                        center_x = left + (badge.shape[1] // 2)
-                        center_y = top + (badge.shape[0] // 2)
+                        right = left + badge.shape[1] * command.scale
+                        bottom = top + badge.shape[0] * command.scale
+                        center_x = round((left + right) / 2)
+                        center_y = round((top + bottom) / 2)
 
-                        self.assertEqual(right, round(visual.x + visual.width))
-                        self.assertEqual(
-                            (top, bottom),
-                            (
-                                round(visual.y - (visual.height / 2)),
-                                round(visual.y + (visual.height / 2)),
-                            ),
-                        )
+                        self.assertAlmostEqual(right, visual.x + visual.width)
+                        self.assertAlmostEqual(top, visual.y - visual.height / 2)
+                        self.assertAlmostEqual(bottom, visual.y + visual.height / 2)
+                        # The fractional boundary has coverage on both sides;
+                        # only pixels beyond its AA footprint must be black.
+                        import math
+                        right, top, bottom = math.ceil(right), math.floor(top), math.ceil(bottom)
                         self.assertNotEqual(
                             image.getpixel((right - 1, center_y))[:3],
                             (0, 0, 0),
                         )
-                        self.assertEqual(image.getpixel((right, center_y))[:3], (0, 0, 0))
-                        self.assertNotEqual(image.getpixel((center_x, top))[:3], (0, 0, 0))
-                        self.assertEqual(image.getpixel((center_x, top - 1))[:3], (0, 0, 0))
+                        self.assertEqual(image.getpixel((right + 1, center_y))[:3], (0, 0, 0))
+                        self.assertNotEqual(image.getpixel((center_x, top + 1))[:3], (0, 0, 0))
+                        self.assertEqual(image.getpixel((center_x, top - 2))[:3], (0, 0, 0))
                         self.assertNotEqual(image.getpixel((center_x, bottom - 1))[:3], (0, 0, 0))
-                        self.assertEqual(image.getpixel((center_x, bottom))[:3], (0, 0, 0))
+                        self.assertEqual(image.getpixel((center_x, bottom + 1))[:3], (0, 0, 0))
 
     def test_scene_geometry_and_aspect_ratios_use_final_logo_bar_rect(self):
         with tempfile.TemporaryDirectory() as temp_dir:

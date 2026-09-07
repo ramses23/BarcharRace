@@ -42,6 +42,8 @@ from renderer.artists import (
     StaticImageArtist,
 )
 from renderer.text_compositor import TextCompositorMixin
+from renderer.subpixel import FloatImageCommand, raster_extent
+from renderer.artists import SubpixelGradientCollection
 from renderer.material_texture import blend_texture, procedural_texture_pattern
 from renderer.flip_calendar_renderer import FlipCalendarRenderer
 from studio.fun_fact_layout import editorial_geometry, panel_geometry
@@ -67,6 +69,7 @@ class BarRenderer(TextCompositorMixin):
         self._background_motion_artist = None
         self._value_grid_collection = None
         self._value_tick_artists = []
+        self._value_tick_composite_artist = None
         self._current_bar_track_width = self.config.max_bar_width
         self._background_motion_cache = OrderedDict()
         self._background_image_cache = None
@@ -195,6 +198,10 @@ class BarRenderer(TextCompositorMixin):
             antialiaseds=True,
         )
         ax.add_collection(self._value_grid_collection)
+        self._value_grid_collection.set_snap(False)
+        self._value_tick_composite_artist = ImageCommandsArtist(self.config.height)
+        self._value_tick_composite_artist.set_zorder(0.5)
+        ax.add_artist(self._value_tick_composite_artist)
         self._title_artist = ax.text(
             self._title_x(),
             self.config.title_y,
@@ -432,6 +439,8 @@ class BarRenderer(TextCompositorMixin):
         )):
             self._set_bar_group_depth(group, index, len(visual_sprites))
             self._update_bar_artists(artists, sprite)
+            for part in group.depth_artists():
+                part.set_snap(False)
             self._update_bar_visual_group(group, sprite, logo_sprite)
 
         self._mirror_bar_group_commands(len(visual_sprites))
@@ -543,11 +552,17 @@ class BarRenderer(TextCompositorMixin):
         if group.advanced_body is not None:
             commands = []
             if self._opacity(sprite) > 0 and sprite.width > 0 and sprite.height > 0:
-                composite, extent = self._compose_advanced_sprite(sprite)
-                commands.append((
+                # Rasterize a local body once, then share the canonical float
+                # destination with attached logos/text at final composition.
+                width = raster_extent(sprite.width)
+                height = raster_extent(sprite.height)
+                local = replace(sprite, x=0.0, y=height / 2, width=width, height=height)
+                composite, _ = self._compose_advanced_sprite(local)
+                commands.append(FloatImageCommand(
                     np.array(composite, dtype=np.uint8, copy=True, order="C"),
-                    extent[0],
-                    extent[3],
+                    sprite.x, sprite.y - sprite.height / 2,
+                    sprite.width / composite.shape[1],
+                    sprite.height / composite.shape[0],
                 ))
             group.advanced_body.set_commands(commands)
             self._update_advanced_shadow_collection(
@@ -582,6 +597,7 @@ class BarRenderer(TextCompositorMixin):
         if self._value_grid_collection is None:
             return
         if value_axis is None or not self.config.value_grid_enabled:
+            self._value_tick_composite_artist.set_commands(())
             self._value_grid_collection.set_visible(False)
             self._value_grid_collection.set_segments([])
             for artist in self._value_tick_artists:
@@ -616,6 +632,7 @@ class BarRenderer(TextCompositorMixin):
 
         self._ensure_value_tick_capacity(ax, len(ticks))
         show_labels = self.config.value_grid_tick_labels_enabled
+        label_commands = []
         for artist, tick in zip(self._value_tick_artists, ticks):
             visible = show_labels and bool(tick.label)
             artist.set_visible(visible)
@@ -627,6 +644,18 @@ class BarRenderer(TextCompositorMixin):
                 max(0.0, min(1.0, self.config.value_grid_tick_text_opacity))
                 * tick.opacity
             )
+            command = self._text_command(
+                tick.label, tick.x, value_axis.label_y, ha="center", va="center",
+                font_size=self.config.value_grid_tick_font_size,
+                font_family=self.config.value_font_family,
+                font_weight=self.config.value_grid_tick_font_weight,
+                font_style=self.config.value_grid_tick_font_style,
+                color=self.config.resolved_value_grid_tick_text_color,
+                opacity=artist.get_alpha(), subpixel=True,
+            )
+            if command is not None:
+                label_commands.append(command)
+        self._value_tick_composite_artist.set_commands(label_commands)
         for artist in self._value_tick_artists[len(ticks):]:
             artist.set_visible(False)
 
@@ -644,6 +673,7 @@ class BarRenderer(TextCompositorMixin):
                 fontstyle=self.config.value_grid_tick_font_style,
                 color=self.config.resolved_value_grid_tick_text_color,
                 zorder=0.5,
+                animated=True,
             ))
 
     def _update_short_overlay(self, overlay):
@@ -1680,7 +1710,7 @@ class BarRenderer(TextCompositorMixin):
         advanced_glow = None
         advanced_body = None
         if self._uses_simple_gradient():
-            gradient = PolyCollection(
+            gradient = SubpixelGradientCollection(
                 [],
                 closed=True,
                 edgecolors="none",
@@ -2849,9 +2879,9 @@ class BarRenderer(TextCompositorMixin):
             slot == "primary"
             and position in ("inside_left", "inside_right")
         )
-        pixel_top = int(round(layout["top"]))
-        pixel_bottom = int(round(layout["bottom"]))
-        pixel_size = max(1, pixel_bottom - pixel_top)
+        logical_size = max(0.000001, float(layout["bottom"] - layout["top"]))
+        pixel_size = raster_extent(logical_size)
+        scale = logical_size / pixel_size
         image = self._load_logo(logo_path, pixel_size)
 
         if image is None:
@@ -2870,13 +2900,14 @@ class BarRenderer(TextCompositorMixin):
                 np.asarray(logo_sprite[:, :, 3], dtype=np.float32) * opacity
             )
 
-        pixel_left = int(round(layout["left"]))
+        pixel_left = float(layout["left"])
         if locked_primary and position == "inside_right":
-            pixel_left = int(round(layout["right"])) - pixel_size
-        return (
+            pixel_left = float(layout["right"]) - logical_size
+        return FloatImageCommand(
             logo_sprite,
-            pixel_left - padding,
-            pixel_top - padding,
+            pixel_left - padding * scale,
+            float(layout["top"]) - padding * scale,
+            scale,
         )
 
     def _cached_logo_sprite(self, logo_path, image, size, *, slot="primary"):

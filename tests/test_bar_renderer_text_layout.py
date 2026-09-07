@@ -2060,11 +2060,12 @@ class BarRendererTextLayoutTest(unittest.TestCase):
                         int(round(layout["bottom"])) - int(round(layout["top"])),
                     ),
                 )
-                self.assertEqual(
+                command = renderer._logo_composite_artist.commands[0]
+                self.assertAlmostEqual(
                     command_left,
-                    int(round(layout["right"])) - command_image.shape[1] - padding,
+                    layout["right"] - command_image.shape[1] * command.scale - padding,
                 )
-                self.assertEqual(command_top, int(round(layout["top"])) - padding)
+                self.assertAlmostEqual(command_top, layout["top"] - padding)
                 self.assertEqual(int(command_image[0, 0, 3]), 0)
                 self.assertGreater(int(command_image[:, :, 3].max()), 0)
                 self.assertGreater(len(renderer._logo_shape_mask_cache), 0)

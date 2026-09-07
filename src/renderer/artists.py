@@ -3,6 +3,54 @@ from dataclasses import dataclass
 import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.patches import PathPatch
+from matplotlib.collections import PolyCollection
+from matplotlib.backends.backend_agg import RendererAgg
+from matplotlib.transforms import Affine2D
+from renderer.subpixel import FloatImageCommand, raster_extent, rasterize_image_command
+
+
+class SubpixelGradientCollection(PolyCollection):
+    """Rasterize adjacent strips locally, then move their union continuously.
+
+    AA on individual strips creates seams. A local transparent surface keeps
+    their shared edges opaque while filtering only the final coverage mask.
+    """
+
+    def draw(self, renderer):
+        if not self.get_visible() or not self.get_paths():
+            return
+        transform = self.get_transform()
+        vertices = transform.transform(np.concatenate([p.vertices for p in self.get_paths()]))
+        low, high = vertices.min(axis=0), vertices.max(axis=0)
+        width, height = high - low
+        if width <= 0 or height <= 0:
+            return
+        cols, rows = raster_extent(width), raster_extent(height)
+        local = RendererAgg(cols + 2, rows + 2, renderer.dpi)
+        local_transform = (transform + Affine2D().translate(-low[0], -low[1])
+                           .scale(cols / width, rows / height).translate(1, 1))
+        # The original axes clip is in global pixels, not in this local buffer.
+        clip_box, clip_path, clip_on = self.get_clip_box(), self.get_clip_path(), self.get_clip_on()
+        try:
+            self.set_transform(local_transform)
+            self.set_clip_on(False)
+            super().draw(local)
+        finally:
+            self.set_transform(transform)
+            self.set_clip_box(clip_box)
+            self.set_clip_path(clip_path)
+            self.set_clip_on(clip_on)
+        sx, sy = width / cols, height / rows
+        command = FloatImageCommand(np.asarray(local.buffer_rgba())[::-1],
+            low[0] - sx, renderer.height - high[1] - sy, sx, sy)
+        pixels, left, top = rasterize_image_command(command)
+        gc = renderer.new_gc()
+        try:
+            self._set_gc_clip(gc)
+            renderer.draw_image(gc, left, int(renderer.height - top - pixels.shape[0]), pixels)
+        finally:
+            gc.restore()
+        self.stale = False
 
 
 @dataclass
@@ -140,7 +188,8 @@ class ImageCommandsArtist(Artist):
         graphics_context = renderer.new_gc()
 
         try:
-            for image, left, top in self.commands:
+            for command in self.commands:
+                image, left, top = rasterize_image_command(command)
                 renderer.draw_image(
                     graphics_context,
                     int(left),

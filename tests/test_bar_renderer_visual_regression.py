@@ -52,7 +52,8 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
 
         self.assertEqual(
             signature,
-            "74a5d3b055400c2f12131a606cc0a0edbed0619c8cd03d70e3ff8784eaa8a8ef",
+            # Locally composited gradient: continuous outer coverage, no strip seams.
+            "ad798ba4fb0fadb6087b49c0ab03f17837068e26f5e5009c459db0f23c4bf50d",
         )
 
     def test_advanced_frame_matches_reference_signature(self):
@@ -159,7 +160,7 @@ class BarRendererVisualRegressionTest(unittest.TestCase):
 
         self.assertEqual(
             signature,
-            "74a5d3b055400c2f12131a606cc0a0edbed0619c8cd03d70e3ff8784eaa8a8ef",
+            "ad798ba4fb0fadb6087b49c0ab03f17837068e26f5e5009c459db0f23c4bf50d",
         )
 
     @staticmethod

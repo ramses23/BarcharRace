@@ -1077,6 +1077,19 @@ GitHub branch.
     resolver; preflight and Studio share deterministic time/frame helpers.
     Clip naming is shared with Standard/Short and worker atomic promotion.
 
+24. **Subpixel motion.** Canonical visual geometry remains authoritative.
+    ImageCommandsArtist applies local premultiplied-alpha affine translation
+    and scale at the raster boundary; logos no longer derive raster size from
+    independently rounded absolute top/bottom. Material bodies use local
+    geometry. Vector gradient strips share one locally rasterized surface
+    (do not enable per-strip AA: it creates seams). Vector paths/grid disable
+    snapping. Axis labels share the cached floating text compositor and exact
+    tick X; compatibility Text artists are animated to avoid duplicate paint.
+    Depth ordering, easing, values, Steps and rank duration are unchanged.
+    Subpixel tests cover coverage continuity, transparent-edge halos, group
+    phase lock and axis alignment; full/partial pixel parity includes active
+    editorial content and Short.
+
 ## Non-Goals For Now
 
 - Do not migrate away from Matplotlib until the current engine behavior is

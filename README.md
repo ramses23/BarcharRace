@@ -28,6 +28,23 @@ checkpoints; it does not rasterize earlier frames. The current pipeline is
 video-only, with no audio track to offset. Project schema v4 loads earlier
 projects as full video unless window fields are explicitly present.
 
+### Subpixel motion
+
+Moving bars, primary/secondary logos and attached text retain the canonical
+float-space visual rectangle through composition. Logos and material bodies
+use local premultiplied-alpha affine filtering; vector bars and grid lines
+disable automatic pixel snapping. Gradient strips are rendered together into
+a small local surface before filtering, preventing seams between strips.
+Axis labels use the cached text compositor with the same float X as their
+grid lines. No whole-frame supersampling, new dependency, easing, timeline,
+Steps or rank-duration change is involved; atomic group depth is preserved.
+
+`scripts/validate_motion.py` generates a six-second partial clip and sampled
+geometry/profile diagnostics. Pass `--output-dir` outside the repository,
+`--label`, and existing PNG paths with `--primary` and `--secondary`.
+Optional `--gradient` or `--material` exercises the other body backends.
+Validation media and diagnostic JSON must remain outside version control.
+
 - Load datasets from CSV or SQLite.
 - Validate and normalize input data before rendering.
 - Build a time-based `Timeline`.

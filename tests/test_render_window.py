@@ -1,4 +1,5 @@
 import tempfile
+import json
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -9,6 +10,7 @@ from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.export_config import ExportConfig
+from config.fun_fact_config import FunFactConfig
 from config.project_file_loader import load_project_data, ProjectFileError
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
@@ -28,6 +30,15 @@ class RenderWindowTest(unittest.TestCase):
                 value_grid_enabled=True, background_motion="forward", frame_output_mode="ffmpeg_stream",
                 animation=AnimationConfig(motion_mode="continuous"))
             source = DataSourceConfig(source_type="csv", csv_path=str(csv))
+            facts = root / "facts.json"
+            facts.write_text(json.dumps({"version": 1, "fun_facts": [{
+                "id": "crossing", "start": "0", "end": "2",
+                "headline": "Crossing", "body": "Global timeline parity",
+            }]}), encoding="utf-8")
+            fact_config = FunFactConfig(enabled=True, source=str(facts),
+                layout="editorial_floating", editorial_card_width=240,
+                editorial_card_height=140, editorial_card_x=50, editorial_card_y=50,
+                editorial_layout_mode="overlay", editorial_placement_mode="smart")
             for mode in ("standard", "short"):
                 export = ExportConfig(mode=mode)
                 pixels = []
@@ -47,9 +58,12 @@ class RenderWindowTest(unittest.TestCase):
                             renderer.close = real.close
                             return renderer
                         factory.side_effect = create
-                        RenderJob(config=config, data_source_config=source, export_config=settings).run()
+                        RenderJob(config=config, data_source_config=source,
+                            fun_fact_config=fact_config, export_config=settings).run()
                 run(export)
                 full_pixels, full_scenes = pixels[:], scenes[:]
+                if mode == "standard":
+                    self.assertTrue(any(scene.fun_fact is not None for scene in scenes[3:7]))
                 pixels.clear()
                 scenes.clear()
                 run(replace(export, render_start_frame=3, render_end_frame=7))

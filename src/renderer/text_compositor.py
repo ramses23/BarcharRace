@@ -139,6 +139,7 @@ class TextCompositorMixin:
                 font_style=self.config.rank_label_font_style,
                 color=self.config.resolved_rank_label_text_color,
                 opacity=opacity * self.config.rank_label_text_opacity,
+                subpixel=True,
             )
             if command is not None:
                 commands.append(command)
@@ -157,6 +158,7 @@ class TextCompositorMixin:
                 font_style=self.config.label_font_style,
                 color=name_layout["color"],
                 opacity=opacity * self.config.label_text_opacity,
+                subpixel=True,
                 stroke_width=(
                     self.config.bar_label_border_width
                     if self.config.bar_label_border_enabled
@@ -194,6 +196,7 @@ class TextCompositorMixin:
                 font_style=self.config.value_font_style,
                 color=value_layout["color"],
                 opacity=opacity * self.config.value_text_opacity,
+                subpixel=True,
                 stroke_width=(
                     self.config.bar_value_border_width
                     if self.config.bar_value_border_enabled
@@ -233,6 +236,7 @@ class TextCompositorMixin:
         shadow_offset=None,
         shadow_color="#000000",
         shadow_opacity=0.0,
+        subpixel=False,
     ):
         if not text or opacity <= 0:
             return None
@@ -264,8 +268,8 @@ class TextCompositorMixin:
 
         return (
             image,
-            int(round(x - sprite.anchor_x)),
-            int(round(y - sprite.anchor_y)),
+            float(x - sprite.anchor_x) if subpixel else int(round(x - sprite.anchor_x)),
+            float(y - sprite.anchor_y) if subpixel else int(round(y - sprite.anchor_y)),
         )
 
     def _cached_text_sprite(
