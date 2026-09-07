@@ -30,6 +30,20 @@ from studio.project_builder import (
 
 
 class ProjectStudioBuilderTest(unittest.TestCase):
+    def test_nullable_bar_limits_survive_save_load_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "nullable-limits.json"
+            project_data = {
+                "selection": {"top_n": None},
+                "chart": {"max_visible_bars": None},
+            }
+
+            saved_path = save_project_data(project_data, project_path)
+            reloaded = load_project_data(saved_path)
+
+            self.assertIsNone(reloaded["selection"]["top_n"])
+            self.assertIsNone(reloaded["chart"]["max_visible_bars"])
+
     def test_inspects_csv_and_detects_candidate_columns(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "electricity.csv"

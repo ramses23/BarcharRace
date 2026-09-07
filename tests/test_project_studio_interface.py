@@ -9,6 +9,7 @@ from uuid import uuid4
 import _test_path
 from PIL import Image
 from streamlit.testing.v1 import AppTest
+from studio.project_builder import load_project_data, save_project_data
 from studio.workspace_paths import ProjectLocation, WorkspaceLayout
 from ui.project_studio import _project_display_labels
 
@@ -940,6 +941,78 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
 
         self.assertFalse(app.exception)
         self.assertEqual(next(x.value for x in app.number_input if x.label == "Title size"), 600)
+
+    def test_nullable_bar_limits_survive_studio_draft(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["loaded_project_data"] = {
+            "selection": {"top_n": None},
+            "chart": {"max_visible_bars": None},
+        }
+        app.session_state["current_project_draft"] = None
+        app.session_state["form_version"] = 1
+        app.run()
+
+        self.assertFalse(app.exception)
+        project_data = json.loads(app.json[0].value)
+        self.assertIsNone(project_data["selection"]["top_n"])
+        self.assertIsNone(project_data["chart"]["max_visible_bars"])
+        project_path = self.temp_path / "nullable-limits.json"
+        save_project_data(project_data, project_path)
+        reloaded = load_project_data(project_path)
+        self.assertIsNone(reloaded["selection"]["top_n"])
+        self.assertIsNone(reloaded["chart"]["max_visible_bars"])
+
+        self._select_editor_section(app, "Bars")
+        self.assertFalse(next(
+            control.value for control in app.toggle
+            if control.label == "Limit Top N"
+        ))
+        self.assertNotIn(
+            "Top N categories",
+            {control.label for control in app.number_input},
+        )
+
+        self._select_editor_section(app, "Canvas")
+        self.assertFalse(next(
+            control.value for control in app.toggle
+            if control.label == "Limit visible bar slots"
+        ))
+        self.assertNotIn(
+            "Visible bar slots",
+            {control.label for control in app.number_input},
+        )
+        project_data = json.loads(app.json[0].value)
+        self.assertIsNone(project_data["selection"]["top_n"])
+        self.assertIsNone(project_data["chart"]["max_visible_bars"])
+
+    def test_optional_bar_limit_controls_preserve_integer_and_zero_semantics(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+
+        self._select_editor_section(app, "Bars")
+        top_n = next(x for x in app.number_input if x.label == "Top N categories")
+        top_n.set_value(150)
+        app.run()
+        self.assertEqual(json.loads(app.json[0].value)["selection"]["top_n"], 150)
+        limit_top_n = next(x for x in app.toggle if x.label == "Limit Top N")
+        limit_top_n.set_value(False)
+        app.run()
+        self.assertIsNone(json.loads(app.json[0].value)["selection"]["top_n"])
+
+        self._select_editor_section(app, "Canvas")
+        visible = next(x for x in app.number_input if x.label == "Visible bar slots")
+        visible.set_value(0)
+        app.run()
+        self.assertEqual(json.loads(app.json[0].value)["chart"]["max_visible_bars"], 0)
+        limit_visible = next(
+            x for x in app.toggle if x.label == "Limit visible bar slots"
+        )
+        limit_visible.set_value(False)
+        app.run()
+        self.assertIsNone(
+            json.loads(app.json[0].value)["chart"]["max_visible_bars"]
+        )
 
     def test_value_axis_controls_persist_to_project_draft(self):
         app_path = (

@@ -89,6 +89,25 @@ class ProjectDraftTest(unittest.TestCase):
             auto_preview_fingerprint(changed_category),
         )
 
+    def test_preview_fingerprints_distinguish_nullable_bar_limits(self):
+        unlimited = {
+            "chart": {"max_visible_bars": None},
+            "selection": {"top_n": None},
+        }
+        limited = {
+            "chart": {"max_visible_bars": 0},
+            "selection": {"top_n": 8},
+        }
+
+        self.assertNotEqual(
+            preview_fingerprint(unlimited),
+            preview_fingerprint(limited),
+        )
+        self.assertNotEqual(
+            auto_preview_fingerprint(unlimited),
+            auto_preview_fingerprint(limited),
+        )
+
     def test_auto_preview_fingerprint_ignores_data_and_export_changes(self):
         project_data = {
             "chart": {

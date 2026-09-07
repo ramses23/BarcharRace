@@ -1833,7 +1833,7 @@ def _canvas_settings_from_values(
 
     return {
         "layout_preset": layout_preset,
-        "max_visible": _positive_int_or_default(
+        "max_visible": _optional_non_negative_int_or_default(
             values.get("max_visible_bars"),
             8,
         ),
@@ -2094,7 +2094,7 @@ def _bars_settings_from_values(values):
 
     return {
         "value_format": value_format,
-        "top_n": _positive_int_or_default(values.get("top_n"), 8),
+        "top_n": _optional_positive_int_or_default(values.get("top_n"), 8),
         "aggregate_other": bool(values.get("aggregate_other", False)),
         "label_text_color": values.get("label_text_color"),
         "label_text_opacity": _opacity_or_default(
@@ -3106,22 +3106,39 @@ def _canvas_text_section(
         st.session_state.pop(CATEGORY_AREA_SPAN_OVERRIDE_STATE, None)
 
     with visible_column:
-        max_visible_value = _non_negative_int_or_default(values["max_visible_bars"], 8)
-        max_visible_key = _widget_key("max_visible")
-        _reconcile_numeric_widget_state(
-            max_visible_key,
-            max_visible_value,
-            minimum=MIN_VISIBLE_BARS,
-            maximum=MAX_VISIBLE_BARS,
+        max_visible_limit_key = _widget_key("max_visible_limit_enabled")
+        st.session_state.setdefault(
+            max_visible_limit_key,
+            values["max_visible_bars"] is not None,
         )
-        max_visible = st.number_input(
-            "Visible bar slots",
-            min_value=MIN_VISIBLE_BARS,
-            max_value=MAX_VISIBLE_BARS,
-            step=1,
-            help="Maximum number of rows fitted into the selected canvas.",
-            key=max_visible_key,
+        max_visible_limit_enabled = st.toggle(
+            "Limit visible bar slots",
+            key=max_visible_limit_key,
+            help="Turn off to apply no explicit visible-row limit.",
         )
+        if max_visible_limit_enabled:
+            max_visible_value = _non_negative_int_or_default(
+                values["max_visible_bars"],
+                8,
+            )
+            max_visible_key = _widget_key("max_visible")
+            _reconcile_numeric_widget_state(
+                max_visible_key,
+                max_visible_value,
+                minimum=MIN_VISIBLE_BARS,
+                maximum=MAX_VISIBLE_BARS,
+            )
+            max_visible = st.number_input(
+                "Visible bar slots",
+                min_value=MIN_VISIBLE_BARS,
+                max_value=MAX_VISIBLE_BARS,
+                step=1,
+                help="Maximum number of rows fitted into the selected canvas.",
+                key=max_visible_key,
+            )
+        else:
+            max_visible = None
+            st.caption("No explicit visible-row limit.")
 
     layout_settings = get_layout_preset(layout_preset)
     background = _background_panel(values, theme_settings.background_color)
@@ -3736,7 +3753,7 @@ def _canvas_text_section(
 
     return {
         "layout_preset": layout_preset,
-        "max_visible": int(max_visible),
+        "max_visible": None if max_visible is None else int(max_visible),
         "bar_vertical_layout_mode": vertical_mode,
         "bar_vertical_top_padding": int(vertical_top_padding),
         "bar_vertical_bottom_padding": int(vertical_bottom_padding),
@@ -3993,22 +4010,36 @@ def _bars_categories_section(
         )
 
     with ranking_column:
-        top_n_value = _positive_int_or_default(values["top_n"], 8)
-        top_n_key = _widget_key("top_n")
-        _reconcile_numeric_widget_state(
-            top_n_key,
-            top_n_value,
-            minimum=MIN_TOP_N,
-            maximum=MAX_TOP_N,
+        top_n_limit_key = _widget_key("top_n_limit_enabled")
+        st.session_state.setdefault(
+            top_n_limit_key,
+            values["top_n"] is not None,
         )
-        top_n = st.number_input(
-            "Top N categories",
-            min_value=MIN_TOP_N,
-            max_value=MAX_TOP_N,
-            step=1,
-            help="Categories selected from the data before layout.",
-            key=top_n_key,
+        top_n_limit_enabled = st.toggle(
+            "Limit Top N",
+            key=top_n_limit_key,
+            help="Turn off to include all available categories.",
         )
+        if top_n_limit_enabled:
+            top_n_value = _positive_int_or_default(values["top_n"], 8)
+            top_n_key = _widget_key("top_n")
+            _reconcile_numeric_widget_state(
+                top_n_key,
+                top_n_value,
+                minimum=MIN_TOP_N,
+                maximum=MAX_TOP_N,
+            )
+            top_n = st.number_input(
+                "Top N categories",
+                min_value=MIN_TOP_N,
+                max_value=MAX_TOP_N,
+                step=1,
+                help="Categories selected from the data before layout.",
+                key=top_n_key,
+            )
+        else:
+            top_n = None
+            st.caption("All available categories.")
 
     with aggregate_column:
         aggregate_other = st.toggle(
@@ -4152,7 +4183,7 @@ def _bars_categories_section(
 
     return {
         "value_format": value_format,
-        "top_n": int(top_n),
+        "top_n": None if top_n is None else int(top_n),
         "aggregate_other": aggregate_other,
         "label_text_color": label_text_color,
         "label_text_opacity": label_text_opacity,
@@ -6099,6 +6130,12 @@ def _positive_int_or_default(value, default):
     return value if value >= 1 else default
 
 
+def _optional_positive_int_or_default(value, default):
+    if value is None:
+        return None
+    return _positive_int_or_default(value, default)
+
+
 def _non_negative_int_or_default(value, default):
     try:
         value = int(value)
@@ -6106,6 +6143,12 @@ def _non_negative_int_or_default(value, default):
         return default
 
     return value if value >= 0 else default
+
+
+def _optional_non_negative_int_or_default(value, default):
+    if value is None:
+        return None
+    return _non_negative_int_or_default(value, default)
 
 
 def _font_size_input(label, value, default, key):
