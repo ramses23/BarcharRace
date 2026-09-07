@@ -27,7 +27,7 @@ class ProjectSchemaTest(unittest.TestCase):
         self.assertEqual(migration.original_version, 0)
         self.assertEqual(
             migration.applied_migrations,
-            ("0_to_1", "1_to_2", "2_to_3"),
+            ("0_to_1", "1_to_2", "2_to_3", "3_to_4"),
         )
         self.assertEqual(
             migration.data["schema_version"],
@@ -62,7 +62,7 @@ class ProjectSchemaTest(unittest.TestCase):
 
         migration = migrate_project_data(project)
 
-        self.assertEqual(migration.applied_migrations, ("1_to_2", "2_to_3"))
+        self.assertEqual(migration.applied_migrations, ("1_to_2", "2_to_3", "3_to_4"))
         self.assertEqual(
             migration.data["schema_version"],
             CURRENT_PROJECT_SCHEMA_VERSION,

@@ -23,6 +23,8 @@ from studio.short_export import (
 )
 from studio.workspace_paths import WorkspacePathError, assert_user_write_path
 from validators.dataset_validator import DatasetValidator
+from utils.render_window import resolve_render_window
+from utils.video_duration import estimate_video_duration
 
 
 @dataclass(frozen=True)
@@ -139,6 +141,18 @@ def run_render_preflight(
                         f"Short uses {len(export_periods):,} selected periods.",
                     ))
             period_count = len(export_periods)
+            if period_count >= 2:
+                try:
+                    total = estimate_video_duration(
+                        period_count=period_count,
+                        steps_per_transition=preset.chart_config.steps_per_transition,
+                        fps=preset.chart_config.fps,
+                        continuous_motion=preset.chart_config.animation.continuous_motion,
+                    ).frame_count
+                    start, end = resolve_render_window(total, preset.export_config)
+                    checks.append(_ok("render_window", "Render window", f"Frames [{start}, {end}): {end - start} frames."))
+                except ValueError as exc:
+                    checks.append(_error("render_window", "Render window", str(exc)))
             if period_count < 2:
                 checks.append(
                     _error(

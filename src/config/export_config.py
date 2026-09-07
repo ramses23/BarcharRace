@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ExportConfig:
+    render_start_frame: int | None = None
+    render_end_frame: int | None = None
     mode: str = "standard"
     short_width: int = 1080
     short_height: int = 1920

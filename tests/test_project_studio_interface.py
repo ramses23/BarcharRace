@@ -15,6 +15,26 @@ from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_custom_render_window_persists_frames_and_full_clears_them(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Export")
+        next(x for x in app.selectbox if x.label == "Render range").set_value("Custom time window")
+        app.run()
+        next(x for x in app.text_input if x.label == "Start").set_value("00:00.100")
+        next(x for x in app.text_input if x.label == "End").set_value("00:00.200")
+        app.run()
+        self.assertFalse(app.exception)
+        data = json.loads(app.json[0].value)
+        fps = data["chart"]["fps"]
+        self.assertEqual(data["export"]["render_start_frame"], round(fps * 0.1))
+        self.assertEqual(data["export"]["render_end_frame"], round(fps * 0.2))
+        next(x for x in app.selectbox if x.label == "Render range").set_value("Full video")
+        app.run()
+        data = json.loads(app.json[0].value)
+        self.assertIsNone(data["export"]["render_start_frame"])
+        self.assertIsNone(data["export"]["render_end_frame"])
+
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory(
             prefix="barchart-studio-ui-workspace-"

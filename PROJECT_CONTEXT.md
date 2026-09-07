@@ -1070,6 +1070,13 @@ Do not collapse these into one large unverified rewrite. Each phase updates
 tests, README, and this context file, then is committed and pushed to the active
 GitHub branch.
 
+23. **Partial render windows.** ExportConfig stores optional non-negative
+    render_start_frame/render_end_frame in schema v4. RenderJob evaluates only
+    the selected half-open interval, preserving global scene indices and local
+    output numbering. Stateful axis numeric history uses the existing preview
+    resolver; preflight and Studio share deterministic time/frame helpers.
+    Clip naming is shared with Standard/Short and worker atomic promotion.
+
 ## Non-Goals For Now
 
 - Do not migrate away from Matplotlib until the current engine behavior is

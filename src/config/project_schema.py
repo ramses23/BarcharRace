@@ -2,7 +2,7 @@ import copy
 from dataclasses import dataclass
 
 
-CURRENT_PROJECT_SCHEMA_VERSION = 3
+CURRENT_PROJECT_SCHEMA_VERSION = 4
 
 
 class ProjectSchemaError(ValueError):
@@ -123,8 +123,15 @@ def _move_legacy_section(project_data, chart, section_name):
     }
 
 
+def _migrate_v3_to_v4(project_data):
+    migrated = copy.deepcopy(project_data)
+    migrated["schema_version"] = 4
+    return migrated
+
+
 _MIGRATIONS = {
     0: _migrate_v0_to_v1,
     1: _migrate_v1_to_v2,
     2: _migrate_v2_to_v3,
+    3: _migrate_v3_to_v4,
 }

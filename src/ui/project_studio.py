@@ -39,6 +39,7 @@ from config.fun_fact_config import (
     MIN_EDITORIAL_SPACING,
 )
 from config.export_config import ExportConfig
+from utils.render_window import frame_to_timecode, timecode_to_frame, resolve_render_window
 from config.layout_config import get_layout_preset, list_layout_presets
 from config.project_file_loader import ProjectFileError
 from config.theme_config import get_theme
@@ -2887,6 +2888,8 @@ def _export_settings_from_values(values, available_periods):
         end = periods[-1]
 
     return {
+        "render_start_frame": values.get("render_start_frame"),
+        "render_end_frame": values.get("render_end_frame"),
         "mode": (
             values.get("mode")
             if values.get("mode") in ("standard", "short")
@@ -4331,6 +4334,8 @@ def _animation_output_section(
                 "Choose a range near 25-35 seconds when practical."
             )
 
+    export_settings = _render_window_controls(export_settings, estimate.frame_count, int(fps))
+
     with st.expander("Encoding", icon=":material/tune:"):
         output_mode_column, compression_column = st.columns(2)
 
@@ -4372,12 +4377,13 @@ def _animation_output_section(
                 value=values["output_file"] or paths["output_file"],
                 key=_widget_key("output_file"),
             )
-            if export_mode == "short":
+            if export_mode == "short" or export_settings["render_start_frame"] is not None or export_settings["render_end_frame"] is not None:
                 effective_output = resolve_export_output_path(
                     output_file,
                     ExportConfig(**export_settings),
                 )
-                st.caption(f"Short render output: `{effective_output}`")
+                prefix = "Short render output" if export_mode == "short" else "Clip render output"
+                st.caption(f"{prefix}: `{effective_output}`")
 
         with project_column:
             project_file = st.text_input(
@@ -4418,6 +4424,44 @@ def _animation_output_section(
         "preview_settings": preview_settings,
         "export": export_settings,
     }
+
+
+def _render_window_controls(settings, total_frames, fps):
+    custom = settings["render_start_frame"] is not None or settings["render_end_frame"] is not None
+    mode = st.selectbox(
+        "Render range", ("Full video", "Custom time window"),
+        index=int(custom), key=_widget_key("render_range"),
+    )
+    if mode == "Full video":
+        settings["render_start_frame"] = None
+        settings["render_end_frame"] = None
+        return settings
+    columns = st.columns(2)
+    start = settings["render_start_frame"] or 0
+    end = settings["render_end_frame"]
+    end = total_frames if end is None else end
+    start_text = columns[0].text_input(
+        "Start", value=frame_to_timecode(start, fps),
+        key=_widget_key(f"render_start_time_{fps}"),
+        help="HH:MM:SS.mmm or MM:SS.mmm. Nearest frame; ties round upwards.",
+    )
+    end_text = columns[1].text_input(
+        "End", value=frame_to_timecode(end, fps),
+        key=_widget_key(f"render_end_time_{fps}"),
+        help="Exclusive end: this frame is not rendered.",
+    )
+    try:
+        settings["render_start_frame"] = timecode_to_frame(start_text, fps)
+        settings["render_end_frame"] = timecode_to_frame(end_text, fps)
+        start, end = resolve_render_window(total_frames, ExportConfig(**settings))
+    except ValueError as exc:
+        st.error(str(exc))
+        st.stop()
+    st.caption(
+        f"Resolved start frame: {start} · Resolved end frame: {end} (exclusive) · "
+        f"Clip duration: {frame_to_timecode(end - start, fps)} · {end - start} frames at {fps} FPS"
+    )
+    return settings
 
 
 def _short_export_controls(

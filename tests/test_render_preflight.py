@@ -50,6 +50,7 @@ class RenderPreflightTest(unittest.TestCase):
                 "data_source",
                 "dataset",
                 "periods",
+                "render_window",
                 "fun_facts",
                 "ffmpeg",
                 "output",

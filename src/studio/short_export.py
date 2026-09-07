@@ -18,11 +18,15 @@ SHORT_ROW_TEXT_CLEARANCE = 12.0
 def resolve_export_output_path(output_file, export_config=None):
     output_path = Path(output_file)
     export_config = export_config or ExportConfig()
-    if not export_config.is_short or output_path.stem.casefold().endswith("_short"):
-        return output_path
-    return output_path.with_name(
-        f"{output_path.stem}_short{output_path.suffix}"
-    )
+    if export_config.is_short and not output_path.stem.casefold().endswith("_short"):
+        output_path = output_path.with_name(f"{output_path.stem}_short{output_path.suffix}")
+    if export_config.render_start_frame is not None or export_config.render_end_frame is not None:
+        start = export_config.render_start_frame or 0
+        end = export_config.render_end_frame
+        suffix = f"_clip_f{start}_f{end if end is not None else 'end'}"
+        if not output_path.stem.endswith(suffix):
+            output_path = output_path.with_name(f"{output_path.stem}{suffix}{output_path.suffix}")
+    return output_path
 
 
 def apply_export_profile(chart_config, export_config=None):

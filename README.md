@@ -10,6 +10,24 @@ charts, animated scatter plots, and timeline animations.
 
 ## Current Capabilities
 
+### Partial render windows
+
+Export > Render range defaults to Full video. Custom time window accepts
+seconds, MM:SS.mmm or HH:MM:SS.mmm and displays the resolved frame interval
+and duration. Times round to the nearest frame (half upwards); stored integer
+frames are authoritative. Start is inclusive and end exclusive. Invalid or
+out-of-film intervals are rejected, never silently clipped.
+
+Standard and Short use the same window contract; for Short the window is
+relative to its selected From/To movie. Animation, calendar, grid, overlays
+and background keep global movie time, while output numbering and progress
+start at zero for the clip. Output names add `_clip_fSTART_fEND` (or `fend` for
+an open end) so a clip does not replace the full movie. Only selected frames
+are drawn/encoded. Stateful grid preparation reuses numeric history and
+checkpoints; it does not rasterize earlier frames. The current pipeline is
+video-only, with no audio track to offset. Project schema v4 loads earlier
+projects as full video unless window fields are explicitly present.
+
 - Load datasets from CSV or SQLite.
 - Validate and normalize input data before rendering.
 - Build a time-based `Timeline`.

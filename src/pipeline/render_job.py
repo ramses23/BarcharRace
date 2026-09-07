@@ -14,6 +14,8 @@ from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
 from core.value_axis import ValueAxisTracker
+from studio.value_axis_preview import get_value_axis_preview_resolver
+from utils.render_window import resolve_render_window
 from utils.video_duration import estimate_video_duration
 from exporters.video_exporter import VideoExporter
 from importers.data_source_loader import DataSourceLoader
@@ -156,6 +158,14 @@ class RenderJob:
                 )),
             )
         chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
+        full_frame_count = estimate_video_duration(
+            period_count=len(years),
+            steps_per_transition=chart_config.steps_per_transition,
+            fps=chart_config.fps,
+            continuous_motion=chart_config.animation.continuous_motion,
+        ).frame_count
+        start_frame, end_frame = resolve_render_window(full_frame_count, self.export_config)
+        custom_window = start_frame != 0 or end_frame != full_frame_count
         calendar_resolver = (
             DisplayCalendarResolver.from_timeline(
                 timeline,
@@ -221,6 +231,10 @@ class RenderJob:
             chart_config,
             sprites_by_year.values(),
         )
+        axis_resolver = (
+            get_value_axis_preview_resolver(chart_config, sprites_by_year.values())
+            if custom_window and value_axis_tracker is not None else None
+        )
         build_smart_editorial_placement_resolver(
             chart_config=chart_config,
             fun_fact_config=fun_fact_config,
@@ -233,12 +247,7 @@ class RenderJob:
 
         frame_id = 0
         transitions_rendered = 0
-        total_frame_count = max(1, estimate_video_duration(
-            period_count=len(years),
-            steps_per_transition=chart_config.steps_per_transition,
-            fps=chart_config.fps,
-            continuous_motion=chart_config.animation.continuous_motion,
-        ).frame_count)
+        total_frame_count = end_frame - start_frame
 
         render_started_at = perf_counter()
         self._emit_progress(
@@ -252,6 +261,14 @@ class RenderJob:
 
         try:
             for i in range(len(years) - 1):
+                steps = chart_config.steps_per_transition
+                continuous = chart_config.animation.continuous_motion
+                transition_start = i * steps + (1 if continuous and i > 0 else 0)
+                transition_length = steps + (1 if continuous and i == 0 else 0)
+                first_step = max(0, start_frame - transition_start)
+                last_step = min(transition_length, end_frame - transition_start)
+                if first_step >= last_step:
+                    continue
                 year_a = years[i]
                 year_b = years[i + 1]
 
@@ -260,7 +277,25 @@ class RenderJob:
                 start_sprites = sprites_by_year[year_a]
                 end_sprites = sprites_by_year[year_b]
 
-                if chart_config.animation.continuous_motion:
+                if custom_window:
+                    include_start = not continuous or i == 0
+                    frames = []
+                    for selected_step in range(first_step, last_step):
+                        progress = (
+                            (selected_step + (0 if include_start else 1)) / steps
+                            if continuous else selected_step / (steps - 1) if steps > 1 else 1.0
+                        )
+                        if continuous:
+                            sampled = motion.interpolate_sprites_continuous_at(
+                                sprites_by_year[years[max(0, i - 1)]],
+                                start_sprites, end_sprites,
+                                sprites_by_year[years[min(len(years) - 1, i + 2)]],
+                                progress,
+                            )
+                        else:
+                            sampled = motion.interpolate_sprites_at(start_sprites, end_sprites, progress)
+                        frames.append(sampled)
+                elif chart_config.animation.continuous_motion:
                     previous_year = years[i - 1] if i > 0 else year_a
                     next_year = years[i + 2] if i + 2 < len(years) else year_b
                     include_start = i == 0
@@ -280,7 +315,8 @@ class RenderJob:
                         steps=chart_config.steps_per_transition,
                     )
 
-                for step_index, frame_sprites in enumerate(frames):
+                for step_index, frame_sprites in enumerate(frames, start=first_step):
+                    global_frame = transition_start + step_index
                     self.cpu_limiter.checkpoint()
                     if chart_config.animation.continuous_motion:
                         progress = (
@@ -293,10 +329,13 @@ class RenderJob:
 
                     value_axis = None
                     if value_axis_tracker is not None:
-                        value_axis = value_axis_tracker.next(frame_sprites)
+                        value_axis = (
+                            axis_resolver.state_at(global_frame) if axis_resolver is not None
+                            else value_axis_tracker.next(frame_sprites)
+                        )
                     bar_value_scale = bar_scale_resolver.for_sprites(
                         frame_sprites,
-                        frame_index=frame_id,
+                        frame_index=global_frame,
                     )
                     frame_sprites = scale_bar_sprites(
                         frame_sprites,
@@ -307,15 +346,15 @@ class RenderJob:
                         year_a=year_a,
                         year_b=year_b,
                         step_index=step_index,
-                        total_steps=len(frames),
+                        total_steps=transition_length,
                         bars=frame_sprites,
                         progress=progress,
                         timeline=timeline,
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
-                    scene.frame_index = frame_id
+                    scene.frame_index = global_frame
                     scene.display_calendar = (
-                        calendar_resolver.state_at(frame_id)
+                        calendar_resolver.state_at(global_frame)
                         if calendar_resolver is not None
                         else None
                     )
@@ -323,8 +362,8 @@ class RenderJob:
                     scene.bar_value_scale = bar_value_scale
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
-                        frame_index=frame_id,
-                        total_frames=total_frame_count,
+                        frame_index=global_frame,
+                        total_frames=full_frame_count,
                         fps=chart_config.fps,
                     )
 

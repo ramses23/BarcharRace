@@ -816,6 +816,12 @@ def _convert_chart_value(key, value):
 
 
 def _convert_export_value(key, value):
+    if key in ("render_start_frame", "render_end_frame"):
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+        ):
+            raise ProjectFileError(f"Export field '{key}' must be null or a non-negative integer.")
+        return value
     if key == "mode":
         if value not in ("standard", "short"):
             raise ProjectFileError(
