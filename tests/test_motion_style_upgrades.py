@@ -815,7 +815,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
     def test_primary_logo_minimum_is_capped_by_bar_height(self):
         renderer = BarRenderer(config=ChartConfig(
             width=200, height=100, bar_logo_position="inside_left",
-            logo_size=20, primary_logo_min_size=100,
+            logo_size=20, primary_logo_min_size=700,
         ))
         try:
             layout = renderer._base_logo_layout(

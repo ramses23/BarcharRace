@@ -108,6 +108,22 @@ class ProjectDraftTest(unittest.TestCase):
             auto_preview_fingerprint(limited),
         )
 
+    def test_preview_fingerprints_track_high_bar_geometry_values(self):
+        baseline = {"chart": {"bar_gap": 500, "primary_logo_min_size": 500}}
+        changed_gap = {"chart": {"bar_gap": 600, "primary_logo_min_size": 500}}
+        changed_logo = {"chart": {"bar_gap": 500, "primary_logo_min_size": 700}}
+
+        for changed in (changed_gap, changed_logo):
+            with self.subTest(changed=changed):
+                self.assertNotEqual(
+                    preview_fingerprint(baseline),
+                    preview_fingerprint(changed),
+                )
+                self.assertNotEqual(
+                    auto_preview_fingerprint(baseline),
+                    auto_preview_fingerprint(changed),
+                )
+
     def test_auto_preview_fingerprint_ignores_data_and_export_changes(self):
         project_data = {
             "chart": {

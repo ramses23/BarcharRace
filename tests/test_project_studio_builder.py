@@ -30,6 +30,22 @@ from studio.project_builder import (
 
 
 class ProjectStudioBuilderTest(unittest.TestCase):
+    def test_high_bar_geometry_values_survive_save_load_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "high-bar-geometry.json"
+            project_data = {
+                "chart": {
+                    "bar_gap": 600,
+                    "primary_logo_min_size": 700,
+                },
+            }
+
+            saved_path = save_project_data(project_data, project_path)
+            reloaded = load_project_data(saved_path)
+
+            self.assertEqual(reloaded["chart"]["bar_gap"], 600)
+            self.assertEqual(reloaded["chart"]["primary_logo_min_size"], 700)
+
     def test_nullable_bar_limits_survive_save_load_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "nullable-limits.json"

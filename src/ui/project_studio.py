@@ -16,11 +16,15 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from config.chart_config import (
+    MAX_BAR_GAP,
     MAX_FPS,
+    MAX_PRIMARY_LOGO_SIZE,
     MAX_STEPS_PER_TRANSITION,
     MAX_TEXT_FONT_SIZE,
     MAX_VISIBLE_BARS,
+    MIN_BAR_GAP,
     MIN_FPS,
+    MIN_PRIMARY_LOGO_SIZE,
     MIN_STEPS_PER_TRANSITION,
     MIN_TEXT_FONT_SIZE,
     MIN_VISIBLE_BARS,
@@ -4052,11 +4056,11 @@ def _bars_categories_section(
     geometry_panel.markdown("**Geometry, color source, and primary logo**")
     geometry_column, color_source_column, logo_min_column = geometry_panel.columns(3)
     with geometry_column:
-        bar_gap = st.number_input(
+        bar_gap = _reconciled_number_input(
             "Bar spacing",
-            min_value=0,
-            max_value=500,
-            value=min(500, max(0, int(values.get("bar_gap", 18)))),
+            min_value=MIN_BAR_GAP,
+            max_value=MAX_BAR_GAP,
+            value=_non_negative_int_or_default(values.get("bar_gap"), 18),
             step=1,
             help="Final-canvas pixels between adjacent rows. LayoutEngine applies it to all row content.",
             key=_widget_key("bar_gap"),
@@ -4078,11 +4082,14 @@ def _bars_categories_section(
         ) or "manual"
         st.caption("Manual category colors remain stored when logo color is active.")
     with logo_min_column:
-        primary_logo_min_size = st.number_input(
+        primary_logo_min_size = _reconciled_number_input(
             "Minimum primary logo size",
-            min_value=0,
-            max_value=500,
-            value=min(500, max(0, int(values.get("primary_logo_min_size", 0)))),
+            min_value=MIN_PRIMARY_LOGO_SIZE,
+            max_value=MAX_PRIMARY_LOGO_SIZE,
+            value=_non_negative_int_or_default(
+                values.get("primary_logo_min_size"),
+                0,
+            ),
             step=1,
             help=(
                 "Pixel floor for the primary logo after applying Logo Size. "
@@ -6081,6 +6088,7 @@ def _reconciled_number_input(
     value,
     key,
     disabled=False,
+    help=None,
     step=1,
 ):
     _reconcile_numeric_widget_state(
@@ -6096,6 +6104,7 @@ def _reconciled_number_input(
         step=step,
         key=key,
         disabled=disabled,
+        help=help,
     )
 
 

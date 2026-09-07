@@ -1014,6 +1014,38 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             json.loads(app.json[0].value)["chart"]["max_visible_bars"]
         )
 
+    def test_high_bar_geometry_values_render_without_old_ui_ceiling(self):
+        app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        app.session_state["loaded_project_data"] = {"chart": {
+            "bar_gap": 600,
+            "primary_logo_min_size": 700,
+        }}
+        app.session_state["current_project_draft"] = None
+        app.session_state["form_version"] = 1
+        app.session_state["bar_gap_1"] = -1
+        app.session_state["primary_logo_min_size_1"] = "bad"
+        app.run()
+
+        self._select_editor_section(app, "Bars")
+
+        self.assertFalse(app.exception)
+        controls = {x.label: x for x in app.number_input}
+        self.assertEqual(controls["Bar spacing"].value, 600)
+        self.assertEqual(controls["Minimum primary logo size"].value, 700)
+        self.assertGreater(controls["Bar spacing"].max, 1000)
+        self.assertGreater(controls["Minimum primary logo size"].max, 1000)
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["bar_gap"], 600)
+        self.assertEqual(project_data["chart"]["primary_logo_min_size"], 700)
+
+        controls["Bar spacing"].set_value(800)
+        controls["Minimum primary logo size"].set_value(900)
+        app.run()
+        project_data = json.loads(app.json[0].value)
+        self.assertEqual(project_data["chart"]["bar_gap"], 800)
+        self.assertEqual(project_data["chart"]["primary_logo_min_size"], 900)
+
     def test_value_axis_controls_persist_to_project_draft(self):
         app_path = (
             Path(__file__).resolve().parents[1]

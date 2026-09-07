@@ -8,6 +8,31 @@ from config.project_file_loader import ProjectFileError, load_project_file
 
 
 class ProjectFileLoaderTest(unittest.TestCase):
+    def test_bar_geometry_accepts_non_negative_values_without_ui_ceiling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "bar-geometry.json"
+            for value in (0, 1, 100, 499, 500, 501, 600, 700, 1000):
+                with self.subTest(value=value):
+                    project_path.write_text(json.dumps({"chart": {
+                        "bar_gap": value,
+                        "primary_logo_min_size": value,
+                    }}), encoding="utf-8")
+                    config = load_project_file(project_path).chart_config
+                    self.assertEqual(config.bar_gap, value)
+                    self.assertEqual(config.primary_logo_min_size, value)
+
+    def test_bar_geometry_rejects_values_below_canonical_minimum(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_path = Path(temp_dir) / "invalid-bar-geometry.json"
+            for field in ("bar_gap", "primary_logo_min_size"):
+                with self.subTest(field=field):
+                    project_path.write_text(
+                        json.dumps({"chart": {field: -1}}),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ProjectFileError, field):
+                        load_project_file(project_path)
+
     def test_fps_accepts_positive_values_without_ui_ceiling(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project_path = Path(temp_dir) / "fps.json"

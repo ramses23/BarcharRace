@@ -4,7 +4,13 @@ from pathlib import Path
 
 from config.animation_config import AnimationConfig
 from config.bar_selection_config import MIN_TOP_N
-from config.chart_config import MIN_FPS, MIN_STEPS_PER_TRANSITION, ChartConfig
+from config.chart_config import (
+    MIN_BAR_GAP,
+    MIN_FPS,
+    MIN_PRIMARY_LOGO_SIZE,
+    MIN_STEPS_PER_TRANSITION,
+    ChartConfig,
+)
 from config.data_source_config import DataSourceConfig
 from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
@@ -752,12 +758,33 @@ def _convert_chart_value(key, value):
 
         return value
 
+    if key == "bar_gap":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < MIN_BAR_GAP
+        ):
+            raise ProjectFileError(
+                f"Chart field 'bar_gap' must be >= {MIN_BAR_GAP}."
+            )
+        return value
+
+    if key == "primary_logo_min_size":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < MIN_PRIMARY_LOGO_SIZE
+        ):
+            raise ProjectFileError(
+                "Chart field 'primary_logo_min_size' must be >= "
+                f"{MIN_PRIMARY_LOGO_SIZE}."
+            )
+        return value
+
     if key in (
         "rank_label_min_x",
         "rank_label_label_gap",
         "label_min_x",
-        "bar_gap",
-        "primary_logo_min_size",
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProjectFileError(f"Chart field '{key}' must be >= 0.")
