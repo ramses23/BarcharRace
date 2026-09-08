@@ -32,6 +32,10 @@ from config.chart_config import (
 )
 from config.bar_selection_config import MAX_TOP_N, MIN_TOP_N
 from config.animation_config import MIN_RANK_MOVEMENT_DURATION, MAX_RANK_MOVEMENT_DURATION
+from config.project_file_loader import load_project_data as load_estimate_preset
+from studio.project_runtime import resolve_project_preset_paths
+from studio.render_estimator import cached_estimate, estimate_cache_key, human_render_time, job_from_preset
+from studio.short_export import apply_export_profile
 from config.dataset_config import DatasetConfig
 from config.fun_fact_config import (
     MAX_EDITORIAL_FONT_SIZE,
@@ -297,7 +301,7 @@ def main():
             "Save, inspect, render, and package the current project.",
             icon="movie_edit",
         )
-        _project_actions(draft)
+        _project_actions(draft, dataset=dataset)
         render_workflow_panel()
         if not _show_persistent_preview(draft):
             show_empty_preview()
@@ -413,11 +417,13 @@ def _show_empty_workspace():
         )
 
 
-def _project_actions(draft):
+def _project_actions(draft, dataset=None):
     background_render = st.session_state.get(BACKGROUND_RENDER_STATE)
     render_active = bool(
         background_render is not None and background_render.is_running()
     )
+    if st.session_state.get("studio_editor_section") == "Export":
+        _render_time_estimate_panel(draft, dataset, render_active=render_active)
     with st.container(border=True, gap="xsmall", key="project_actions"):
         st.caption("Project actions")
         action_row = st.container(
@@ -512,6 +518,49 @@ def _project_actions(draft):
         st.caption(f":green-badge[Saved] {draft.project_file}")
 
     _portable_bundle_export_panel(draft, render_active=render_active)
+
+
+def _render_time_estimate_panel(draft, dataset, *, render_active):
+    with st.container(border=True):
+        st.caption("Render summary")
+        try:
+            project_root = _active_project_root(_current_workspace_layout())
+            preset = resolve_project_preset_paths(
+                load_estimate_preset(draft.project_data), project_root=project_root)
+            chart = apply_export_profile(preset.chart_config, preset.export_config)
+            periods = resolve_export_periods(
+                year_values_from_dataframe(dataset, preset.dataset_config.year_column),
+                preset.export_config)
+            total = estimate_video_duration(period_count=len(periods), fps=chart.fps,
+                steps_per_transition=chart.steps_per_transition,
+                continuous_motion=chart.animation.continuous_motion).frame_count
+            start, end = resolve_render_window(total, preset.export_config)
+            key = estimate_cache_key(preset, project_root)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            st.caption(f"Estimated render time unavailable: {exc}")
+            return
+        st.caption(f"Frames [{start:,}, {end:,}) · {end - start:,} output frames · "
+                   f"{chart.width} × {chart.height} · {chart.fps} FPS")
+        cache = st.session_state.setdefault("render_time_estimate_cache", {})
+        if st.button("Estimate render time", disabled=render_active,
+                     help="Measure a small real sample on this machine without writing video."):
+            try:
+                with st.spinner("Sampling render frames..."):
+                    cached_estimate(cache, key, lambda: job_from_preset(preset, project_root),
+                                    render_active=render_active)
+            except (ValueError, OSError, RuntimeError) as exc:
+                st.error(f"Could not estimate render time: {exc}")
+        estimate = cache.get(key)
+        if estimate is None:
+            st.caption("Estimated render time: stale — configuration or inputs changed."
+                       if cache else "Estimated render time: not measured yet.")
+        else:
+            st.metric("Approximate render time", "≈ " + human_render_time(estimate.estimated_seconds))
+            st.caption(f"{estimate.median_frame_seconds * 1000:.1f} ms/frame median · "
+                       f"{estimate.warmup_frames} warm-up + {len(estimate.sample_frames)} measured frames · "
+                       f"measured in {estimate.wall_seconds:.2f} sec")
+        st.caption("Rasterization and measured startup only. Encoding, disk I/O, CPU limits "
+                   "and other machine load can increase actual elapsed time. Not saved in the project.")
 
 
 def _should_auto_render_preview(draft, *, enabled):

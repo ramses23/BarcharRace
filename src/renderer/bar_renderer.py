@@ -104,7 +104,8 @@ class BarRenderer(TextCompositorMixin):
         self._flip_calendar_renderer = FlipCalendarRenderer()
         self.draw_seconds = 0.0
         self.save_seconds = 0.0
-        os.makedirs(self.output_dir, exist_ok=True)
+        if self.output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
 
     def render(self, scene, filename="frame.png"):
         fig = self._draw_scene(scene)

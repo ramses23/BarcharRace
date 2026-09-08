@@ -34,6 +34,29 @@ Rank movement duration accepts 10–100% (default 100%). It changes only the
 vertical ranking clock: at 10%, ranking arrives by one tenth of the transition;
 values, width, fades, calendar, FPS and total frame count keep their timing.
 
+### Render time estimate
+
+In Export, **Estimate render time** samples the production RenderJob in memory
+on this machine: 2 warm-up frames plus up to 16 uniformly distributed global
+frames in the selected full/custom window. It reports median RGBA frame cost
+times output frame count, plus measured preparation and cold-start overhead.
+The button is disabled during an active render. No MP4, frame files, project
+save or draft update is performed by the estimator.
+
+Results live only in a bounded session cache. The complete project fingerprint
+(including FPS, resolution, format, range, animation and visual settings) and
+input asset stat signatures invalidate a stale result. A rerun never starts a
+benchmark automatically; press the button to measure a changed configuration.
+
+The displayed **Approximate render time** is rasterization plus preparation,
+not an end-to-end encoding prediction. Disk IO, FFmpeg/backpressure, CPU limits
+and machine load may increase elapsed time substantially, especially on cheap
+frames. No arbitrary encoding multiplier or statistical confidence interval is
+shown. Small-window validation measured 10.8–39.5% error versus total elapsed
+time; the initial three-case mean of 28.5% does not meet the aspirational 20%.
+
+### Rendering strategy
+
 Moving bars, primary/secondary logos and attached text retain the canonical
 float-space visual rectangle through composition. Logos and material bodies
 use local premultiplied-alpha affine filtering; vector bars and grid lines

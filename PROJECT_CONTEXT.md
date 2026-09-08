@@ -1092,6 +1092,15 @@ GitHub branch.
 
 ## Non-Goals For Now
 
+- Render time estimation is explicit and session-local. RenderJob's bounded
+  frame_sampler/frame_consumer mode shares production scene evaluation, but
+  never creates an exporter or frame output directory. Two warm-ups and up to
+  sixteen global frames produce median RGBA cost and measured startup. Do not
+  label this a total MP4/encoding estimate: the first solid/gradient/Short
+  comparison had 28.5% mean absolute percentage error against total wall time.
+  UI cache uses the full existing project fingerprint plus input stat metadata,
+  not the preview fingerprint (which excludes FPS and other render settings).
+
 - Rank movement duration now shares a 0.10–1.00 domain across loader, engine
   and Studio (default 1.00, slider step 5%). Standard/Short preserve it.
 

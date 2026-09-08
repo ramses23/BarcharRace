@@ -15,6 +15,32 @@ from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_render_estimate_is_explicit_cached_and_stale_after_fps_change(self):
+        from studio.render_estimator import RenderEstimate
+        estimate = RenderEstimate(0, 100, tuple(range(16)), 2, .01, 1.2, .2, .3, (.01,) * 16)
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        with mock.patch("studio.render_estimator.estimate_render_job", return_value=estimate) as measure:
+            app = AppTest.from_file(str(app_path), default_timeout=30).run()
+            self._select_editor_section(app, "Export")
+            self.assertFalse(app.exception)
+            measure.assert_not_called()
+            before = json.loads(app.json[0].value)
+            next(x for x in app.button if x.label == "Estimate render time").click()
+            app.run()
+            self.assertFalse(app.exception)
+            measure.assert_called_once()
+            self.assertEqual(json.loads(app.json[0].value), before)
+            self.assertTrue(any(x.label == "Approximate render time" for x in app.metric))
+            next(x for x in app.button if x.label == "Estimate render time").click()
+            app.run()
+            measure.assert_called_once()
+            fps = next(x for x in app.number_input if x.label == "FPS")
+            fps.set_value(fps.value + 1)
+            app.run()
+            self.assertFalse(app.exception)
+            measure.assert_called_once()
+            self.assertTrue(any("stale" in x.value for x in app.caption))
+
     def test_ten_percent_rank_duration_survives_standard_short_and_navigation(self):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()

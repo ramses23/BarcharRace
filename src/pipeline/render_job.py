@@ -104,7 +104,15 @@ class RenderJob:
         self.cpu_limiter = cpu_limiter or SoftCpuLimiter(self.cpu_limit_config)
         self.output_file_is_effective = bool(output_file_is_effective)
 
-    def run(self):
+    def run(self, *, frame_sampler=None, frame_consumer=None):
+        """Render normally, or evaluate a bounded global-frame sample in memory.
+
+        Sampling never constructs an exporter, cleans frames or writes output.
+        The consumer owns timing/warm-up and receives the production scene.
+        """
+        sampling = frame_sampler is not None
+        if sampling != (frame_consumer is not None):
+            raise ValueError("Sampling requires both a frame sampler and consumer.")
         if self.config.frame_output_mode not in ("png_sequence", "ffmpeg_stream"):
             raise ValueError(
                 "frame_output_mode must be 'png_sequence' or 'ffmpeg_stream'."
@@ -165,7 +173,12 @@ class RenderJob:
             continuous_motion=chart_config.animation.continuous_motion,
         ).frame_count
         start_frame, end_frame = resolve_render_window(full_frame_count, self.export_config)
-        custom_window = start_frame != 0 or end_frame != full_frame_count
+        sampled_ids = tuple(frame_sampler(start_frame, end_frame)) if sampling else ()
+        if sampling and (not sampled_ids or len(sampled_ids) > 20 or
+                tuple(sorted(set(sampled_ids))) != sampled_ids or
+                any(type(f) is not int or not start_frame <= f < end_frame for f in sampled_ids)):
+            raise ValueError("Samples must be 1–20 unique sorted global frames inside the render window.")
+        custom_window = sampling or start_frame != 0 or end_frame != full_frame_count
         calendar_resolver = (
             DisplayCalendarResolver.from_timeline(
                 timeline,
@@ -186,14 +199,14 @@ class RenderJob:
         )
         motion = MotionEngine(animation_config=chart_config.animation)
         renderer = BarRenderer(
-            output_dir=chart_config.frames_dir,
+            output_dir=None if sampling else chart_config.frames_dir,
             config=chart_config,
             fun_fact_config=fun_fact_config,
         )
-        exporter = VideoExporter(config=chart_config, threads=self.cpu_limiter.ffmpeg_threads)
-        stream_mode = chart_config.frame_output_mode == "ffmpeg_stream"
+        exporter = None if sampling else VideoExporter(config=chart_config, threads=self.cpu_limiter.ffmpeg_threads)
+        stream_mode = not sampling and chart_config.frame_output_mode == "ffmpeg_stream"
 
-        if stream_mode:
+        if stream_mode or sampling:
             timings["cleanup"] = 0.0
             removed_frames = 0
         else:
@@ -247,7 +260,7 @@ class RenderJob:
 
         frame_id = 0
         transitions_rendered = 0
-        total_frame_count = end_frame - start_frame
+        total_frame_count = len(sampled_ids) if sampling else end_frame - start_frame
 
         render_started_at = perf_counter()
         self._emit_progress(
@@ -267,12 +280,16 @@ class RenderJob:
                 transition_length = steps + (1 if continuous and i == 0 else 0)
                 first_step = max(0, start_frame - transition_start)
                 last_step = min(transition_length, end_frame - transition_start)
-                if first_step >= last_step:
+                selected_steps = ([f - transition_start for f in sampled_ids
+                    if transition_start + first_step <= f < transition_start + last_step]
+                    if sampling else range(first_step, last_step))
+                if not selected_steps:
                     continue
                 year_a = years[i]
                 year_b = years[i + 1]
 
-                print(f"Transicion {year_a} -> {year_b}")
+                if not sampling:
+                    print(f"Transicion {year_a} -> {year_b}")
 
                 start_sprites = sprites_by_year[year_a]
                 end_sprites = sprites_by_year[year_b]
@@ -280,7 +297,7 @@ class RenderJob:
                 if custom_window:
                     include_start = not continuous or i == 0
                     frames = []
-                    for selected_step in range(first_step, last_step):
+                    for selected_step in selected_steps:
                         progress = (
                             (selected_step + (0 if include_start else 1)) / steps
                             if continuous else selected_step / (steps - 1) if steps > 1 else 1.0
@@ -315,7 +332,7 @@ class RenderJob:
                         steps=chart_config.steps_per_transition,
                     )
 
-                for step_index, frame_sprites in enumerate(frames, start=first_step):
+                for step_index, frame_sprites in zip(selected_steps, frames):
                     global_frame = transition_start + step_index
                     self.cpu_limiter.checkpoint()
                     if chart_config.animation.continuous_motion:
@@ -367,7 +384,9 @@ class RenderJob:
                         fps=chart_config.fps,
                     )
 
-                    if stream_mode:
+                    if sampling:
+                        frame_consumer(scene, renderer)
+                    elif stream_mode:
                         stream_process.stdin.write(renderer.render_rgba(scene))
                     else:
                         renderer.render(
@@ -382,6 +401,7 @@ class RenderJob:
         except Exception:
             if stream_process is not None:
                 exporter.abort_stream(stream_process)
+            renderer.close()
             raise
 
         timings["draw_frames"] = self._renderer_seconds(renderer, "draw_seconds")
@@ -390,7 +410,9 @@ class RenderJob:
         timings["render_frames"] = perf_counter() - render_started_at
 
         self._emit_progress("export_video", "Exporting MP4", 0.92)
-        if stream_process is not None:
+        if sampling:
+            timings["export_video"] = 0.0
+        elif stream_process is not None:
             self._measure_stage(
                 timings,
                 "export_video",
@@ -404,15 +426,16 @@ class RenderJob:
             total_seconds=perf_counter() - total_started_at,
         )
 
-        print("Video generado correctamente.")
-        self._print_profile(profile)
+        if not sampling:
+            print("Video generado correctamente.")
+            self._print_profile(profile)
         self._emit_progress("complete", "Video rendered", 1.0)
 
         return RenderResult(
             frames_rendered=frame_id,
             transitions_rendered=transitions_rendered,
             removed_frames=removed_frames,
-            output_file=chart_config.output_file,
+            output_file="" if sampling else chart_config.output_file,
             profile=profile,
             cpu_limit_percent=(self.cpu_limit_config.percent if self.cpu_limit_config.enabled else 100),
             ffmpeg_threads=self.cpu_limiter.ffmpeg_threads,
