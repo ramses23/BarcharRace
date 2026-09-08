@@ -532,7 +532,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             Image.new("RGBA", (32, 32), "#FFCC00").save(secondary)
 
             for position in ("inside_left", "inside_right", "outside_left"):
-                for duration in (1.0, 0.7, 0.5, 0.4):
+                for duration in (1.0, 0.7, 0.5, 0.4, 0.1):
                     with self.subTest(position=position, duration=duration):
                         config = ChartConfig(
                             width=320,

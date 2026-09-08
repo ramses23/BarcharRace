@@ -2,7 +2,7 @@ import json
 from dataclasses import fields, replace
 from pathlib import Path
 
-from config.animation_config import AnimationConfig
+from config.animation_config import AnimationConfig, MIN_RANK_MOVEMENT_DURATION, MAX_RANK_MOVEMENT_DURATION
 from config.bar_selection_config import MIN_TOP_N
 from config.chart_config import (
     MIN_BAR_GAP,
@@ -889,11 +889,11 @@ def _convert_animation_value(key, value):
         if (
             isinstance(value, bool)
             or not isinstance(value, (int, float))
-            or not 0.4 <= value <= 1.0
+            or not MIN_RANK_MOVEMENT_DURATION <= value <= MAX_RANK_MOVEMENT_DURATION
         ):
             raise ProjectFileError(
                 "Animation field 'rank_movement_duration' must be from "
-                "0.4 to 1.0."
+                "0.1 to 1.0."
             )
         return float(value)
 

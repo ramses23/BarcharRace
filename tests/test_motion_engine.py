@@ -381,6 +381,28 @@ class MotionEngineTest(unittest.TestCase):
         self.assertEqual(arrived.rank_motion_state, "stable")
         self.assertEqual(rank_motion_effective_height(arrived), 40)
 
+    def test_ten_percent_rank_duration_preserves_other_channels_and_1701_steps(self):
+        start = [self._sprite(10, y=0, rank=2)]
+        end = [self._sprite(110, y=100, rank=1)]
+        for mode in ("transition_easing", "continuous"):
+            fast = MotionEngine(AnimationConfig(motion_mode=mode, rank_movement_duration=.1))
+            normal = MotionEngine(AnimationConfig(motion_mode=mode))
+            def at(engine, t):
+                if mode == "continuous":
+                    return engine.interpolate_sprites_continuous_at(start, start, end, end, t)[0]
+                return engine.interpolate_sprites_at(start, end, t)[0]
+            self.assertAlmostEqual(at(fast, .05).y, 50)
+            for t in (.1, .2, .7, 1.):
+                actual, reference = at(fast, t), at(normal, t)
+                self.assertEqual(actual.y, 100)
+                self.assertEqual(actual.rank_motion_state, "stable")
+                for field in ("value", "width", "opacity", "x"):
+                    self.assertEqual(getattr(actual, field), getattr(reference, field))
+            frames = fast.interpolate_sprites(start, end, steps=1701)
+            self.assertEqual(len(frames), 1701)
+            self.assertEqual(frames[170][0].y, 100)
+            self.assertLess(frames[169][0].y, 100)
+
     def test_rank_movement_duration_supports_half_and_legacy_transitions(self):
         start = [self._sprite(10, y=20, rank=4)]
         end = [self._sprite(90, y=140, rank=1)]

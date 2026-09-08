@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--secondary", type=Path, required=True)
     parser.add_argument("--material", action="store_true")
     parser.add_argument("--gradient", action="store_true")
+    parser.add_argument("--rank-duration", type=float, default=0.7)
     args = parser.parse_args()
     out = args.output_dir.resolve()
     if out == ROOT or ROOT in out.parents:
@@ -38,7 +39,8 @@ def main():
     class DiagnosticRenderer(BarRenderer):
         def render_rgba(self, scene):
             pixels = super().render_rgba(scene)
-            if scene.frame_index in range(60, 73) or scene.frame_index in range(123, 130):
+            if (scene.frame_index in range(60, 73) or scene.frame_index in range(123, 130)
+                    or args.rank_duration == .1 and scene.frame_index in range(365, 381)):
                 bars = []
                 for sprite in scene.bars:
                     visual, _ = self._final_visual_geometry(sprite)
@@ -65,7 +67,7 @@ def main():
                     "tick_positions": [list(a.get_position()) for a in self._value_tick_artists if a.get_visible()],
                     "tick_compositor_xy": [list(c[1:]) for c in self._value_tick_composite_artist.commands],
                 })
-            if scene.frame_index == 126:
+            if scene.frame_index == (370 if args.rank_duration == .1 else 126):
                 from PIL import Image
                 Image.frombytes("RGBA", (self.config.width, self.config.height), pixels).save(out / f"{args.label}.png")
             return pixels
@@ -77,7 +79,7 @@ def main():
         frames_dir=str(out / "frames"), output_file=str(out / f"{args.label}.mp4"),
         title="Motion validation", title_x=40, title_y=35, title_font_size=22,
         subtitle_enabled=False, source_label_enabled=False, time_label_enabled=False,
-        animation=AnimationConfig(motion_mode="continuous", easing="ease_out_cubic", rank_movement_duration=0.7),
+        animation=AnimationConfig(motion_mode="continuous", easing="ease_out_cubic", rank_movement_duration=args.rank_duration),
         bar_appearance_mode="unified", bar_fill_type="gradient" if args.gradient else "solid",
         bar_gradient_enabled=args.gradient,
         bar_texture_enabled=args.material, bar_texture_intensity=0.1,

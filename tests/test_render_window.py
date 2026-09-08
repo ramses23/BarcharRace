@@ -118,7 +118,7 @@ class RenderWindowTest(unittest.TestCase):
                     start_bars_at_zero=True, date_style="flip_calendar",
                     frame_output_mode="png_sequence", frames_dir=str(root / "frames"),
                     output_file=str(root / "race.mp4"),
-                    animation=AnimationConfig(motion_mode=mode, rank_movement_duration=0.4),
+                    animation=AnimationConfig(motion_mode=mode, rank_movement_duration=0.1),
                 )
                 def run(export):
                     events = []

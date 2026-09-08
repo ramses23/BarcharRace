@@ -2,6 +2,9 @@ from dataclasses import dataclass
 
 from utils.easing import get_easing_function, list_easings
 
+MIN_RANK_MOVEMENT_DURATION = 0.10
+MAX_RANK_MOVEMENT_DURATION = 1.00
+
 
 @dataclass(frozen=True)
 class AnimationConfig:

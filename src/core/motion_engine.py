@@ -1,6 +1,6 @@
 from math import isfinite
 
-from config.animation_config import AnimationConfig
+from config.animation_config import AnimationConfig, MIN_RANK_MOVEMENT_DURATION, MAX_RANK_MOVEMENT_DURATION
 from core.rank_motion import (
     RANK_MOTION_STABLE,
     classify_rank_motion,
@@ -474,7 +474,7 @@ class MotionEngine:
             duration = 1.0
         if not isfinite(duration):
             duration = 1.0
-        duration = max(0.4, min(1.0, duration))
+        duration = max(MIN_RANK_MOVEMENT_DURATION, min(MAX_RANK_MOVEMENT_DURATION, duration))
         rank_raw_t = max(0.0, min(1.0, float(raw_t) / duration))
         return rank_raw_t, easing(rank_raw_t)
 

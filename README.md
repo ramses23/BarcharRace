@@ -30,6 +30,10 @@ projects as full video unless window fields are explicitly present.
 
 ### Subpixel motion
 
+Rank movement duration accepts 10–100% (default 100%). It changes only the
+vertical ranking clock: at 10%, ranking arrives by one tenth of the transition;
+values, width, fades, calendar, FPS and total frame count keep their timing.
+
 Moving bars, primary/secondary logos and attached text retain the canonical
 float-space visual rectangle through composition. Logos and material bodies
 use local premultiplied-alpha affine filtering; vector bars and grid lines

@@ -31,6 +31,7 @@ from config.chart_config import (
     ChartConfig,
 )
 from config.bar_selection_config import MAX_TOP_N, MIN_TOP_N
+from config.animation_config import MIN_RANK_MOVEMENT_DURATION, MAX_RANK_MOVEMENT_DURATION
 from config.dataset_config import DatasetConfig
 from config.fun_fact_config import (
     MAX_EDITORIAL_FONT_SIZE,
@@ -2832,8 +2833,8 @@ def _render_settings_from_values(
     motion_mode = values.get("motion_mode", "transition_easing")
     if motion_mode not in ("transition_easing", "continuous"):
         motion_mode = "transition_easing"
-    rank_movement_duration = min(1.0, max(
-        0.4,
+    rank_movement_duration = min(MAX_RANK_MOVEMENT_DURATION, max(
+        MIN_RANK_MOVEMENT_DURATION,
         float(values.get("rank_movement_duration", 1.0)),
     ))
 
@@ -4299,11 +4300,11 @@ def _animation_output_section(
 
     rank_movement_percent = st.slider(
         "Rank movement duration",
-        min_value=40,
-        max_value=100,
+        min_value=int(MIN_RANK_MOVEMENT_DURATION * 100),
+        max_value=int(MAX_RANK_MOVEMENT_DURATION * 100),
         value=int(round(
-            min(1.0, max(
-                0.4,
+            min(MAX_RANK_MOVEMENT_DURATION, max(
+                MIN_RANK_MOVEMENT_DURATION,
                 float(values.get("rank_movement_duration", 1.0)),
             )) * 100
         )),

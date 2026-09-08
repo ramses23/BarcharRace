@@ -231,7 +231,7 @@ class ProjectFileLoaderTest(unittest.TestCase):
                 0.7,
             )
 
-            for invalid in (True, 0.39, 1.01, "0.7"):
+            for invalid in (True, 0.09, 1.01, "0.7"):
                 invalid_path = root / f"invalid_{invalid}.json"
                 invalid_path.write_text(json.dumps({
                     "animation": {"rank_movement_duration": invalid},

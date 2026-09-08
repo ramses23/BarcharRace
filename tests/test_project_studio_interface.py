@@ -15,6 +15,20 @@ from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_ten_percent_rank_duration_survives_standard_short_and_navigation(self):
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Export")
+        control = next(x for x in app.slider if x.label == "Rank movement duration")
+        self.assertEqual((control.min, control.max, control.step), (10., 100., 5.))
+        control.set_value(10)
+        app.run()
+        for mode in ("short", "standard"):
+            next(x for x in app.selectbox if x.label == "Format").set_value(mode)
+            app.run()
+            self.assertFalse(app.exception)
+            self.assertEqual(json.loads(app.json[0].value)["animation"]["rank_movement_duration"], .1)
+
     def test_custom_render_window_persists_frames_and_full_clears_them(self):
         app_path = Path(__file__).resolve().parents[1] / "src" / "ui" / "project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()

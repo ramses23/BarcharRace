@@ -966,20 +966,20 @@ class ValueAxisTest(unittest.TestCase):
             csv_path.write_text(
                 "year,country,value\n"
                 "2000,A,33000\n2000,B,18000\n"
-                "2001,A,52000\n2001,B,27000\n",
+                "2001,A,27000\n2001,B,52000\n",
                 encoding="utf-8",
             )
             chart = ChartConfig(
                 frames_dir=str(root / "frames"),
                 output_file=str(root / "video.mp4"),
                 frame_output_mode="png_sequence",
-                steps_per_transition=4,
+                steps_per_transition=20,
                 value_grid_enabled=True,
                 value_grid_mode="dynamic",
                 value_grid_tick_value_format="compact",
                 start_bars_at_zero=True,
                 leader_full_width_point=0.5,
-                animation=AnimationConfig(easing="ease_out_cubic"),
+                animation=AnimationConfig(easing="ease_out_cubic", rank_movement_duration=.1),
             )
             with patch("pipeline.render_job.BarRenderer") as renderer_class:
                 with patch("pipeline.render_job.VideoExporter"):
@@ -999,13 +999,14 @@ class ValueAxisTest(unittest.TestCase):
 
             preview_data = self._project_data(
                 csv_path="data.csv",
-                steps_per_transition=4,
+                steps_per_transition=20,
                 value_grid_enabled=True,
                 value_grid_mode="dynamic",
                 value_grid_tick_value_format="compact",
                 start_bars_at_zero=True,
                 leader_full_width_point=0.5,
             )
+            preview_data.setdefault("animation", {})["rank_movement_duration"] = .1
             with patch("studio.preview.BarRenderer") as preview_renderer:
                 preview_renderer.return_value.render.return_value = str(
                     root / "preview.png"
@@ -1017,10 +1018,14 @@ class ValueAxisTest(unittest.TestCase):
                     project_data=preview_data,
                     preview_mode="transition",
                     year=2000,
-                    transition_progress=1 / 3,
+                    transition_progress=1 / 19,
                 )
             preview_scene = preview_renderer.return_value.render.call_args.args[0]
             render_scene = render_scenes[1]
+            for preview_bar, render_bar in zip(preview_scene.bars, render_scene.bars):
+                for field in ("name", "value", "x", "y", "width", "height", "rank",
+                              "opacity", "rank_motion_progress", "rank_motion_state"):
+                    self.assertEqual(getattr(preview_bar, field), getattr(render_bar, field))
             render_axis = render_scene.value_axis
             preview_axis = preview_scene.value_axis
 

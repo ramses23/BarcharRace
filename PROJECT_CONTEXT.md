@@ -1092,6 +1092,9 @@ GitHub branch.
 
 ## Non-Goals For Now
 
+- Rank movement duration now shares a 0.10–1.00 domain across loader, engine
+  and Studio (default 1.00, slider step 5%). Standard/Short preserve it.
+
 - Do not migrate away from Matplotlib until the current engine behavior is
   stable.
 - Do not let the GUI duplicate engine pipeline logic; it should drive JSON
