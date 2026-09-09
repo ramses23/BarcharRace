@@ -54,6 +54,17 @@ def minimum_transition_frames(seconds, fps):
     return int((Decimal(str(seconds)) * Decimal(str(fps))).to_integral_value(rounding=ROUND_CEILING))
 
 
+def allocation_weight(activity_score):
+    """Cube-root weight, distinct from the unchanged activity score.
+
+    The concave transform preserves activity ordering while compressing large
+    score differences, preventing a few transitions from dominating the budget.
+    """
+    if not isfinite(activity_score) or activity_score < 0:
+        raise ValueError("Activity scores must be finite and non-negative.")
+    return activity_score ** (1 / 3) if activity_score > 0 else 0.0
+
+
 def allocate_transition_steps(scores, uniform_steps, minimum_frames):
     """Hamilton allocation, exact rational quotas, stable index tie-breaking."""
     scores = tuple(scores)
@@ -66,10 +77,10 @@ def allocate_transition_steps(scores, uniform_steps, minimum_frames):
         )
     if any(not isfinite(s) or s < 0 for s in scores):
         raise ValueError("Activity scores must be finite and non-negative.")
-    weights = tuple(Fraction(s) for s in scores)
-    total = sum(weights)
-    if not total:
+    if not any(scores):
         return (uniform_steps,) * len(scores)
+    weights = tuple(Fraction(allocation_weight(s)) for s in scores)
+    total = sum(weights)
     remaining = len(scores) * (uniform_steps - minimum_frames)
     quotas = tuple(remaining * w / total for w in weights)
     floors = [q.numerator // q.denominator for q in quotas]

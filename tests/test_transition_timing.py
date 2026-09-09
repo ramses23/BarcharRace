@@ -24,7 +24,7 @@ from core.motion_engine import MotionEngine
 from core.timeline import Timeline
 from core.transition_timing import (TransitionTimingPlan, allocate_transition_steps,
     build_transition_timing_plan, minimum_transition_frames, timing_plan_from_timeline,
-    transition_activity)
+    transition_activity, allocation_weight)
 from models.bar_data import BarData
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
@@ -51,7 +51,40 @@ class TransitionAllocationTest(unittest.TestCase):
                 minimum_transition_frames(bad, 60)
 
     def test_zero_gets_minimum_and_high_activity_gets_more(self):
-        self.assertEqual(allocate_transition_steps([0, 1, 3], 100, 10), (10, 78, 212))
+        self.assertEqual(allocate_transition_steps([0, 1, 8], 100, 10), (10, 100, 190))
+
+    def test_cube_root_weight_keeps_zero_order_and_compresses_ratios(self):
+        self.assertEqual(allocation_weight(0), 0)
+        self.assertEqual(allocation_weight(8), 2)
+        scores = (.001, .008, .027, .064, .125, .5, 1.)
+        weights = [allocation_weight(s) for s in scores]
+        self.assertTrue(all(a < b for a, b in zip(weights, weights[1:])))
+        for a, b in zip(scores, scores[1:]):
+            self.assertAlmostEqual(allocation_weight(b) / allocation_weight(a), (b / a) ** (1 / 3))
+            self.assertLess(allocation_weight(b) / allocation_weight(a), b / a)
+
+    def test_all_zero_bypasses_cube_root(self):
+        with patch("core.transition_timing.allocation_weight", side_effect=AssertionError("transform")):
+            self.assertEqual(allocate_transition_steps([0] * 4, 100, 10), (100,) * 4)
+
+    def test_marvel_score_snapshot_concave_allocation(self):
+        # Frozen scores from the real sentinel, not special cases in production.
+        scores = (0., .5935824706635136, 0., .5851624011313634,
+            .25017844899129077, .22801864959911122, .12427775426882019,
+            .08823503678464939, .20521105048753985, .18370680459895206,
+            .06596358342735337, .09000071748432319, .17751817658068014,
+            .16910991257919175, .17731029456064287, .21834979151937306,
+            .17429509157742415, .24662132186646837, .17231892585892275,
+            .2845851042463515, .1304166510010932, .03359041811206171,
+            .1360384985632024, .18793684509503117, .17083026711375035,
+            .20245604119230812, .048479935334357814, .04345542273946113)
+        expected = (60, 1653, 60, 1646, 1255, 1218, 1006, 904, 1178,
+            1138, 826, 910, 1125, 1108, 1125, 1202, 1119, 1249, 1115,
+            1307, 1021, 672, 1035, 1146, 1112, 1173, 751, 726)
+        allocated = allocate_transition_steps(scores, 1030, 60)
+        self.assertEqual(allocated, expected)
+        self.assertEqual(sum(allocated), 28 * 1030)
+        self.assertEqual(max(allocated) / 60, 27.55)  # Derived sentinel, not a hard cap.
 
     def test_all_zero_falls_back_to_uniform(self):
         self.assertEqual(allocate_transition_steps([0] * 5, 1030, 60), (1030,) * 5)

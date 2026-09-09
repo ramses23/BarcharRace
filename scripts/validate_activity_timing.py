@@ -16,7 +16,7 @@ from config.project_file_loader import load_project_file
 from core.bar_selector import BarSelector
 from core.layout_engine import LayoutEngine
 from core.timeline import Timeline
-from core.transition_timing import build_transition_timing_plan, timing_plan_from_timeline
+from core.transition_timing import build_transition_timing_plan, timing_plan_from_timeline, allocation_weight
 from importers.data_source_loader import DataSourceLoader
 from pipeline.render_job import RenderJob
 from studio.fun_fact_layout import apply_fun_fact_layout
@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--project-root", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--render", action="store_true")
+    parser.add_argument("--compare-report", type=Path, help="Previously generated linear allocation report.")
     args = parser.parse_args()
     output = args.output_dir.resolve()
     if output == ROOT or ROOT in output.parents:
@@ -60,13 +61,20 @@ def main():
         plan.locate((i * 7919) % plan.frame_count)
     lookup = (perf_counter() - started) / 100000
     rows = []
+    previous = json.loads(args.compare_report.read_text(encoding="utf-8")) if args.compare_report else None
+    previous_rows = {row["transition"]: row for row in previous["rows"]} if previous else {}
     pacing = {label: {"uniform_frames": 0, "weighted_frames": 0} for label in ("0", "1", "2+")}
     for i, activity in enumerate(plan.activities):
         uniform = chart.steps_per_transition
         weighted = plan.steps_per_transition[i]
         rows.append({"transition": f"{timeline.get_time_label(years[i])} -> {timeline.get_time_label(years[i + 1])}",
-            **asdict(activity), "uniform_frames": uniform, "weighted_frames": weighted,
+            **asdict(activity), "allocation_weight": allocation_weight(activity.score),
+            "uniform_frames": uniform, "weighted_frames": weighted,
             "weighted_seconds": weighted / chart.fps})
+        if previous:
+            old = previous_rows[rows[-1]["transition"]]
+            assert old["score"] == activity.score, "Activity score changed from baseline."
+            rows[-1]["old_linear_frames"] = old["weighted_frames"]
         label = str(activity.changed_bars) if activity.changed_bars < 2 else "2+"
         extra = int(i == 0 and chart.animation.continuous_motion)
         pacing[label]["uniform_frames"] += uniform + extra
@@ -79,6 +87,15 @@ def main():
         "transition_frames": plan.total_transition_frames, "total_frames": plan.frame_count,
         "duration_seconds": plan.frame_count / chart.fps,
         "plan_build_median_ms": median(timings) * 1000, "lookup_microseconds": lookup * 1e6}
+    def duration_stats(values):
+        return {"min": min(values), "median": median(values), "max": max(values)} if values else {}
+    report["positive_duration_seconds"] = duration_stats([
+        row["weighted_seconds"] for row in rows if row["score"] > 0])
+    if previous:
+        assert previous["total_frames"] == plan.frame_count
+        report["old_linear_pacing"] = previous["pacing"]
+        report["old_linear_positive_duration_seconds"] = duration_stats([
+            row["weighted_seconds"] for row in previous["rows"] if row["score"] > 0])
     if args.render:
         end = plan.prefix_offsets[min(4, len(years) - 1)] + int(plan.continuous_motion)
         export = replace(preset.export_config, render_start_frame=0, render_end_frame=end)

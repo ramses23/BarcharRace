@@ -59,23 +59,31 @@ union. With ranks numbered from zero:
 The score is deterministic and independent of numeric units, FPS and Steps.
 The minimum uses decimal ceiling(seconds × FPS), never rounding below the
 requested minimum. Reserve that minimum for every transition, then distribute
-the remaining budget by score using exact rational Hamilton quotas and stable
+the remaining budget by `allocation_weight = activity_score ** (1 / 3)` for
+positive scores (zero remains zero), using exact rational Hamilton quotas and stable
 transition-index tie breaks. No frame is added or lost. Zero scores receive
 exactly the minimum when any score is positive; all-zero scores fall back to
 Uniform. A minimum above the average budget is rejected before output work,
 not silently clamped. Checkpoint values, equal-value plateaus and synthetic
 annual calendar semantics remain unchanged.
 
-The relative score intentionally gives substantial time to major changes in
-small early rankings. For the Marvel sentinel (1030 Steps, 60 FPS), 1999→2000
-gets 54.87 s despite only one changing value, because X-Men enters above Blade.
-No arbitrary maximum duration is imposed. The two static transitions together
-fall from 34.35 s to 2.02 s; time with 2+ changing values rises from 64.28% to
-77.38%. Total remains 28,841 frames / 480.683333 s. Final pacing is subject to
-user visual review.
+The concave cube-root transform preserves activity ordering while compressing
+large score differences, preventing a small number of transitions from
+absorbing a disproportionate share of the fixed frame budget. The reported
+activity score and its components are unchanged; only the allocation weight
+is transformed. No maximum duration, user exponent or dataset-specific rule
+is introduced. All-zero activity bypasses the transform and stays Uniform.
+
+For the Marvel sentinel (1030 Steps, 60 FPS), 1999→2000 now gets 27.55 s
+instead of the old linear allocation's 54.87 s; 2001→2002 gets 27.43 s instead
+of 54.12 s. The two static transitions together remain at 2.02 s versus Uniform's
+34.35 s. Time with 2+ changing values is 73.76% (Uniform: 64.28%; old linear:
+77.38%). Total remains 28,841 frames / 480.683333 s. Final pacing is subject
+to user visual review.
 
 `scripts/validate_activity_timing.py --project PROJECT_JSON --project-root ROOT
---output-dir EXTERNAL_DIR [--render]` reports every allocation, pacing buckets,
+--output-dir EXTERNAL_DIR [--render] [--compare-report OLD_REPORT_JSON]` reports
+activity scores separately from allocation weights, allocations, pacing buckets,
 plan/lookup timing and source-file hashes. `--render` creates an early-four-
 transition partial clip outside the repo without saving the source project.
 Preview and estimate caches include weighted timing settings; no benchmark is
