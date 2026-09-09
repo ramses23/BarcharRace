@@ -13,6 +13,7 @@ from core.layout_engine import LayoutEngine
 from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
+from core.transition_timing import build_transition_timing_plan, sample_timed_sprites
 from core.value_axis import ValueAxisTracker
 from studio.value_axis_preview import get_value_axis_preview_resolver
 from utils.render_window import resolve_render_window
@@ -166,6 +167,15 @@ class RenderJob:
                 )),
             )
         chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
+        selector = BarSelector(config=chart_config.selection)
+        layout = LayoutEngine(config=chart_config, fun_fact_config=fun_fact_config)
+        self._emit_progress("precompute_sprites", "Preparing chart layout", 0.18)
+        sprites_by_year = self._measure_stage(
+            timings, "precompute_sprites",
+            lambda: self._build_sprites_by_year(timeline, years, selector, layout),
+        )
+        timing_plan = build_transition_timing_plan(chart_config, sprites_by_year.values())
+        sprite_sets = tuple(sprites_by_year.values())
         full_frame_count = estimate_video_duration(
             period_count=len(years),
             steps_per_transition=chart_config.steps_per_transition,
@@ -185,17 +195,13 @@ class RenderJob:
                 years,
                 steps_per_transition=chart_config.steps_per_transition,
                 continuous_motion=chart_config.animation.continuous_motion,
+                timing_plan=timing_plan,
                 flip_duration_frames=(
                     chart_config.flip_calendar_flip_duration_frames
                 ),
             )
             if chart_config.date_style == "flip_calendar"
             else None
-        )
-        selector = BarSelector(config=chart_config.selection)
-        layout = LayoutEngine(
-            config=chart_config,
-            fun_fact_config=fun_fact_config,
         )
         motion = MotionEngine(animation_config=chart_config.animation)
         renderer = BarRenderer(
@@ -221,17 +227,6 @@ class RenderJob:
             )
             print(f"Frames anteriores eliminados: {removed_frames}")
 
-        self._emit_progress("precompute_sprites", "Preparing chart layout", 0.28)
-        sprites_by_year = self._measure_stage(
-            timings,
-            "precompute_sprites",
-            lambda: self._build_sprites_by_year(
-                timeline=timeline,
-                years=years,
-                selector=selector,
-                layout=layout,
-            ),
-        )
         value_axis_tracker = (
             ValueAxisTracker.from_config(
                 chart_config,
@@ -274,10 +269,10 @@ class RenderJob:
 
         try:
             for i in range(len(years) - 1):
-                steps = chart_config.steps_per_transition
+                steps = timing_plan.steps_per_transition[i]
                 continuous = chart_config.animation.continuous_motion
-                transition_start = i * steps + (1 if continuous and i > 0 else 0)
-                transition_length = steps + (1 if continuous and i == 0 else 0)
+                transition_start, transition_end = timing_plan.frame_bounds(i)
+                transition_length = transition_end - transition_start
                 first_step = max(0, start_frame - transition_start)
                 last_step = min(transition_length, end_frame - transition_start)
                 selected_steps = ([f - transition_start for f in sampled_ids
@@ -298,20 +293,8 @@ class RenderJob:
                     include_start = not continuous or i == 0
                     frames = []
                     for selected_step in selected_steps:
-                        progress = (
-                            (selected_step + (0 if include_start else 1)) / steps
-                            if continuous else selected_step / (steps - 1) if steps > 1 else 1.0
-                        )
-                        if continuous:
-                            sampled = motion.interpolate_sprites_continuous_at(
-                                sprites_by_year[years[max(0, i - 1)]],
-                                start_sprites, end_sprites,
-                                sprites_by_year[years[min(len(years) - 1, i + 2)]],
-                                progress,
-                            )
-                        else:
-                            sampled = motion.interpolate_sprites_at(start_sprites, end_sprites, progress)
-                        frames.append(sampled)
+                        frames.append(sample_timed_sprites(
+                            motion, sprite_sets, timing_plan, transition_start + selected_step))
                 elif chart_config.animation.continuous_motion:
                     previous_year = years[i - 1] if i > 0 else year_a
                     next_year = years[i + 2] if i + 2 < len(years) else year_b
@@ -321,7 +304,7 @@ class RenderJob:
                         start_sprites,
                         end_sprites,
                         sprites_by_year[next_year],
-                        steps=chart_config.steps_per_transition,
+                        steps=steps,
                         include_start=include_start,
                     )
                 else:
@@ -329,18 +312,14 @@ class RenderJob:
                     frames = motion.interpolate_sprites(
                         start_sprites,
                         end_sprites,
-                        steps=chart_config.steps_per_transition,
+                        steps=steps,
                     )
 
                 for step_index, frame_sprites in zip(selected_steps, frames):
                     global_frame = transition_start + step_index
                     self.cpu_limiter.checkpoint()
                     if chart_config.animation.continuous_motion:
-                        progress = (
-                            step_index
-                            if include_start
-                            else step_index + 1
-                        ) / chart_config.steps_per_transition
+                        progress = timing_plan.progress(i, step_index)
                     else:
                         progress = None
 

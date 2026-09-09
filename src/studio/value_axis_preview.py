@@ -14,6 +14,7 @@ from core.bar_value_scale import (
     progressive_bar_scale_active,
 )
 from core.motion_engine import MotionEngine
+from core.transition_timing import build_transition_timing_plan
 from core.value_axis import ValueAxisTracker, _vertical_geometry
 from studio.fun_fact_layout import editorial_geometry
 
@@ -67,6 +68,7 @@ class ValueAxisPreviewResolver:
         self._sprite_sets = tuple(tuple(sprites) for sprites in sprite_sets)
         self._motion = MotionEngine(animation_config=chart_config.animation)
         self._steps = max(1, int(chart_config.steps_per_transition))
+        self._timing_plan = build_transition_timing_plan(chart_config, self._sprite_sets)
         self._continuous = chart_config.animation.continuous_motion
         self._transitions = self._compile_transitions(self._sprite_sets)
         (
@@ -77,8 +79,7 @@ class ValueAxisPreviewResolver:
         self._max_frame_index = (
             0
             if len(self._sprite_sets) < 2
-            else (len(self._sprite_sets) - 1) * self._steps
-            + (0 if self._continuous else -1)
+            else self._timing_plan.frame_count - 1
         )
         self._checkpoints = OrderedDict()
         self._states = OrderedDict()
@@ -278,14 +279,15 @@ class ValueAxisPreviewResolver:
         width_chunks = []
         structural_chunks = []
         for index, transition in enumerate(self._transitions):
+            steps = self._timing_plan.steps_per_transition[index]
             if self._continuous:
                 first_step = 0 if index == 0 else 1
                 raw_t = np.arange(
-                    first_step, self._steps + 1, dtype=float
-                ) / self._steps
-            elif self._steps > 1:
-                raw_t = np.arange(self._steps, dtype=float) / (
-                    self._steps - 1
+                    first_step, steps + 1, dtype=float
+                ) / steps
+            elif steps > 1:
+                raw_t = np.arange(steps, dtype=float) / (
+                    steps - 1
                 )
             else:
                 raw_t = np.ones(1, dtype=float)
@@ -450,6 +452,11 @@ def preview_value_axis_source_fingerprint(
         index=False,
         categorize=False,
     ).values.tobytes()
+    # Ties preserve source order in the production ranking. In weighted mode
+    # that order can change rank activity even when the sorted rows are equal.
+    if chart_config.animation.transition_duration_mode == "activity_weighted":
+        ordered = timeline.df.loc[timeline.df[dataset.year_column].isin(years), list(columns)]
+        row_hashes += hash_pandas_object(ordered, index=False, categorize=False).values.tobytes()
     visible_counts = _effective_visible_counts(
         chart_config,
         relevant,
@@ -493,7 +500,9 @@ def value_axis_preview_fingerprint(chart_config, sprite_sets):
         )
         for sprites in sprite_sets
     )
-    return sha256(repr((axis_settings, periods)).encode("utf-8")).digest()
+    timing = (build_transition_timing_plan(chart_config, sprite_sets).steps_per_transition
+              if chart_config.animation.transition_duration_mode == "activity_weighted" else None)
+    return sha256(repr((axis_settings, periods, timing)).encode("utf-8")).digest()
 
 
 def _axis_settings_fingerprint(chart_config):
@@ -502,6 +511,9 @@ def _axis_settings_fingerprint(chart_config):
     return (
         chart_config.value_grid_mode,
         int(chart_config.steps_per_transition),
+        animation.transition_duration_mode,
+        float(animation.minimum_transition_duration_seconds),
+        float(chart_config.fps) if animation.transition_duration_mode == "activity_weighted" else None,
         bool(animation.continuous_motion),
         bool(animation.value_smoothing),
         bool(animation.enter_exit),

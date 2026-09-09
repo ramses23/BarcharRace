@@ -14,6 +14,7 @@ from types import MappingProxyType
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
 from core.bar_text_geometry import value_text_metric_cache_info
 from core.motion_engine import MotionEngine
+from core.transition_timing import build_transition_timing_plan
 from core.scene_geometry import (
     build_scene_geometry,
     build_smart_scene_geometry,
@@ -46,7 +47,7 @@ _SMART_CHART_FIELDS = (
     "max_visible_bars", "bar_vertical_layout_mode",
     "bar_vertical_top_padding", "bar_vertical_bottom_padding", "bar_shape",
     "bar_appearance_mode", "start_bars_at_zero", "leader_full_width_point",
-    "steps_per_transition", "title", "title_font_size", "subtitle_font_size",
+    "steps_per_transition", "fps", "title", "title_font_size", "subtitle_font_size",
     "time_label_font_size", "source_font_size", "label_font_size",
     "value_font_size", "title_font_family", "subtitle_font_family",
     "time_label_font_family", "source_font_family", "label_font_family",
@@ -786,6 +787,7 @@ def _iter_effective_smart_geometry(
     source_label, calendar_resolver, scale_resolver, logo_availability,
 ):
     motion = MotionEngine(chart_config.animation)
+    timing_plan = build_transition_timing_plan(chart_config, (sprites_by_period[p] for p in periods))
     text_bounds_cache = {}
     frame_id = 0
     if len(periods) == 1:
@@ -820,6 +822,7 @@ def _iter_effective_smart_geometry(
         )
         return
     for index, (period_a, period_b) in enumerate(zip(periods, periods[1:])):
+        steps = timing_plan.steps_per_transition[index]
         transition_start = scheduler.timeline.get_period_index(period_a)
         transition_end = scheduler.timeline.get_period_index(period_b)
         if not any(
@@ -828,9 +831,9 @@ def _iter_effective_smart_geometry(
             for resolved in scheduler.facts
         ):
             frame_id += (
-                chart_config.steps_per_transition + (1 if index == 0 else 0)
+                steps + (1 if index == 0 else 0)
                 if chart_config.animation.continuous_motion
-                else chart_config.steps_per_transition
+                else steps
             )
             continue
         start = sprites_by_period[period_a]
@@ -848,19 +851,19 @@ def _iter_effective_smart_geometry(
             frames = motion.interpolate_sprites_continuous(
                 sprites_by_period[previous], start, end,
                 sprites_by_period[following],
-                steps=chart_config.steps_per_transition,
+                steps=steps,
                 include_start=include_start,
             )
         else:
             include_start = True
             frames = motion.interpolate_sprites(
-                start, end, steps=chart_config.steps_per_transition,
+                start, end, steps=steps,
             )
         for step_index, sprites in enumerate(frames):
             if chart_config.animation.continuous_motion:
                 progress = (
                     step_index if include_start else step_index + 1
-                ) / chart_config.steps_per_transition
+                ) / steps
             else:
                 progress = (
                     step_index / (len(frames) - 1)
@@ -1044,6 +1047,7 @@ def _effective_frame_geometry(
     scale_resolver,
 ):
     motion = MotionEngine(chart_config.animation)
+    timing_plan = build_transition_timing_plan(chart_config, (sprites_by_period[p] for p in periods))
     geometry = {}
     frame_id = 0
     if len(periods) == 1:
@@ -1074,6 +1078,7 @@ def _effective_frame_geometry(
         )
         return geometry
     for index, (period_a, period_b) in enumerate(zip(periods, periods[1:])):
+        steps = timing_plan.steps_per_transition[index]
         start = sprites_by_period[period_a]
         end = sprites_by_period[period_b]
         if chart_config.animation.continuous_motion:
@@ -1085,7 +1090,7 @@ def _effective_frame_geometry(
                 start,
                 end,
                 sprites_by_period[following],
-                steps=chart_config.steps_per_transition,
+                steps=steps,
                 include_start=include_start,
             )
         else:
@@ -1093,13 +1098,13 @@ def _effective_frame_geometry(
             frames = motion.interpolate_sprites(
                 start,
                 end,
-                steps=chart_config.steps_per_transition,
+                steps=steps,
             )
         for step_index, sprites in enumerate(frames):
             if chart_config.animation.continuous_motion:
                 progress = (
                     step_index if include_start else step_index + 1
-                ) / chart_config.steps_per_transition
+                ) / steps
             else:
                 progress = (
                     step_index / (len(frames) - 1)

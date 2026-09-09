@@ -5,6 +5,7 @@ from pathlib import Path
 
 from config.project_file_loader import ProjectFileError, load_project_file
 from core.timeline import Timeline
+from core.transition_timing import minimum_transition_frames, allocate_transition_steps
 from importers.data_source_loader import DataSourceLoader
 from studio.image_validation import ImageValidationError, validate_image_file
 from studio.fun_fact_layout import FunFactLayoutError, validate_fun_fact_layout
@@ -143,6 +144,11 @@ def run_render_preflight(
             period_count = len(export_periods)
             if period_count >= 2:
                 try:
+                    animation = preset.chart_config.animation
+                    if animation.transition_duration_mode == "activity_weighted":
+                        allocate_transition_steps((0.0,) * (period_count - 1),
+                            preset.chart_config.steps_per_transition,
+                            minimum_transition_frames(animation.minimum_transition_duration_seconds, preset.chart_config.fps))
                     total = estimate_video_duration(
                         period_count=period_count,
                         steps_per_transition=preset.chart_config.steps_per_transition,

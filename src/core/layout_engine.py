@@ -90,8 +90,7 @@ class LayoutEngine:
             return []
 
         # ordenar SOLO para asignar ranking
-        sorted_bars = sorted(bars, key=self._sort_key)
-        visible_bars = self._visible_bars(sorted_bars)
+        visible_bars = self.select_visible_bars(bars)
 
         if not visible_bars:
             return []
@@ -143,6 +142,10 @@ class LayoutEngine:
             )
 
         return sprites
+
+    def select_visible_bars(self, bars):
+        """Effective endpoint ranking, shared with activity timing before raster layout."""
+        return self._visible_bars(sorted(bars, key=self._sort_key))
 
     def _visible_bars(self, sorted_bars):
         nonzero_bars = [bar for bar in sorted_bars if bar.value != 0]

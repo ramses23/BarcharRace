@@ -28,6 +28,59 @@ checkpoints; it does not rasterize earlier frames. The current pipeline is
 video-only, with no audio track to offset. Project schema v4 loads earlier
 projects as full video unless window fields are explicitly present.
 
+### Activity-weighted transition timing
+
+Export > Motion and duration > Transition duration mode offers **Uniform**
+(legacy default) and **Activity Weighted**. Existing schema-v4 projects without
+the new animation fields remain Uniform. Activity Weighted adds a minimum of
+0.5–2.0 seconds (default 1.0; UI step 0.1). Steps per transition becomes the
+average frame budget; FPS and total playback duration do not change.
+
+`core.transition_timing.TransitionTimingPlan` owns integer transition lengths,
+prefix offsets and O(log N) global-frame lookup. For N transitions and S Steps,
+the exact budget is N × S. Continuous motion retains its one additional initial
+frame (N × S + 1); per-period easing retains N × S frames. Continuous shared
+checkpoints belong to the preceding transition. Preview, partial render,
+estimator samples, calendar, Value Axis replay and editorial geometry use the
+same timing semantics. Short computes the same algorithm over its selected
+periods and effective visible endpoints. Rank duration remains a percentage
+of each allocated transition, with no change to MotionEngine/PCHIP.
+
+Activity uses the union of visible endpoint names after production selection,
+zero filtering and bar capacity. Missing members have effective value zero
+(the existing entry/exit animation contract) and rank K, below the K-member
+union. With ranks numbered from zero:
+
+- Value activity: changed effective values / K.
+- Magnitude: sum(abs(end − start)) / sum(abs(start) + abs(end)); zero if empty.
+- Rank activity: sum(abs(end_rank − start_rank)) / K².
+- Score: the equal-weight mean of these three components, each in [0, 1].
+
+The score is deterministic and independent of numeric units, FPS and Steps.
+The minimum uses decimal ceiling(seconds × FPS), never rounding below the
+requested minimum. Reserve that minimum for every transition, then distribute
+the remaining budget by score using exact rational Hamilton quotas and stable
+transition-index tie breaks. No frame is added or lost. Zero scores receive
+exactly the minimum when any score is positive; all-zero scores fall back to
+Uniform. A minimum above the average budget is rejected before output work,
+not silently clamped. Checkpoint values, equal-value plateaus and synthetic
+annual calendar semantics remain unchanged.
+
+The relative score intentionally gives substantial time to major changes in
+small early rankings. For the Marvel sentinel (1030 Steps, 60 FPS), 1999→2000
+gets 54.87 s despite only one changing value, because X-Men enters above Blade.
+No arbitrary maximum duration is imposed. The two static transitions together
+fall from 34.35 s to 2.02 s; time with 2+ changing values rises from 64.28% to
+77.38%. Total remains 28,841 frames / 480.683333 s. Final pacing is subject to
+user visual review.
+
+`scripts/validate_activity_timing.py --project PROJECT_JSON --project-root ROOT
+--output-dir EXTERNAL_DIR [--render]` reports every allocation, pacing buckets,
+plan/lookup timing and source-file hashes. `--render` creates an early-four-
+transition partial clip outside the repo without saving the source project.
+Preview and estimate caches include weighted timing settings; no benchmark is
+run automatically when changing them.
+
 ### Subpixel motion
 
 Rank movement duration accepts 10–100% (default 100%). It changes only the

@@ -74,6 +74,8 @@ def preview_fingerprint(project_data, preview_settings=None):
         "fun_facts": project_data.get("fun_facts"),
         "preview_settings": preview_settings or {},
     }
+    if (project_data.get("animation") or {}).get("transition_duration_mode") == "activity_weighted":
+        payload["export"] = project_data.get("export")
     return _payload_fingerprint(payload)
 
 
@@ -89,6 +91,10 @@ def auto_preview_fingerprint(project_data, preview_settings=None):
         "fun_facts": project_data.get("fun_facts"),
         "preview_settings": preview_settings or {},
     }
+    animation = project_data.get("animation") or {}
+    if animation.get("transition_duration_mode") == "activity_weighted":
+        payload["activity_timing"] = animation
+        payload["export"] = project_data.get("export")
     return _payload_fingerprint(payload)
 
 
@@ -96,6 +102,8 @@ def _filtered_chart(project_data, *, excluded_fields):
     chart = project_data.get("chart")
     if not isinstance(chart, dict):
         return chart
+    if (project_data.get("animation") or {}).get("transition_duration_mode") == "activity_weighted":
+        excluded_fields = excluded_fields - {"fps", "steps_per_transition"}
 
     return {
         key: value

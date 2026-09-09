@@ -290,6 +290,8 @@ def build_project_data(
     rank_label_gap=None,
     motion_mode=None,
     rank_movement_duration=1.0,
+    transition_duration_mode="uniform",
+    minimum_transition_duration_seconds=1.0,
     aggregate_other=False,
     category_styles=None,
     fun_facts=None,
@@ -510,6 +512,8 @@ def build_project_data(
     if motion_mode is not None:
         animation["motion_mode"] = motion_mode
     animation["rank_movement_duration"] = float(rank_movement_duration)
+    animation["transition_duration_mode"] = transition_duration_mode
+    animation["minimum_transition_duration_seconds"] = float(minimum_transition_duration_seconds)
     selection.update(
         {
             "top_n": top_n,
@@ -785,6 +789,8 @@ def project_form_values(project_data=None):
             for field in BAR_STYLE_FIELDS
         },
         "motion_mode": animation.get("motion_mode", "transition_easing"),
+        "transition_duration_mode": animation.get("transition_duration_mode", "uniform"),
+        "minimum_transition_duration_seconds": animation.get("minimum_transition_duration_seconds", 1.0),
         "rank_movement_duration": animation.get(
             "rank_movement_duration", 1.0
         ),

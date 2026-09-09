@@ -8,6 +8,7 @@ from core.layout_engine import LayoutEngine
 from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
 from core.timeline import Timeline
+from core.transition_timing import TransitionTimingPlan, build_transition_timing_plan, sample_timed_sprites
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
@@ -85,16 +86,13 @@ def render_project_preview(
     )
     chart_config = apply_export_profile(chart_config, preset.export_config)
     chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
-    calendar_resolver = _display_calendar_resolver(
-        timeline,
-        years,
-        chart_config,
-    )
     selector = BarSelector(config=chart_config.selection)
     layout = LayoutEngine(
         config=chart_config,
         fun_fact_config=fun_fact_config,
     )
+    timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
+    calendar_resolver = _display_calendar_resolver(timeline, years, chart_config, timing_plan)
     preview_mode = _preview_mode(preview_mode, years)
     if (
         fun_fact_scheduler is not None
@@ -117,12 +115,18 @@ def render_project_preview(
     if preview_mode == "transition":
         year_a, year_b = _selected_transition_years(year, years)
         progress = _clamped_progress(transition_progress)
+        transition_index = years.index(year_a)
+        if chart_config.animation.transition_duration_mode == "activity_weighted":
+            global_frame = timing_plan.frame_at_progress(transition_index, progress)
+            transition_index, _, progress = timing_plan.locate(global_frame)
+            year_a, year_b = years[transition_index:transition_index + 2]
         sprites = _transition_sprites(
             timeline=timeline,
             selector=selector,
             layout=layout,
             animation_config=chart_config.animation,
-            steps=chart_config.steps_per_transition,
+            steps=timing_plan.steps_per_transition[transition_index],
+            periods=years if chart_config.animation.transition_duration_mode == "activity_weighted" else None,
             year_a=year_a,
             year_b=year_b,
             progress=progress,
@@ -146,6 +150,7 @@ def render_project_preview(
             chart_config,
             years.index(year_a),
             progress,
+            timing_plan,
         )
     else:
         selected_year = _selected_year(year, years)
@@ -157,7 +162,12 @@ def render_project_preview(
             if fun_fact_scheduler is not None
             else None
         )
-        frame_index = years.index(selected_year) * chart_config.steps_per_transition
+        frame_index = timing_plan.prefix_offsets[years.index(selected_year)]
+        if chart_config.animation.transition_duration_mode == "activity_weighted":
+            frame_index = min(timing_plan.frame_count - 1, frame_index)
+            if timing_plan.steps_per_transition:
+                sprites = sample_timed_sprites(MotionEngine(chart_config.animation),
+                    tuple(_sprites_for_year(timeline, selector, layout, p) for p in years), timing_plan, frame_index)
 
     if force_fun_fact_id is not None:
         if fun_fact_scheduler is None:
@@ -241,7 +251,15 @@ def _project_root(root_dir):
     )
 
 
-def _display_calendar_resolver(timeline, periods, chart_config):
+def _preview_timing_plan(timeline, years, chart_config, selector, layout):
+    if chart_config.animation.transition_duration_mode == "uniform":
+        return TransitionTimingPlan((chart_config.steps_per_transition,) * max(0, len(years) - 1), chart_config.animation.continuous_motion)
+    return build_transition_timing_plan(chart_config, (
+        _sprites_for_year(timeline, selector, layout, year) for year in years
+    ))
+
+
+def _display_calendar_resolver(timeline, periods, chart_config, timing_plan=None):
     if chart_config.date_style != "flip_calendar":
         return None
     return DisplayCalendarResolver.from_timeline(
@@ -249,6 +267,7 @@ def _display_calendar_resolver(timeline, periods, chart_config):
         periods,
         steps_per_transition=chart_config.steps_per_transition,
         continuous_motion=chart_config.animation.continuous_motion,
+        timing_plan=timing_plan,
         flip_duration_frames=(
             chart_config.flip_calendar_flip_duration_frames
         ),
@@ -362,13 +381,14 @@ def _transition_sprites(
     year_a,
     year_b,
     progress,
+    periods=None,
 ):
     start_sprites = _sprites_for_year(timeline, selector, layout, year_a)
     end_sprites = _sprites_for_year(timeline, selector, layout, year_b)
     motion = MotionEngine(animation_config=animation_config)
 
     if animation_config.continuous_motion:
-        years = timeline.get_years()
+        years = list(periods) if periods is not None else timeline.get_years()
         start_index = years.index(year_a)
         previous_year = years[start_index - 1] if start_index > 0 else year_a
         next_year = (
@@ -395,7 +415,9 @@ def _transition_sprites(
     return frames[frame_index]
 
 
-def _transition_frame_index(chart_config, transition_index, progress):
+def _transition_frame_index(chart_config, transition_index, progress, timing_plan=None):
+    if timing_plan is not None:
+        return timing_plan.frame_at_progress(transition_index, _clamped_progress(progress))
     steps = max(1, int(chart_config.steps_per_transition))
     local_span = (
         steps

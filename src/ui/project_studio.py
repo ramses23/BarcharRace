@@ -54,6 +54,7 @@ from core.fun_fact_scheduler import FunFactScheduleError, FunFactScheduler
 from core.scene_geometry import build_scene_geometry
 from core.timeline import Timeline
 from studio.fun_fact_layout import (
+    apply_fun_fact_layout,
     DEFAULT_FLOATING_CARD_HEIGHT_RATIO,
     DEFAULT_FLOATING_CARD_WIDTH_RATIO,
     DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO,
@@ -66,7 +67,8 @@ from studio.package_paths import (
 )
 from studio.preview import render_project_preview
 from studio.layout_preview import build_studio_layout_preview
-from studio.short_export import resolve_export_output_path, resolve_export_periods
+from core.transition_timing import timing_plan_from_timeline, minimum_transition_frames
+from studio.short_export import resolve_export_output_path, resolve_export_periods, short_fun_fact_config
 from studio.project_bundle import (
     ProjectBundleError,
     build_project_bundle,
@@ -536,6 +538,23 @@ def _render_time_estimate_panel(draft, dataset, *, render_active):
                 continuous_motion=chart.animation.continuous_motion).frame_count
             start, end = resolve_render_window(total, preset.export_config)
             key = estimate_cache_key(preset, project_root)
+            if chart.animation.transition_duration_mode == "activity_weighted":
+                # Bounded per-session cache: no raster/layout work and no disk writes.
+                summary_key = key
+                cached = st.session_state.get("transition_timing_summary")
+                if cached is None or cached[0] != summary_key:
+                    plan_chart = apply_fun_fact_layout(chart, short_fun_fact_config(preset.fun_fact_config, preset.export_config))
+                    plan = timing_plan_from_timeline(plan_chart, Timeline(dataset, preset.dataset_config), periods)
+                    st.session_state["transition_timing_summary"] = (summary_key, plan)
+                else:
+                    plan = cached[1]
+                if plan.steps_per_transition:
+                    st.caption(
+                        f"Total duration: {total / chart.fps:.2f} s · Transitions: {len(plan.steps_per_transition)} · "
+                        f"Minimum transition: {chart.animation.minimum_transition_duration_seconds:.1f} s · "
+                        f"Shortest allocated: {min(plan.steps_per_transition) / chart.fps:.1f} s · "
+                        f"Longest allocated: {max(plan.steps_per_transition) / chart.fps:.1f} s"
+                    )
         except (ValueError, OSError, KeyError, TypeError) as exc:
             st.caption(f"Estimated render time unavailable: {exc}")
             return
@@ -1391,6 +1410,8 @@ def _project_form(
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
         rank_movement_duration=render_settings["rank_movement_duration"],
+        transition_duration_mode=render_settings.get("transition_duration_mode", "uniform"),
+        minimum_transition_duration_seconds=render_settings.get("minimum_transition_duration_seconds", 1.0),
         bar_style=bars_settings["bar_style"],
         title_font_family=canvas_settings["title_font_family"],
         subtitle_font_family=canvas_settings["subtitle_font_family"],
@@ -2901,6 +2922,8 @@ def _render_settings_from_values(
         ),
         "motion_mode": motion_mode,
         "rank_movement_duration": rank_movement_duration,
+        "transition_duration_mode": values.get("transition_duration_mode", "uniform"),
+        "minimum_transition_duration_seconds": values.get("minimum_transition_duration_seconds", 1.0),
         "frame_output_mode": frame_output_mode,
         "png_compress_level": _int_in_range_or_default(
             values.get("png_compress_level"),
@@ -4296,6 +4319,20 @@ def _animation_output_section(
         )
 
     st.markdown("##### Motion and duration")
+    transition_duration_mode = st.selectbox(
+        "Transition duration mode", options=("uniform", "activity_weighted"),
+        index=1 if values.get("transition_duration_mode") == "activity_weighted" else 0,
+        format_func=lambda mode: {"uniform": "Uniform", "activity_weighted": "Activity Weighted"}[mode],
+        key=_widget_key("transition_duration_mode"),
+    )
+    minimum_duration = float(values.get("minimum_transition_duration_seconds", 1.0))
+    if transition_duration_mode == "activity_weighted":
+        minimum_key = _widget_key("minimum_transition_duration_seconds")
+        _reconcile_numeric_widget_state(minimum_key, minimum_duration, minimum=0.5, maximum=2.0)
+        minimum_duration = st.number_input("Minimum transition duration", min_value=0.5,
+            max_value=2.0, step=0.1, format="%.1f", key=minimum_key, help="Seconds per transition, at minimum.")
+        st.caption("Redistributes the existing frame budget toward transitions with more value "
+                   "and ranking activity. Total video duration remains unchanged.")
     fps_column, steps_column, motion_column = st.columns(3)
 
     with fps_column:
@@ -4333,6 +4370,8 @@ def _animation_output_section(
             max_value=MAX_STEPS_PER_TRANSITION,
             step=1,
             key=steps_key,
+            help=("Average frame budget per transition. Total transition budget = transition count × Steps."
+                  if transition_duration_mode == "activity_weighted" else "Frames allocated to each transition."),
         )
 
     with motion_column:
@@ -4365,6 +4404,8 @@ def _animation_output_section(
         ),
         key=_widget_key("rank_movement_duration"),
     )
+    if transition_duration_mode == "activity_weighted" and minimum_transition_frames(minimum_duration, int(fps)) > steps:
+        st.error("Minimum transition duration exceeds the available frame budget. Increase Steps or reduce the minimum.")
 
     with st.container(border=True):
         selected_periods = resolve_export_periods(
@@ -4466,6 +4507,8 @@ def _animation_output_section(
         "steps": int(steps),
         "motion_mode": motion_mode,
         "rank_movement_duration": rank_movement_percent / 100.0,
+        "transition_duration_mode": transition_duration_mode,
+        "minimum_transition_duration_seconds": float(minimum_duration),
         "frame_output_mode": frame_output_mode,
         "png_compress_level": int(png_compress_level),
         "output_file": output_file,

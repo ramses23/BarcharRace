@@ -107,6 +107,7 @@ class DisplayCalendarResolver:
         steps_per_transition,
         continuous_motion=False,
         flip_duration_frames=4,
+        timing_plan=None,
     ):
         self.periods = tuple(periods)
         self.anchors = tuple(anchors)
@@ -124,6 +125,12 @@ class DisplayCalendarResolver:
             )
         self.steps_per_transition = max(1, int(steps_per_transition))
         self.continuous_motion = bool(continuous_motion)
+        self.timing_plan = timing_plan
+        if timing_plan is not None and (
+            len(timing_plan.steps_per_transition) != len(self.anchors) - 1
+            or timing_plan.continuous_motion != self.continuous_motion
+        ):
+            raise DisplayCalendarError("Timing plan must match calendar checkpoints and motion mode.")
         self.flip_duration_frames = max(1, min(
             12, int(flip_duration_frames)
         ))
@@ -141,6 +148,7 @@ class DisplayCalendarResolver:
         steps_per_transition,
         continuous_motion=False,
         flip_duration_frames=4,
+        timing_plan=None,
     ):
         periods = tuple(periods)
         granularity = getattr(timeline.config, "time_granularity", None)
@@ -157,6 +165,7 @@ class DisplayCalendarResolver:
             steps_per_transition=steps_per_transition,
             continuous_motion=continuous_motion,
             flip_duration_frames=flip_duration_frames,
+            timing_plan=timing_plan,
         )
 
     @property
@@ -186,6 +195,7 @@ class DisplayCalendarResolver:
         for index, (start, end) in enumerate(
             zip(self.anchors, self.anchors[1:])
         ):
+            steps = self.timing_plan.steps_per_transition[index] if self.timing_plan is not None else self.steps_per_transition
             if self.continuous_motion:
                 first_step = 0 if index == 0 else 1
                 sample_steps = range(first_step, steps + 1)
@@ -193,6 +203,8 @@ class DisplayCalendarResolver:
             else:
                 sample_steps = range(steps)
                 denominator = max(1, steps - 1)
+                if steps == 1 and self.timing_plan is not None and self.timing_plan.activities:
+                    sample_steps = (1,)  # Weighted one-frame transitions sample their endpoint.
             span = end - start
             frames.extend(
                 start + (span * (step / denominator))

@@ -15,6 +15,34 @@ from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_activity_weighted_controls_persist_and_summary_preserves_duration(self):
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Export")
+        self.assertFalse(app.exception)
+        control = next(x for x in app.selectbox if x.label == "Transition duration mode")
+        self.assertEqual(control.value, "uniform")
+        next(x for x in app.number_input if x.label == "Steps per transition").set_value(120)
+        control.set_value("activity_weighted")
+        app.run()
+        self.assertFalse(app.exception)
+        minimum = next(x for x in app.number_input if x.label == "Minimum transition duration")
+        self.assertEqual((minimum.min, minimum.max, minimum.step, minimum.value), (.5, 2., .1, 1.))
+        minimum.set_value(.5)
+        app.run()
+        for mode in ("short", "standard"):
+            next(x for x in app.selectbox if x.label == "Format").set_value(mode)
+            app.run()
+            self.assertFalse(app.exception)
+            animation = json.loads(app.json[0].value)["animation"]
+            self.assertEqual(animation["transition_duration_mode"], "activity_weighted")
+            self.assertEqual(animation["minimum_transition_duration_seconds"], .5)
+            self.assertTrue(any("Shortest allocated:" in x.value for x in app.caption))
+        next(x for x in app.number_input if x.label == "Steps per transition").set_value(1)
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any("frame budget" in x.value for x in app.error))
+
     def test_render_estimate_is_explicit_cached_and_stale_after_fps_change(self):
         from studio.render_estimator import RenderEstimate
         estimate = RenderEstimate(0, 100, tuple(range(16)), 2, .01, 1.2, .2, .3, (.01,) * 16)

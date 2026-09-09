@@ -5,10 +5,13 @@ from core.bar_selector import BarSelector
 from core.bar_value_scale import scale_bar_sprites
 from core.layout_engine import LayoutEngine
 from core.timeline import Timeline
+from core.motion_engine import MotionEngine
+from core.transition_timing import sample_timed_sprites
 from models.scene import Scene
 from studio.fun_fact_layout import apply_fun_fact_layout
 from studio.preview import (
     _preview_mode,
+    _preview_timing_plan,
     _preview_value_scales,
     _display_calendar_resolver,
     _selected_transition_years,
@@ -53,27 +56,30 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
         apply_export_profile(raw_chart_config, preset.export_config),
         effective_fun_fact_config,
     )
-    calendar_resolver = _display_calendar_resolver(
-        timeline,
-        years,
-        chart_config,
-    )
     selector = BarSelector(config=chart_config.selection)
     layout = LayoutEngine(
         config=chart_config,
         fun_fact_config=effective_fun_fact_config,
     )
+    timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
+    calendar_resolver = _display_calendar_resolver(timeline, years, chart_config, timing_plan)
     mode = _preview_mode(preview_settings.get("preview_mode", "year"), years)
     year = preview_settings.get("year")
     if mode == "transition":
         year_a, year_b = _selected_transition_years(year, years)
         progress = min(1.0, max(0.0, float(preview_settings.get("transition_progress", 0.5))))
+        transition_index = years.index(year_a)
+        if chart_config.animation.transition_duration_mode == "activity_weighted":
+            global_frame = timing_plan.frame_at_progress(transition_index, progress)
+            transition_index, _, progress = timing_plan.locate(global_frame)
+            year_a, year_b = years[transition_index:transition_index + 2]
         sprites = _transition_sprites(
             timeline=timeline,
             selector=selector,
             layout=layout,
             animation_config=chart_config.animation,
-            steps=chart_config.steps_per_transition,
+            steps=timing_plan.steps_per_transition[transition_index],
+            periods=years if chart_config.animation.transition_duration_mode == "activity_weighted" else None,
             year_a=year_a,
             year_b=year_b,
             progress=progress,
@@ -84,13 +90,19 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
             chart_config,
             years.index(year_a),
             progress,
+            timing_plan,
         )
     else:
         selected_year = _selected_year(year, years)
         sprites = _sprites_for_year(timeline, selector, layout, selected_year)
         subtitle = timeline.get_time_label(selected_year)
         time_label = subtitle
-        frame_index = years.index(selected_year) * chart_config.steps_per_transition
+        frame_index = timing_plan.prefix_offsets[years.index(selected_year)]
+        if chart_config.animation.transition_duration_mode == "activity_weighted":
+            frame_index = min(timing_plan.frame_count - 1, frame_index)
+            if timing_plan.steps_per_transition:
+                sprites = sample_timed_sprites(MotionEngine(chart_config.animation),
+                    tuple(_sprites_for_year(timeline, selector, layout, p) for p in years), timing_plan, frame_index)
 
     bar_value_scale, value_axis = _preview_value_scales(
         timeline=timeline,
