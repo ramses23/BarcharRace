@@ -76,6 +76,7 @@ class EditorialSmartPlacementTest(unittest.TestCase):
         )
         self.fact = FunFact("card", "1", "3", "Headline")
         self.scheduler_stub = SimpleNamespace(
+            display_end_index=lambda resolved: resolved.end_index + 1.0,
             facts=(SimpleNamespace(
                 fact=self.fact,
                 start_index=0,

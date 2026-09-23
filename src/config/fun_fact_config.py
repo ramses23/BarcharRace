@@ -19,6 +19,7 @@ class FunFactConfig:
     panel_padding: int = 28
     fade_in: float = 0.20
     fade_out: float = 0.20
+    minimum_duration_seconds: float = 6.0
     editorial_background_mode: str = "card"
     editorial_background_color: str | None = None
     editorial_background_texture: str = "none"

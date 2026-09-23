@@ -1,3 +1,6 @@
+from bisect import bisect_right
+from math import ceil, isfinite
+
 from models.fun_fact import ActiveFunFact, FunFactCollection, ResolvedFunFact
 
 
@@ -21,6 +24,68 @@ class FunFactScheduler:
         self.facts = self._resolve(collection)
         self._facts_by_id = {resolved.fact.id: resolved for resolved in self.facts}
         self._placement_resolver = None
+        self._frame_windows = None
+        self._display_ends = {}
+
+    def configure_timing(self, periods, plan, fps, *, minimum_seconds=6.0):
+        """Extend editorial windows in video time, stopping before the next card.
+
+        Pure global-frame lookup: seeking and partial renders need no history.
+        Facts entirely outside an exported period range are not carried into it.
+        """
+        if not isfinite(fps) or fps <= 0 or not isfinite(minimum_seconds) or minimum_seconds < 0:
+            raise ValueError("Fun fact timing requires positive FPS and a finite nonnegative minimum.")
+        indices = tuple(self.timeline.get_period_index(p) for p in periods)
+        if len(indices) != len(plan.prefix_offsets) or not indices:
+            raise ValueError("Fun fact periods must match the timing plan.")
+        self._timing_indices = indices
+        self._timing_plan = plan
+        minimum_frames = ceil(minimum_seconds * fps)
+        eligible = [r for r in self.facts
+                    if r.end_index >= indices[0] and r.start_index <= indices[-1]]
+        windows = []
+        self._display_ends = {}
+        for i, resolved in enumerate(eligible):
+            start = self._frame_for_position(resolved.start_index)
+            original_end = self._frame_for_position(resolved.end_index + 1)
+            next_start = (self._frame_for_position(eligible[i + 1].start_index)
+                          if i + 1 < len(eligible) else plan.frame_count)
+            end = min(plan.frame_count, next_start, max(original_end, start + minimum_frames))
+            windows.append((resolved, start, end))
+            if end >= plan.frame_count:
+                end_position = indices[-1] + 1.0
+            else:
+                index, _, progress = plan.locate(max(0, int(end)))
+                end_position = indices[index] + (indices[index + 1] - indices[index]) * progress
+            self._display_ends[resolved.fact.id] = end_position
+        self._frame_windows = tuple(windows)
+
+    def _frame_for_position(self, position):
+        indices, plan = self._timing_indices, self._timing_plan
+        if position < indices[0]:
+            return 0
+        if position > indices[-1]:
+            return plan.frame_count
+        if position in indices:
+            index = indices.index(position)
+            return max(0, min(plan.frame_count - 1, plan.prefix_offsets[index]
+                              - int(index > 0 and not plan.continuous_motion)))
+        index = max(0, bisect_right(indices, position) - 1)
+        progress = (position - indices[index]) / (indices[index + 1] - indices[index])
+        return plan.frame_at_progress(index, progress)
+
+    def display_end_index(self, resolved):
+        """Exclusive display end for smart-placement collision sampling."""
+        return self._display_ends.get(resolved.fact.id, resolved.end_index + 1.0)
+
+    def active_at_frame(self, frame_index):
+        if self._frame_windows is None:
+            raise ValueError("Configure fun fact timing before looking up frames.")
+        for resolved, start, end in self._frame_windows:
+            if start <= frame_index < end:
+                opacity = self._normalized_opacity((frame_index - start) / max(1, end - start))
+                return self._active(resolved.fact, opacity) if opacity > 0 else None
+        return None
 
     def set_placement_resolver(self, resolver):
         """Attach an immutable precomputed lookup; no frame history is used."""
@@ -32,6 +97,8 @@ class FunFactScheduler:
             period_b=period_b,
             progress=progress,
         )
+        if self._frame_windows is not None:
+            return self.active_at_frame(self._frame_for_position(position))
         for resolved in self.facts:
             end_exclusive = resolved.end_index + 1.0
             if resolved.start_index <= position < end_exclusive:
@@ -116,6 +183,9 @@ class FunFactScheduler:
     def _opacity(self, resolved, position):
         duration = resolved.end_index - resolved.start_index + 1.0
         normalized = (position - resolved.start_index) / duration
+        return self._normalized_opacity(normalized)
+
+    def _normalized_opacity(self, normalized):
         normalized = max(0.0, min(1.0, normalized))
         opacity = 1.0
         if self.fade_in > 0 and normalized < self.fade_in:

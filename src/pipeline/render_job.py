@@ -8,16 +8,20 @@ from config.export_config import ExportConfig
 from config.fun_fact_config import FunFactConfig
 from core.bar_selector import BarSelector
 from core.bar_value_scale import BarValueScaleResolver, scale_bar_sprites
+from core.value_axis import align_axis_to_bar_scale
 from core.display_calendar import DisplayCalendarResolver
 from core.layout_engine import LayoutEngine
 from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
+from core.opening_intro import opening_intro_frames, opening_intro_bars
+from core.review_render import review_frame_plan, review_renderer_config, review_output_size
+from renderer.review_renderer import DraftReviewRenderer
 from core.timeline import Timeline
 from core.transition_timing import build_transition_timing_plan, sample_timed_sprites
 from core.value_axis import ValueAxisTracker
 from studio.value_axis_preview import get_value_axis_preview_resolver
 from utils.render_window import resolve_render_window
-from utils.video_duration import estimate_video_duration
+from utils.video_duration import estimate_video_duration, final_frame_hold_frames
 from exporters.video_exporter import VideoExporter
 from importers.data_source_loader import DataSourceLoader
 from models.scene import Scene
@@ -112,6 +116,7 @@ class RenderJob:
         The consumer owns timing/warm-up and receives the production scene.
         """
         sampling = frame_sampler is not None
+        review = self.export_config.is_review
         if sampling != (frame_consumer is not None):
             raise ValueError("Sampling requires both a frame sampler and consumer.")
         if self.config.frame_output_mode not in ("png_sequence", "ffmpeg_stream"):
@@ -138,7 +143,8 @@ class RenderJob:
         timeline = self._measure_stage(
             timings,
             "build_timeline",
-            lambda: Timeline(dataframe, config=self.dataset_config),
+            lambda: Timeline(dataframe, config=self.dataset_config,
+                             include_missing_categories=self.config.bar_visibility_mode == "all"),
         )
         years = resolve_export_periods(
             timeline.get_years(),
@@ -158,7 +164,7 @@ class RenderJob:
             project_root=self.project_root,
         )
         chart_config = apply_export_profile(self.config, self.export_config)
-        if not self.output_file_is_effective:
+        if not self.output_file_is_effective or review:
             chart_config = replace(
                 chart_config,
                 output_file=str(resolve_export_output_path(
@@ -175,20 +181,39 @@ class RenderJob:
             lambda: self._build_sprites_by_year(timeline, years, selector, layout),
         )
         timing_plan = build_transition_timing_plan(chart_config, sprites_by_year.values())
+        if fun_fact_scheduler is not None:
+            fun_fact_scheduler.configure_timing(years, timing_plan, chart_config.fps,
+                                                minimum_seconds=fun_fact_config.minimum_duration_seconds)
         sprite_sets = tuple(sprites_by_year.values())
+        intro_frames = opening_intro_frames(chart_config)
+        hold_frames = final_frame_hold_frames(
+            self.export_config.final_frame_hold_seconds, chart_config.fps)
+        source_frame_count = timing_plan.frame_count + intro_frames
         full_frame_count = estimate_video_duration(
             period_count=len(years),
             steps_per_transition=chart_config.steps_per_transition,
             fps=chart_config.fps,
             continuous_motion=chart_config.animation.continuous_motion,
+            intro_frames=intro_frames,
+            final_frame_hold_frames=hold_frames,
         ).frame_count
         start_frame, end_frame = resolve_render_window(full_frame_count, self.export_config)
         sampled_ids = tuple(frame_sampler(start_frame, end_frame)) if sampling else ()
+        review_fps = chart_config.fps
+        if review:
+            review_ids, review_fps = review_frame_plan(start_frame, end_frame, chart_config.fps,
+                                                      self.export_config.review_mode)
+            if not sampling:
+                sampled_ids = review_ids
         if sampling and (not sampled_ids or len(sampled_ids) > 20 or
                 tuple(sorted(set(sampled_ids))) != sampled_ids or
                 any(type(f) is not int or not start_frame <= f < end_frame for f in sampled_ids)):
             raise ValueError("Samples must be 1–20 unique sorted global frames inside the render window.")
-        custom_window = sampling or start_frame != 0 or end_frame != full_frame_count
+        custom_window = sampling or review or start_frame != 0 or end_frame != full_frame_count
+        # Internal race frames stay unchanged. Negative frames own the intro.
+        start_frame -= intro_frames
+        end_frame -= intro_frames
+        sampled_ids = tuple(f - intro_frames for f in sampled_ids)
         calendar_resolver = (
             DisplayCalendarResolver.from_timeline(
                 timeline,
@@ -204,13 +229,19 @@ class RenderJob:
             else None
         )
         motion = MotionEngine(animation_config=chart_config.animation)
-        renderer = BarRenderer(
-            output_dir=None if sampling else chart_config.frames_dir,
-            config=chart_config,
+        renderer_class = DraftReviewRenderer if review and self.export_config.review_detail == "draft" else BarRenderer
+        renderer = renderer_class(
+            output_dir=None if sampling or review else chart_config.frames_dir,
+            config=review_renderer_config(chart_config, self.export_config.review_detail) if review else chart_config,
             fun_fact_config=fun_fact_config,
         )
         exporter = None if sampling else VideoExporter(config=chart_config, threads=self.cpu_limiter.ffmpeg_threads)
-        stream_mode = not sampling and chart_config.frame_output_mode == "ffmpeg_stream"
+        if review and not sampling:
+            exporter = VideoExporter(config=replace(chart_config, video_codec="libx264",
+                ffmpeg_preset="ultrafast", video_crf=28, video_bitrate=None,
+                video_pixel_format="yuv420p"), fps=review_fps,
+                output_size=review_output_size(chart_config), threads=self.cpu_limiter.ffmpeg_threads)
+        stream_mode = not sampling and (review or chart_config.frame_output_mode == "ffmpeg_stream")
 
         if stream_mode or sampling:
             timings["cleanup"] = 0.0
@@ -255,7 +286,7 @@ class RenderJob:
 
         frame_id = 0
         transitions_rendered = 0
-        total_frame_count = len(sampled_ids) if sampling else end_frame - start_frame
+        total_frame_count = len(sampled_ids) if sampling or review else end_frame - start_frame
 
         render_started_at = perf_counter()
         self._emit_progress(
@@ -268,20 +299,32 @@ class RenderJob:
         stream_process = exporter.open_stream() if stream_mode else None
 
         try:
-            for i in range(len(years) - 1):
-                steps = timing_plan.steps_per_transition[i]
-                continuous = chart_config.animation.continuous_motion
-                transition_start, transition_end = timing_plan.frame_bounds(i)
+            frozen_scene = None
+            frozen_pixels = None
+            for i in range(-int(intro_frames > 0), len(years) - 1):
+                is_intro = i < 0
+                last_transition = i == len(years) - 2
+                steps = intro_frames if is_intro else timing_plan.steps_per_transition[i]
+                continuous = chart_config.animation.continuous_motion and not is_intro
+                transition_start, transition_end = ((-intro_frames, 0) if is_intro else timing_plan.frame_bounds(i))
+                if last_transition:
+                    transition_end += hold_frames
                 transition_length = transition_end - transition_start
                 first_step = max(0, start_frame - transition_start)
                 last_step = min(transition_length, end_frame - transition_start)
                 selected_steps = ([f - transition_start for f in sampled_ids
                     if transition_start + first_step <= f < transition_start + last_step]
-                    if sampling else range(first_step, last_step))
+                    if sampling or review else range(first_step, last_step))
+                selected_steps = list(selected_steps)
+                anchor_step = timing_plan.frame_count - 1 - transition_start
+                anchor_only = bool(last_transition and any(step > anchor_step for step in selected_steps)
+                                   and anchor_step not in selected_steps)
+                if anchor_only:
+                    selected_steps.insert(0, anchor_step)
                 if not selected_steps:
                     continue
-                year_a = years[i]
-                year_b = years[i + 1]
+                year_a = years[max(0, i)]
+                year_b = years[max(0, i + 1)]
 
                 if not sampling:
                     print(f"Transicion {year_a} -> {year_b}")
@@ -289,12 +332,15 @@ class RenderJob:
                 start_sprites = sprites_by_year[year_a]
                 end_sprites = sprites_by_year[year_b]
 
-                if custom_window:
+                if is_intro:
+                    frames = [start_sprites] * len(selected_steps)
+                elif custom_window or (last_transition and hold_frames):
                     include_start = not continuous or i == 0
                     frames = []
                     for selected_step in selected_steps:
                         frames.append(sample_timed_sprites(
-                            motion, sprite_sets, timing_plan, transition_start + selected_step))
+                            motion, sprite_sets, timing_plan,
+                            min(timing_plan.frame_count - 1, transition_start + selected_step)))
                 elif chart_config.animation.continuous_motion:
                     previous_year = years[i - 1] if i > 0 else year_a
                     next_year = years[i + 2] if i + 2 < len(years) else year_b
@@ -318,7 +364,20 @@ class RenderJob:
                 for step_index, frame_sprites in zip(selected_steps, frames):
                     global_frame = transition_start + step_index
                     self.cpu_limiter.checkpoint()
-                    if chart_config.animation.continuous_motion:
+                    if global_frame >= timing_plan.frame_count:
+                        if sampling:
+                            frame_consumer(frozen_scene, renderer)
+                        elif stream_mode:
+                            stream_process.stdin.write(frozen_pixels)
+                        else:
+                            renderer.render(frozen_scene,
+                                            filename=chart_config.frame_filename(frame_id))
+                        frame_id += 1
+                        self._emit_render_frame_progress(frame_id, total_frame_count)
+                        continue
+                    if is_intro:
+                        progress = 0.0
+                    elif chart_config.animation.continuous_motion:
                         progress = timing_plan.progress(i, step_index)
                     else:
                         progress = None
@@ -326,17 +385,20 @@ class RenderJob:
                     value_axis = None
                     if value_axis_tracker is not None:
                         value_axis = (
-                            axis_resolver.state_at(global_frame) if axis_resolver is not None
+                            axis_resolver.state_at(max(0, global_frame)) if axis_resolver is not None
                             else value_axis_tracker.next(frame_sprites)
                         )
                     bar_value_scale = bar_scale_resolver.for_sprites(
                         frame_sprites,
-                        frame_index=global_frame,
+                        frame_index=max(0, global_frame),
                     )
                     frame_sprites = scale_bar_sprites(
                         frame_sprites,
                         bar_value_scale,
+                        chart_config,
                     )
+                    if is_intro:
+                        frame_sprites = opening_intro_bars(frame_sprites, step_index / intro_frames)
 
                     scene = self._build_scene(
                         year_a=year_a,
@@ -348,25 +410,36 @@ class RenderJob:
                         timeline=timeline,
                         fun_fact_scheduler=fun_fact_scheduler,
                     )
-                    scene.frame_index = global_frame
+                    scene.frame_index = global_frame + intro_frames
+                    if fun_fact_scheduler is not None:
+                        scene.fun_fact = None if is_intro else fun_fact_scheduler.active_at_frame(global_frame)
                     scene.display_calendar = (
-                        calendar_resolver.state_at(global_frame)
+                        calendar_resolver.state_at(max(0, global_frame))
                         if calendar_resolver is not None
                         else None
                     )
-                    scene.value_axis = value_axis
+                    scene.value_axis = align_axis_to_bar_scale(value_axis, bar_value_scale, chart_config)
                     scene.bar_value_scale = bar_value_scale
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
-                        frame_index=global_frame,
-                        total_frames=full_frame_count,
+                        frame_index=scene.frame_index,
+                        total_frames=source_frame_count,
                         fps=chart_config.fps,
                     )
+                    if last_transition and global_frame == timing_plan.frame_count - 1:
+                        frozen_scene = scene
+                        if anchor_only:
+                            if stream_mode:
+                                frozen_pixels = renderer.render_rgba(scene)
+                            continue
 
                     if sampling:
                         frame_consumer(scene, renderer)
                     elif stream_mode:
-                        stream_process.stdin.write(renderer.render_rgba(scene))
+                        pixels = renderer.render_rgba(scene)
+                        stream_process.stdin.write(pixels)
+                        if last_transition and global_frame == timing_plan.frame_count - 1:
+                            frozen_pixels = pixels
                     else:
                         renderer.render(
                             scene,
@@ -376,7 +449,7 @@ class RenderJob:
                     frame_id += 1
                     self._emit_render_frame_progress(frame_id, total_frame_count)
 
-                transitions_rendered += 1
+                transitions_rendered += int(not is_intro)
         except Exception:
             if stream_process is not None:
                 exporter.abort_stream(stream_process)

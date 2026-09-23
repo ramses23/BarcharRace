@@ -31,6 +31,13 @@ class SubpixelGradientCollection(PolyCollection):
                            .scale(cols / width, rows / height).translate(1, 1))
         # The original axes clip is in global pixels, not in this local buffer.
         clip_box, clip_path, clip_on = self.get_clip_box(), self.get_clip_path(), self.get_clip_on()
+        colors = self.get_facecolors().copy()
+        opacity = 1.0
+        if len(colors) and np.allclose(colors[:, 3], colors[0, 3]):
+            opacity = float(colors[0, 3])
+            opaque_colors = colors.copy()
+            opaque_colors[:, 3] = 1.0
+            self.set_facecolors(opaque_colors)
         try:
             self.set_transform(local_transform)
             self.set_clip_on(False)
@@ -40,8 +47,11 @@ class SubpixelGradientCollection(PolyCollection):
             self.set_clip_box(clip_box)
             self.set_clip_path(clip_path)
             self.set_clip_on(clip_on)
+            self.set_facecolors(colors)
         sx, sy = width / cols, height / rows
-        command = FloatImageCommand(np.asarray(local.buffer_rgba())[::-1],
+        pixels = np.array(local.buffer_rgba(), copy=True)[::-1]
+        pixels[:, :, 3] = np.rint(pixels[:, :, 3] * opacity).astype(np.uint8)
+        command = FloatImageCommand(pixels,
             low[0] - sx, renderer.height - high[1] - sy, sx, sy)
         pixels, left, top = rasterize_image_command(command)
         gc = renderer.new_gc()

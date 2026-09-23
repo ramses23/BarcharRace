@@ -7,6 +7,8 @@ from core.display_calendar import DisplayCalendarResolver
 from core.layout_engine import LayoutEngine
 from core.editorial_placement import build_smart_editorial_placement_resolver
 from core.motion_engine import MotionEngine
+from core.opening_intro import opening_intro_frames, opening_intro_bars
+from core.value_axis import align_axis_to_bar_scale
 from core.timeline import Timeline
 from core.transition_timing import TransitionTimingPlan, build_transition_timing_plan, sample_timed_sprites
 from importers.data_source_loader import DataSourceLoader
@@ -66,7 +68,8 @@ def render_project_preview(
 
     dataframe = DataSourceLoader(data_source_config).load()
     dataframe = DatasetValidator(config=dataset_config).validate(dataframe)
-    timeline = Timeline(dataframe, config=dataset_config)
+    timeline = Timeline(dataframe, config=dataset_config,
+                        include_missing_categories=chart_config.bar_visibility_mode == "all")
     years = resolve_export_periods(
         timeline.get_years(),
         preset.export_config,
@@ -92,8 +95,14 @@ def render_project_preview(
         fun_fact_config=fun_fact_config,
     )
     timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
+    if fun_fact_scheduler is not None:
+        fun_fact_scheduler.configure_timing(years, timing_plan, chart_config.fps,
+                                            minimum_seconds=fun_fact_config.minimum_duration_seconds)
     calendar_resolver = _display_calendar_resolver(timeline, years, chart_config, timing_plan)
     preview_mode = _preview_mode(preview_mode, years)
+    intro_frames = opening_intro_frames(chart_config)
+    if preview_mode == "intro":
+        year = years[0]
     if (
         fun_fact_scheduler is not None
         and fun_fact_config.editorial_placement_mode == "smart"
@@ -169,6 +178,9 @@ def render_project_preview(
                 sprites = sample_timed_sprites(MotionEngine(chart_config.animation),
                     tuple(_sprites_for_year(timeline, selector, layout, p) for p in years), timing_plan, frame_index)
 
+    if fun_fact_scheduler is not None and preview_mode == "transition":
+        active_fact = fun_fact_scheduler.active_at_frame(frame_index)
+
     if force_fun_fact_id is not None:
         if fun_fact_scheduler is None:
             if not (
@@ -188,7 +200,12 @@ def render_project_preview(
         target_frame_index=frame_index,
         target_sprites=sprites,
     )
-    sprites = scale_bar_sprites(sprites, bar_value_scale)
+    sprites = scale_bar_sprites(sprites, bar_value_scale, chart_config)
+    output_frame_index = frame_index + intro_frames
+    if preview_mode == "intro" and intro_frames:
+        output_frame_index = round(_clamped_progress(transition_progress) * intro_frames)
+        sprites = opening_intro_bars(sprites, output_frame_index / intro_frames)
+        active_fact = None
 
     scene = Scene(
         title=chart_config.title,
@@ -202,7 +219,7 @@ def render_project_preview(
         source_label=source_label,
         bars=sprites,
         fun_fact=active_fact,
-        frame_index=frame_index,
+        frame_index=output_frame_index,
         value_axis=value_axis,
         bar_value_scale=bar_value_scale,
     )
@@ -213,7 +230,7 @@ def render_project_preview(
     )
     scene.short_overlay = short_overlay_for_frame(
         preset.export_config,
-        frame_index=min(frame_index, max(0, duration.frame_count - 1)),
+        frame_index=min(output_frame_index, max(0, duration.frame_count - 1)),
         total_frames=duration.frame_count,
         fps=chart_config.fps,
     )
@@ -366,6 +383,8 @@ def _selected_transition_years(year, years):
 
 
 def _preview_mode(preview_mode, years):
+    if preview_mode == "intro" and len(years) > 1:
+        return "intro"
     if preview_mode == "transition" and len(years) > 1:
         return "transition"
 
@@ -462,7 +481,8 @@ def _preview_value_scales(
         chart_config,
         bundle.sprite_sets,
     ).for_sprites(target_sprites, frame_index=target_frame_index)
-    return bar_value_scale, bundle.resolver.state_at(target_frame_index)
+    return bar_value_scale, align_axis_to_bar_scale(
+        bundle.resolver.state_at(target_frame_index), bar_value_scale, chart_config)
 
 
 def _sprites_for_year(timeline, selector, layout, year):

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import isfinite
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,8 @@ def estimate_video_duration(
     steps_per_transition,
     fps,
     continuous_motion=False,
+    intro_frames=0,
+    final_frame_hold_frames=0,
 ):
     periods = _non_negative_int(period_count)
     steps = max(1, _non_negative_int(steps_per_transition))
@@ -25,6 +28,9 @@ def estimate_video_duration(
 
     if continuous_motion and transitions > 0:
         frame_count += 1
+    if transitions > 0:
+        frame_count += max(0, int(intro_frames))
+        frame_count += max(0, int(final_frame_hold_frames))
 
     return VideoDurationEstimate(
         period_count=periods,
@@ -33,6 +39,13 @@ def estimate_video_duration(
         fps=frames_per_second,
         duration_seconds=frame_count / frames_per_second,
     )
+
+
+def final_frame_hold_frames(seconds, fps):
+    """Extra copies; the race's existing last frame is the first held frame."""
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not isfinite(seconds) or not 0 <= seconds <= 60:
+        raise ValueError("Final frame hold must be from 0 to 60 seconds.")
+    return max(0, round(seconds * fps) - 1) if seconds else 0
 
 
 def format_video_duration(seconds):

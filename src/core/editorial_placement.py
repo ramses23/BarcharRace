@@ -186,7 +186,7 @@ class SmartEditorialPlacementResolver:
                 for index, geometry in sorted(geometry_by_timeline_index.items())
                 if resolved.start_index - 1
                 <= _timeline_position(index)
-                <= resolved.end_index + 1
+                <= scheduler.display_end_index(resolved)
             ]
             if not window:
                 continue
@@ -529,7 +529,7 @@ def _smart_geometry_fingerprint(
         (
             str(resolved.fact.id),
             float(resolved.start_index),
-            float(resolved.end_index),
+            float(scheduler.display_end_index(resolved)),
         )
         for resolved in scheduler.facts
     ]
@@ -634,7 +634,7 @@ def _stream_smart_editorial_placement(
         active_ids = [
             str(resolved.fact.id)
             for resolved in scheduler.facts
-            if resolved.start_index - 1 <= position <= resolved.end_index + 1
+            if resolved.start_index - 1 <= position <= scheduler.display_end_index(resolved)
         ]
         for fact_id in active_ids:
             frames_by_card[fact_id] += 1
@@ -806,7 +806,7 @@ def _iter_effective_smart_geometry(
                 if calendar_resolver is not None else None
             ),
             source_label=source_label,
-            bars=scale_bar_sprites(sprites, scale),
+            bars=scale_bar_sprites(sprites, scale, chart_config),
             frame_index=0,
             bar_value_scale=scale,
         )
@@ -827,7 +827,7 @@ def _iter_effective_smart_geometry(
         transition_end = scheduler.timeline.get_period_index(period_b)
         if not any(
             resolved.start_index - 1 <= transition_end
-            and resolved.end_index + 1 >= transition_start
+            and scheduler.display_end_index(resolved) >= transition_start
             for resolved in scheduler.facts
         ):
             frame_id += (
@@ -886,7 +886,7 @@ def _iter_effective_smart_geometry(
                     if calendar_resolver is not None else None
                 ),
                 source_label=source_label,
-                bars=scale_bar_sprites(sprites, scale),
+                bars=scale_bar_sprites(sprites, scale, chart_config),
                 frame_index=frame_id,
                 bar_value_scale=scale,
             )
@@ -1064,7 +1064,7 @@ def _effective_frame_geometry(
                 else None
             ),
             source_label=source_label,
-            bars=scale_bar_sprites(sprites, scale),
+            bars=scale_bar_sprites(sprites, scale, chart_config),
             frame_index=0,
             bar_value_scale=scale,
         )
@@ -1125,7 +1125,7 @@ def _effective_frame_geometry(
                 sprites,
                 frame_index=frame_id,
             )
-            scaled = scale_bar_sprites(sprites, scale)
+            scaled = scale_bar_sprites(sprites, scale, chart_config)
             display_period = period_a + ((period_b - period_a) * progress)
             scene = Scene(
                 title=chart_config.title,
@@ -1161,7 +1161,7 @@ def _timeline_position(index):
 
 def _is_relevant_timeline_position(scheduler, position):
     return any(
-        resolved.start_index - 1 <= position <= resolved.end_index + 1
+        resolved.start_index - 1 <= position <= scheduler.display_end_index(resolved)
         for resolved in scheduler.facts
     )
 

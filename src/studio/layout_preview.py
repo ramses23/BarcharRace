@@ -39,7 +39,8 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
     """Build the selected Studio frame without rendering or resolving assets."""
     preview_settings = preview_settings if isinstance(preview_settings, dict) else {}
     preset = load_project_data(project_data, default_name="studio-layout-preview")
-    timeline = Timeline(dataframe, config=preset.dataset_config)
+    timeline = Timeline(dataframe, config=preset.dataset_config,
+                        include_missing_categories=preset.chart_config.bar_visibility_mode == "all")
     years = resolve_export_periods(
         timeline.get_years(),
         preset.export_config,
@@ -64,7 +65,11 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
     timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
     calendar_resolver = _display_calendar_resolver(timeline, years, chart_config, timing_plan)
     mode = _preview_mode(preview_settings.get("preview_mode", "year"), years)
+    from core.opening_intro import opening_intro_frames, opening_intro_bars
+    intro_frames = opening_intro_frames(chart_config)
     year = preview_settings.get("year")
+    if mode == "intro":
+        year = years[0]
     if mode == "transition":
         year_a, year_b = _selected_transition_years(year, years)
         progress = min(1.0, max(0.0, float(preview_settings.get("transition_progress", 0.5))))
@@ -113,7 +118,12 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
         target_frame_index=frame_index,
         target_sprites=sprites,
     )
-    sprites = scale_bar_sprites(sprites, bar_value_scale)
+    sprites = scale_bar_sprites(sprites, bar_value_scale, chart_config)
+    output_frame_index = frame_index + intro_frames
+    if mode == "intro" and intro_frames:
+        progress = min(1.0, max(0.0, float(preview_settings.get("transition_progress", 0))))
+        output_frame_index = round(progress * intro_frames)
+        sprites = opening_intro_bars(sprites, output_frame_index / intro_frames)
 
     return StudioLayoutPreview(
         chart_config=chart_config,
@@ -130,7 +140,7 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
             ),
             source_label=preset.data_source_config.source_label,
             bars=sprites,
-            frame_index=frame_index,
+            frame_index=output_frame_index,
             value_axis=value_axis,
             bar_value_scale=bar_value_scale,
         ),

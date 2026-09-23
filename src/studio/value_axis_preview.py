@@ -444,7 +444,8 @@ def preview_value_axis_source_fingerprint(
         dataset.value_column,
     )
     relevant = timeline.df.loc[
-        timeline.df[dataset.year_column].isin(years),
+        (timeline.df[dataset.year_column].notna() if chart_config.bar_visibility_mode == "all"
+         else timeline.df[dataset.year_column].isin(years)),
         list(columns),
     ].sort_values(list(columns), kind="mergesort")
     row_hashes = hash_pandas_object(
@@ -510,6 +511,7 @@ def _axis_settings_fingerprint(chart_config):
     value_format = chart_config.value_format
     return (
         chart_config.value_grid_mode,
+        chart_config.bar_visibility_mode,
         int(chart_config.steps_per_transition),
         animation.transition_duration_mode,
         float(animation.minimum_transition_duration_seconds),
@@ -607,7 +609,9 @@ def _effective_visible_counts(
         period = relevant.loc[
             relevant[dataset_config.year_column] == year
         ]
-        count = int((period[dataset_config.value_column] != 0).sum())
+        count = (int(relevant[dataset_config.name_column].nunique())
+                 if chart_config.bar_visibility_mode == "all"
+                 else int((period[dataset_config.value_column] != 0).sum()))
         top_n = selector.config.top_n
         if top_n is not None and count > top_n:
             count = top_n + (1 if selector.config.aggregate_other else 0)

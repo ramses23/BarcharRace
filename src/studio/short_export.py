@@ -7,7 +7,7 @@ from config.layout_config import apply_layout_preset
 from core.rank_motion import RANK_MOTION_HEIGHT_EMPHASIS
 from core.display_calendar import flip_calendar_dimensions
 from models.scene import ShortOverlay
-from utils.video_duration import estimate_video_duration
+from utils.video_duration import estimate_video_duration, final_frame_hold_frames
 
 
 SHORT_WIDTH = 1080
@@ -18,6 +18,9 @@ SHORT_ROW_TEXT_CLEARANCE = 12.0
 def resolve_export_output_path(output_file, export_config=None):
     output_path = Path(output_file)
     export_config = export_config or ExportConfig()
+    review_suffix = f"_review_{export_config.review_mode}_{export_config.review_detail}"
+    if export_config.is_review and output_path.stem.endswith(review_suffix):
+        return output_path
     if export_config.is_short and not output_path.stem.casefold().endswith("_short"):
         output_path = output_path.with_name(f"{output_path.stem}_short{output_path.suffix}")
     if export_config.render_start_frame is not None or export_config.render_end_frame is not None:
@@ -26,6 +29,8 @@ def resolve_export_output_path(output_file, export_config=None):
         suffix = f"_clip_f{start}_f{end if end is not None else 'end'}"
         if not output_path.stem.endswith(suffix):
             output_path = output_path.with_name(f"{output_path.stem}{suffix}{output_path.suffix}")
+    if export_config.is_review:
+        output_path = output_path.with_name(f"{output_path.stem}{review_suffix}.mp4")
     return output_path
 
 
@@ -130,12 +135,17 @@ def resolve_export_periods(periods, export_config=None):
 
 
 def estimate_export_duration(periods, chart_config, export_config=None):
+    from core.opening_intro import opening_intro_frames
     selected_periods = resolve_export_periods(periods, export_config)
+    export_config = export_config or ExportConfig()
     return estimate_video_duration(
         period_count=len(selected_periods),
         steps_per_transition=chart_config.steps_per_transition,
         fps=chart_config.fps,
         continuous_motion=chart_config.animation.continuous_motion,
+        intro_frames=opening_intro_frames(chart_config),
+        final_frame_hold_frames=final_frame_hold_frames(
+            export_config.final_frame_hold_seconds, chart_config.fps),
     )
 
 

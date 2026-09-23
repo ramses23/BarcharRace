@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 
 
@@ -12,6 +12,10 @@ class BarValueScale:
     timeline_progress: float = 0.0
     growth_envelope: float = 1.0
     leader_occupancy: float = 1.0
+    tick_label_domain: float | None = None
+    display_ranks: tuple | None = None
+    # Presentation metadata must not change equality of numeric bar geometry.
+    display_ticks: tuple | None = field(default=None, compare=False)
 
     @property
     def right_x(self):

@@ -828,7 +828,6 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         finally:
             renderer.close()
         self.assertEqual(layout["size"], 20)
-        self.assertGreater(layout["size"], 12)
         self.assertEqual(layout["left"], 20)
         self.assertGreaterEqual(layout["left"], 0)
         self.assertLessEqual(layout["right"], 200)
@@ -899,7 +898,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertEqual(medium_layout["left"], medium_bar.x)
         self.assertEqual(medium_layout["right"], medium_bar.x + medium_bar.width)
 
-    def test_primary_logo_size_depends_on_row_height_not_bar_width(self):
+    def test_primary_logo_size_uses_row_height_independent_of_numeric_width(self):
         renderer = BarRenderer(config=ChartConfig(
             width=800,
             height=300,
@@ -970,7 +969,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
     def test_primary_logo_size_is_percentage_of_bar_height(self):
         item = BarSprite(
             name="Row", value=1, color="#000000", x=100, y=100,
-            width=10, height=48, rank=1, logo_path="logo.png",
+            width=100, height=48, rank=1, logo_path="logo.png",
         )
         for percent, expected in ((100, 48), (75, 36), (50, 24), (25, 12)):
             with self.subTest(percent=percent):
@@ -992,7 +991,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(logo_path)
             item = BarSprite(
                 name="Row", value=1, color="#000000", x=100, y=100,
-                width=2, height=48, rank=1, logo_path=str(logo_path),
+                width=48, height=48, rank=1, logo_path=str(logo_path),
             )
             for shape in ("adaptive", "circle", "square"):
                 with self.subTest(shape=shape):
@@ -1175,7 +1174,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                 render_visual.x + render_visual.width,
             )
 
-    def test_internal_primary_logo_floor_is_visual_only_and_asset_gated(self):
+    def test_internal_primary_logo_gives_zero_width_bar_an_asset_gated_floor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             logo_path = Path(temp_dir) / "logo.png"
             Image.new("RGBA", (32, 32), "#0066FF").save(logo_path)
@@ -1215,7 +1214,6 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                         self.assertEqual(item.value, 7)
                         self.assertEqual(visual.width, 40)
                         self.assertEqual(layout["size"], 40)
-                        self.assertGreaterEqual(visual.width, layout["size"])
 
             constrained = replace(item, bar_available_width=30)
             renderer = BarRenderer(config=ChartConfig(
@@ -1324,9 +1322,9 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                 [item.width for item in originals],
                 [0, 5, 20, 40, 60],
             )
-            self.assertEqual(visuals[0].width, 40)
+            self.assertEqual([v.width for v in visuals], [40, 40, 40, 40, 60])
             self.assertTrue(all(
-                right.width > left.width
+                right.width >= left.width
                 for left, right in zip(visuals, visuals[1:])
             ))
             self.assertGreaterEqual(
@@ -1610,7 +1608,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                         color="#CC3300",
                         x=100,
                         y=300,
-                        width=0,
+                        width=26,
                         height=20,
                         rank=1,
                         logo_path=str(logo_path),
@@ -1626,13 +1624,14 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                     bar = geometry["bar_rects"][0]
                     logo = geometry["primary_logo_rects"][0]
 
-                    self.assertEqual(item.width, 0)
-                    self.assertEqual(bar["width"], 26)
+                    self.assertEqual(item.width, 26)
+                    self.assertAlmostEqual(bar["width"],
+                        continuous_logo_minimum_width(26, width - 200, 26), places=3)
                     self.assertEqual(bar["height"], 26)
                     self.assertEqual(logo["width"], 26)
                     self.assertEqual(logo["height"], 26)
-                    self.assertEqual(logo["x"], bar["x"])
-                    self.assertEqual(logo["x"] + logo["width"], bar["x"] + bar["width"])
+                    self.assertGreater(logo["x"], bar["x"])
+                    self.assertAlmostEqual(logo["x"] + logo["width"], bar["x"] + bar["width"], places=3)
                     self.assertEqual(logo["y"], bar["y"])
                     self.assertEqual(logo["y"] + logo["height"], bar["y"] + bar["height"])
 

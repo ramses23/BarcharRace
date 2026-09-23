@@ -429,6 +429,7 @@ def _convert_chart_value(key, value):
         ),
         "bar_secondary_logo_shape": ("adaptive", "circle", "rounded", "square"),
         "bar_vertical_layout_mode": ("manual", "fill_available"),
+        "bar_visibility_mode": ("progressive", "all"),
         "bar_label_position": (
             "left", "inside", "above", "outside", "outside_left",
             "inside_left", "inside_center", "inside_right", "outside_right",
@@ -816,6 +817,18 @@ def _convert_chart_value(key, value):
 
 
 def _convert_export_value(key, value):
+    if key == "final_frame_hold_seconds":
+        from utils.video_duration import final_frame_hold_frames
+        try:
+            final_frame_hold_frames(value, 1)
+        except ValueError as exc:
+            raise ProjectFileError(str(exc)) from exc
+        return float(value)
+    if key in ("review_mode", "review_detail"):
+        allowed = ("final", "quick", "motion") if key == "review_mode" else ("visual", "draft")
+        if value not in allowed:
+            raise ProjectFileError(f"Export field '{key}' must be one of {allowed}.")
+        return value
     if key in ("render_start_frame", "render_end_frame"):
         if value is not None and (
             isinstance(value, bool) or not isinstance(value, int) or value < 0
@@ -1101,6 +1114,10 @@ def _convert_fun_fact_value(key, value):
         if isinstance(value, bool) or not isinstance(value, int) or value < 8:
             raise ProjectFileError("Fun facts field 'panel_padding' must be >= 8.")
         return value
+    if key == "minimum_duration_seconds":
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 120:
+            raise ProjectFileError("Fun facts minimum duration must be from 0 to 120 seconds.")
+        return float(value)
     if key in ("fade_in", "fade_out"):
         if (
             isinstance(value, bool)

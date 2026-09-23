@@ -32,7 +32,7 @@ class RenderWindowTest(unittest.TestCase):
             source = DataSourceConfig(source_type="csv", csv_path=str(csv))
             facts = root / "facts.json"
             facts.write_text(json.dumps({"version": 1, "fun_facts": [{
-                "id": "crossing", "start": "0", "end": "2",
+                "id": "crossing", "start": "0", "end": "0",
                 "headline": "Crossing", "body": "Global timeline parity",
             }]}), encoding="utf-8")
             fact_config = FunFactConfig(enabled=True, source=str(facts),
@@ -64,6 +64,8 @@ class RenderWindowTest(unittest.TestCase):
                 full_pixels, full_scenes = pixels[:], scenes[:]
                 if mode == "standard":
                     self.assertTrue(any(scene.fun_fact is not None for scene in scenes[3:7]))
+                    # Frames after the original year still carry its card.
+                    self.assertEqual(scenes[6].fun_fact.fact.id, "crossing")
                 pixels.clear()
                 scenes.clear()
                 run(replace(export, render_start_frame=3, render_end_frame=7))

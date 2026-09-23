@@ -74,6 +74,8 @@ class ShortExportTest(unittest.TestCase):
         grid = ValueAxisTracker.from_config(chart, [bars]).next(bars)
         resolver = BarValueScaleResolver.from_config(chart, [bars, bars])
         bar_scale = resolver.for_sprites(bars, timeline_progress=0.5)
+        from core.value_axis import align_axis_to_bar_scale
+        grid = align_axis_to_bar_scale(grid, bar_scale)
 
         self.assertEqual(grid.scale.width, available)
         self.assertEqual(bar_scale.width, available)

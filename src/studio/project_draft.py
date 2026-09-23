@@ -102,7 +102,9 @@ def _filtered_chart(project_data, *, excluded_fields):
     chart = project_data.get("chart")
     if not isinstance(chart, dict):
         return chart
-    if (project_data.get("animation") or {}).get("transition_duration_mode") == "activity_weighted":
+    if ((project_data.get("animation") or {}).get("transition_duration_mode") == "activity_weighted"
+            or (project_data.get("fun_facts") or {}).get("enabled")
+            or (chart.get("start_bars_at_zero") and chart.get("value_grid_enabled"))):
         excluded_fields = excluded_fields - {"fps", "steps_per_transition"}
 
     return {

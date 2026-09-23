@@ -26,7 +26,7 @@ BAR_STYLE_FIELDS = tuple(
     for field in fields(ChartConfig)
     if field.name.startswith("bar_")
     and field.name not in (
-        "bar_height", "bar_gap", "bar_vertical_layout_mode",
+        "bar_height", "bar_gap", "bar_vertical_layout_mode", "bar_visibility_mode",
         "bar_vertical_top_padding", "bar_vertical_bottom_padding",
         "bar_color_source",
     )
@@ -211,6 +211,7 @@ def build_project_data(
     top_n,
     max_visible_bars,
     bar_vertical_layout_mode="manual",
+    bar_visibility_mode="progressive",
     bar_vertical_top_padding=24,
     bar_vertical_bottom_padding=24,
     bar_gap=None,
@@ -420,6 +421,7 @@ def build_project_data(
             "steps_per_transition": steps_per_transition,
             "max_visible_bars": max_visible_bars,
             "bar_vertical_layout_mode": bar_vertical_layout_mode,
+            "bar_visibility_mode": bar_visibility_mode,
             "bar_vertical_top_padding": bar_vertical_top_padding,
             "bar_vertical_bottom_padding": bar_vertical_bottom_padding,
             "bar_color_source": bar_color_source,
@@ -773,6 +775,7 @@ def project_form_values(project_data=None):
         "top_n": selection.get("top_n", 8),
         "max_visible_bars": chart.get("max_visible_bars", 8),
         "bar_vertical_layout_mode": chart.get("bar_vertical_layout_mode", "manual"),
+        "bar_visibility_mode": chart.get("bar_visibility_mode", "progressive"),
         "bar_vertical_top_padding": chart.get("bar_vertical_top_padding", 24),
         "bar_vertical_bottom_padding": chart.get("bar_vertical_bottom_padding", 24),
         "bar_gap": chart.get("bar_gap", layout_settings.bar_gap),
@@ -806,6 +809,7 @@ def project_form_values(project_data=None):
         "fun_facts_panel_margin": fun_facts.get("panel_margin", 32),
         "fun_facts_panel_padding": fun_facts.get("panel_padding", 28),
         "fun_facts_fade_in": fun_facts.get("fade_in", 0.20),
+        "fun_facts_minimum_duration_seconds": fun_facts.get("minimum_duration_seconds", 6.0),
         "fun_facts_fade_out": fun_facts.get("fade_out", 0.20),
         **{
             field.name: export.get(

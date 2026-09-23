@@ -516,7 +516,7 @@ class BarValueScaleTest(unittest.TestCase):
 
         self.assertEqual(bar.x, bar_scale.origin_x)
         self.assertEqual(bar.x + bar.width, bar_scale.x_for_value(bar.value))
-        self.assertEqual(other_bar.width / bar.width, 60 / 80)
+        self.assertAlmostEqual(other_bar.width / bar.width, 60 / 80)
         self.assertEqual(logo_before, logo_after)
         self.assertEqual(value_before["x"], value_after["x"])
         self.assertEqual(track_right, [bar_scale.right_x, bar_scale.right_x])
@@ -616,13 +616,13 @@ class BarValueScaleTest(unittest.TestCase):
         self.assertEqual((before.x, before.width), (after.x, after.width))
         self.assertNotEqual(grid_before.ticks[0].x, grid_after.ticks[0].x)
 
-    def test_grid_mode_and_tick_count_do_not_define_bar_scale(self):
+    def test_tick_count_does_not_define_dynamic_bar_scale(self):
         raw_sets = [
             [sprite("A", 40, width=600)],
             [sprite("A", 80, width=600)],
         ]
         scales = []
-        for mode, tick_count in (("static", 3), ("dynamic", 12)):
+        for mode, tick_count in (("dynamic", 3), ("dynamic", 12)):
             config = ChartConfig(
                 width=800,
                 left_margin=100,

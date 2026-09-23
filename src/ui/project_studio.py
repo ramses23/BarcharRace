@@ -31,6 +31,7 @@ from config.chart_config import (
     ChartConfig,
 )
 from config.bar_selection_config import MAX_TOP_N, MIN_TOP_N
+from core.opening_intro import opening_intro_frames
 from config.animation_config import MIN_RANK_MOVEMENT_DURATION, MAX_RANK_MOVEMENT_DURATION
 from config.project_file_loader import load_project_data as load_estimate_preset
 from studio.project_runtime import resolve_project_preset_paths
@@ -150,7 +151,7 @@ from studio.workspace_paths import (
     save_workspace_settings,
 )
 from utils.file_size import format_file_size
-from utils.video_duration import estimate_video_duration, format_video_duration
+from utils.video_duration import estimate_video_duration, final_frame_hold_frames, format_video_duration
 
 
 DEFAULT_CATEGORY_COLORS = (
@@ -535,7 +536,10 @@ def _render_time_estimate_panel(draft, dataset, *, render_active):
                 preset.export_config)
             total = estimate_video_duration(period_count=len(periods), fps=chart.fps,
                 steps_per_transition=chart.steps_per_transition,
-                continuous_motion=chart.animation.continuous_motion).frame_count
+                continuous_motion=chart.animation.continuous_motion,
+                intro_frames=opening_intro_frames(chart),
+                final_frame_hold_frames=final_frame_hold_frames(
+                    preset.export_config.final_frame_hold_seconds, chart.fps)).frame_count
             start, end = resolve_render_window(total, preset.export_config)
             key = estimate_cache_key(preset, project_root)
             if chart.animation.transition_duration_mode == "activity_weighted":
@@ -558,8 +562,16 @@ def _render_time_estimate_panel(draft, dataset, *, render_active):
         except (ValueError, OSError, KeyError, TypeError) as exc:
             st.caption(f"Estimated render time unavailable: {exc}")
             return
-        st.caption(f"Frames [{start:,}, {end:,}) · {end - start:,} output frames · "
-                   f"{chart.width} × {chart.height} · {chart.fps} FPS")
+        if preset.export_config.is_review:
+            from core.review_render import review_frame_plan, review_output_size
+            review_ids, review_rate = review_frame_plan(start, end, chart.fps, preset.export_config.review_mode)
+            review_width, review_height = review_output_size(chart)
+            st.caption(f"Source frames [{start:,}, {end:,}) · {len(review_ids):,} review frames · "
+                       f"{review_width} × {review_height} · {float(review_rate):.3f} FPS · "
+                       f"{(end - start) / chart.fps:.2f} s (original duration)")
+        else:
+            st.caption(f"Frames [{start:,}, {end:,}) · {end - start:,} output frames · "
+                       f"{chart.width} × {chart.height} · {chart.fps} FPS")
         cache = st.session_state.setdefault("render_time_estimate_cache", {})
         if st.button("Estimate render time", disabled=render_active,
                      help="Measure a small real sample on this machine without writing video."):
@@ -1399,6 +1411,7 @@ def _project_form(
         top_n=bars_settings["top_n"],
         max_visible_bars=canvas_settings["max_visible"],
         bar_vertical_layout_mode=canvas_settings["bar_vertical_layout_mode"],
+        bar_visibility_mode=canvas_settings.get("bar_visibility_mode", "progressive"),
         bar_vertical_top_padding=canvas_settings["bar_vertical_top_padding"],
         bar_vertical_bottom_padding=canvas_settings["bar_vertical_bottom_padding"],
         bar_gap=bars_settings["bar_gap"],
@@ -2093,6 +2106,7 @@ def _canvas_settings_from_values(
             18,
         ),
         "bar_vertical_layout_mode": values.get("bar_vertical_layout_mode", "manual"),
+        "bar_visibility_mode": values.get("bar_visibility_mode", "progressive"),
         "bar_vertical_top_padding": _int_in_range_or_default(values.get("bar_vertical_top_padding"), 24, 0, layout.height),
         "bar_vertical_bottom_padding": _int_in_range_or_default(values.get("bar_vertical_bottom_padding"), 24, 0, layout.height),
         "title_enabled": bool(values.get("title_enabled", True)),
@@ -2228,6 +2242,7 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
             max(8, layout.width // 6),
         ),
         "fade_in": float(values.get("fun_facts_fade_in", 0.20)),
+        "minimum_duration_seconds": float(values.get("fun_facts_minimum_duration_seconds", 6.0)),
         "fade_out": float(values.get("fun_facts_fade_out", 0.20)),
         "editorial_background_mode": values.get("fun_facts_editorial_background_mode", "card"),
         "editorial_background_color": values.get("fun_facts_editorial_background_color"),
@@ -2416,6 +2431,12 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             step=4,
             key=_widget_key("fun_facts_panel_padding"),
         )
+    minimum_fact_duration = st.number_input(
+        "Minimum card duration (seconds)", min_value=0.0, max_value=120.0,
+        value=float(settings["minimum_duration_seconds"]), step=0.5,
+        help="Includes fades. Works with Uniform and Activity Weighted. The next card or video end takes priority; cards never overlap.",
+        key=_widget_key("fun_facts_minimum_duration_seconds"),
+    )
     fade_in_column, fade_out_column = st.columns(2)
     with fade_in_column:
         fade_in = st.slider(
@@ -2779,6 +2800,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "panel_margin": int(panel_margin),
         "panel_padding": int(panel_padding),
         "fade_in": float(fade_in),
+        "minimum_duration_seconds": float(minimum_fact_duration),
         "fade_out": float(fade_out),
         **editorial,
     }
@@ -2962,7 +2984,11 @@ def _export_settings_from_values(values, available_periods):
 
     return {
         "render_start_frame": values.get("render_start_frame"),
+        "review_mode": values.get("review_mode", "final"),
+        "review_detail": values.get("review_detail", "visual"),
         "render_end_frame": values.get("render_end_frame"),
+        "final_frame_hold_seconds": values.get(
+            "final_frame_hold_seconds", defaults.final_frame_hold_seconds),
         "mode": (
             values.get("mode")
             if values.get("mode") in ("standard", "short")
@@ -3021,13 +3047,13 @@ def _preview_settings_from_state(years):
     year = settings.get("year")
     force_fun_fact_id = settings.get("force_fun_fact_id")
 
-    if preview_mode == "transition" and len(years) > 1:
+    if preview_mode in ("transition", "intro") and len(years) > 1:
         valid_years = years[:-1]
         if year not in valid_years:
             year = valid_years[0]
         return {
             "year": year,
-            "preview_mode": "transition",
+            "preview_mode": preview_mode,
             "transition_progress": min(
                 1.0,
                 max(0.0, float(settings.get("transition_progress", 0.5))),
@@ -3228,11 +3254,18 @@ def _canvas_text_section(
             "Visible bar slots and Top N work together: Top N selects data; "
             "this canvas limit determines how many selected rows can be shown."
         )
+        visibility_mode = st.selectbox(
+            "Bar visibility", ("progressive", "all"),
+            index=_option_index(("progressive", "all"), values.get("bar_visibility_mode", "progressive")),
+            format_func=lambda mode: "Appear as values become nonzero" if mode == "progressive" else "Show all, including zero values",
+            help="Top N and visible bar slots still limit the selection. Disable those limits to show every category.",
+            key=_widget_key("bar_visibility_mode"),
+        )
         vertical_mode = st.selectbox(
             "Vertical layout",
             ("manual", "fill_available"),
             index=_option_index(("manual", "fill_available"), values.get("bar_vertical_layout_mode", "manual")),
-            help="Fill available adapts bar height and spacing to visible text and canvas height.",
+            help="Fill available distributes rows and gaps across the full usable height, respecting padding, visible text and axis labels. Fewer rows become taller; manual keeps a fixed bar height.",
             key=_widget_key("bar_vertical_layout_mode"),
         )
         vertical_a, vertical_b = st.columns(2)
@@ -3835,6 +3868,7 @@ def _canvas_text_section(
         "layout_preset": layout_preset,
         "max_visible": None if max_visible is None else int(max_visible),
         "bar_vertical_layout_mode": vertical_mode,
+        "bar_visibility_mode": visibility_mode,
         "bar_vertical_top_padding": int(vertical_top_padding),
         "bar_vertical_bottom_padding": int(vertical_bottom_padding),
         "label_min_x": int(label_min_x),
@@ -4177,8 +4211,11 @@ def _bars_categories_section(
     progression_panel = st.container(border=True)
     progression_panel.markdown("**Bar scale progression**")
     progression_panel.caption(
-        "Control when bars occupy their full structural width without changing "
-        "the Value Grid scale."
+        "With a dynamic grid, Start bars at zero adds a 2-second opening before the "
+        "calendar starts, using a fixed scale and complete logos. Leader full width point "
+        "sets the full-width reference from the leader at that video percentage. As the leader "
+        "grows, bars gain width while the grid compresses smoothly to the left. An earlier "
+        "equal or larger value can fill the width sooner."
     )
     progression_start_column, progression_point_column = progression_panel.columns(2)
     with progression_start_column:
@@ -4203,7 +4240,9 @@ def _bars_categories_section(
             format="%d%%",
             help=(
                 "Effective video point whose interpolated leader defines full "
-                "bar width; Short exports use their selected frame range."
+                "bar width. Dynamic grids expand gradually with rising leader values, "
+                "reaching full occupancy at the reference. Includes the opening; Short uses its selected periods. "
+                "Partial renders retain the full video's reference."
             ),
             key=_widget_key("leader_full_width_point"),
         ) / 100.0
@@ -4311,6 +4350,22 @@ def _animation_output_section(
         key=_widget_key("export_mode"),
     )
     export_settings["mode"] = export_mode
+    export_settings["review_mode"] = st.selectbox(
+        "Render quality", ("final", "quick", "motion"),
+        index=_option_index(("final", "quick", "motion"), export_settings["review_mode"]),
+        format_func=lambda value: {"final": "Final", "quick": "Quick review (about 15 FPS)",
+                                   "motion": "Motion review (original FPS)"}[value],
+        key=_widget_key("review_mode"))
+    if export_settings["review_mode"] != "final":
+        export_settings["review_detail"] = st.selectbox(
+            "Review detail", ("visual", "draft"),
+            index=_option_index(("visual", "draft"), export_settings["review_detail"]),
+            format_func=lambda value: "Visual (real logos)" if value == "visual" else "Draft (logo placeholders)",
+            key=_widget_key("review_detail"))
+        st.caption("Review keeps original timing and layout, removes decorative bar effects and streams "
+                   "to a separate review MP4 (maximum 960 px). Quick review skips frames; Motion review "
+                   "keeps them all. Raster layout stays full-size before downscaling. Final PNGs and video "
+                   "are untouched. Inspect suspicious frames at full quality.")
 
     if export_mode == "short":
         export_settings = _short_export_controls(
@@ -4404,6 +4459,14 @@ def _animation_output_section(
         ),
         key=_widget_key("rank_movement_duration"),
     )
+    hold_key = _widget_key("final_frame_hold_seconds")
+    _reconcile_numeric_widget_state(
+        hold_key, float(export_settings["final_frame_hold_seconds"]),
+        minimum=0.0, maximum=60.0)
+    export_settings["final_frame_hold_seconds"] = st.number_input(
+        "Final frame hold (seconds)", min_value=0.0, max_value=60.0,
+        step=0.5, format="%.1f", key=hold_key,
+        help="Keep the last frame unchanged at the end of the video. Set 10 for a ten-second ending.")
     if transition_duration_mode == "activity_weighted" and minimum_transition_frames(minimum_duration, int(fps)) > steps:
         st.error("Minimum transition duration exceeds the available frame budget. Increase Steps or reduce the minimum.")
 
@@ -4418,6 +4481,10 @@ def _animation_output_section(
             steps_per_transition=int(steps),
             motion_mode=motion_mode,
             short_mode=export_mode == "short",
+            intro_frames=(round(2 * fps) if values.get("start_bars_at_zero")
+                          and values.get("value_grid_enabled")
+                          and values.get("value_grid_mode", "dynamic") == "dynamic" else 0),
+            final_frame_hold_seconds=export_settings["final_frame_hold_seconds"],
         )
         if export_mode == "short":
             st.caption(
@@ -4468,12 +4535,13 @@ def _animation_output_section(
                 value=values["output_file"] or paths["output_file"],
                 key=_widget_key("output_file"),
             )
-            if export_mode == "short" or export_settings["render_start_frame"] is not None or export_settings["render_end_frame"] is not None:
+            if export_settings["review_mode"] != "final" or export_mode == "short" or export_settings["render_start_frame"] is not None or export_settings["render_end_frame"] is not None:
                 effective_output = resolve_export_output_path(
                     output_file,
                     ExportConfig(**export_settings),
                 )
-                prefix = "Short render output" if export_mode == "short" else "Clip render output"
+                prefix = ("Review render output" if export_settings["review_mode"] != "final"
+                          else "Short render output" if export_mode == "short" else "Clip render output")
                 st.caption(f"{prefix}: `{effective_output}`")
 
         with project_column:
@@ -5655,12 +5723,16 @@ def _show_video_duration_estimate(
     steps_per_transition,
     motion_mode,
     short_mode=False,
+    intro_frames=0,
+    final_frame_hold_seconds=0.0,
 ):
     estimate = estimate_video_duration(
         period_count=period_count,
         steps_per_transition=steps_per_transition,
         fps=fps,
         continuous_motion=motion_mode == "continuous",
+        intro_frames=intro_frames,
+        final_frame_hold_frames=final_frame_hold_frames(final_frame_hold_seconds, fps),
     )
     if short_mode:
         st.metric("Estimated duration", f"{estimate.duration_seconds:.1f} s")
@@ -5760,12 +5832,18 @@ def _preview_controls(csv_path, year_column, years=None):
     with st.expander("Preview frame", icon=":material/preview:"):
         mode = st.segmented_control(
             "Mode",
-            ("Year", "Transition"),
+            ("Year", "Transition", "Intro"),
             default="Year",
             key=_widget_key("preview_mode"),
             disabled=len(years) < 2,
         )
 
+        if mode == "Intro" and len(years) > 1:
+            st.caption("2-second opening when Start bars at zero and the dynamic grid are enabled.")
+            progress = st.slider("Intro progress", 0.0, 1.0, 0.0, .05,
+                                 key=_widget_key("preview_intro_progress"))
+            return {"year": years[0], "preview_mode": "intro",
+                    "transition_progress": progress, "force_fun_fact_id": None}
         if mode == "Transition" and len(years) > 1:
             year_options = years[:-1]
             year = st.selectbox(

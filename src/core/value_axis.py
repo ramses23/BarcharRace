@@ -1,6 +1,6 @@
 from dataclasses import dataclass, replace
 from functools import lru_cache
-from math import ceil, floor, isclose, isfinite, log10
+from math import ceil, floor, isclose, isfinite, log10, log
 
 from core.bar_value_scale import (
     progressive_bar_scale_active,
@@ -14,6 +14,93 @@ from models.value_axis import (
 )
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_adaptive_compact_value, format_value
+
+
+def align_axis_to_bar_scale(axis, bar_scale, config=None):
+    """Keep tick identity/fades, but use the exact transform drawn by bars."""
+    if axis is None:
+        return None
+    scale = SemanticDataScale(bar_scale.origin_x,
+                              bar_scale.width * bar_scale.growth_envelope,
+                              bar_scale.domain_max)
+    if config is not None and config.value_grid_mode == "dynamic":
+        if bar_scale.display_ticks is not None:
+            return replace(axis, scale=scale, ticks=tuple(
+                ValueAxisTick(value, scale.x_for_value(value), label, opacity)
+                for value, label, opacity in bar_scale.display_ticks
+                if opacity > 0 and scale.x_for_value(value) <= scale.right_x + 1e-6))
+        return _continuous_dynamic_axis(axis, scale, config, bar_scale.tick_label_domain)
+    ticks = tuple(
+        replace(tick, x=scale.x_for_value(tick.value))
+        for tick in axis.ticks
+        if bar_scale.growth_envelope > 0
+        and scale.x_for_value(tick.value) <= bar_scale.right_x + 1e-6
+    )
+    if config is not None and config.value_grid_tick_labels_enabled:
+        widths = _axis_tick_label_widths(
+            tuple(t.value for t in ticks), axis.tick_step, config.value_format,
+            config.value_grid_tick_value_format, config.value_grid_tick_font_size,
+            config.dpi, config.value_font_family or config.font_family,
+            config.value_grid_tick_font_weight, config.value_grid_tick_font_style)
+        # Growth can compress previously well-spaced ticks. Keep readable
+        # identities without changing their numeric position or the bar scale.
+        accepted = []
+        right = float('-inf')
+        for tick, width in sorted(zip(ticks, widths), key=lambda pair: pair[0].x):
+            if not tick.label:
+                accepted.append(tick)
+            elif tick.x - width / 2 >= right + 8:
+                accepted.append(tick)
+                right = tick.x + width / 2
+        ticks = tuple(accepted)
+    return replace(axis, scale=scale, ticks=ticks)
+
+
+def _continuous_dynamic_axis(axis, scale, config, label_domain=None, *, targets=False):
+    """One transform and a nested, continuously fading grid, also at random access.
+
+    Nested 1/2/10 steps preserve coarse identities during density changes.
+    Existing lines move with the scale; new values enter at the right edge.
+    No post-placement collision filter abruptly deletes complete grid lines.
+    """
+    if scale.width <= 0 or scale.domain_max <= 0:
+        return replace(axis, scale=scale, ticks=())
+    count = max(2, min(12, config.value_grid_target_tick_count))
+    # Constant label budget across the video: changing digits must not move
+    # density thresholds or restart fades on each frame.
+    label_domain = label_domain or scale.domain_max
+    label_width = max(_axis_tick_label_widths(
+        (label_domain, label_domain / 2), label_domain / count,
+        config.value_format, config.value_grid_tick_value_format,
+        config.value_grid_tick_font_size, config.dpi,
+        config.value_font_family or config.font_family,
+        config.value_grid_tick_font_weight, config.value_grid_tick_font_style))
+    spacing = max(scale.width / count, 2 * (label_width + 8))
+    raw = max(MIN_AXIS_DOMAIN, scale.domain_max * spacing / scale.width)
+    unit = 10 ** floor(log10(raw))
+    lower, upper = (unit, 2 * unit) if raw < 2 * unit else (2 * unit, 10 * unit)
+    blend = min(1.0, max(0.0, log(raw / lower) / log(upper / lower)))
+    blend = blend * blend * (3 - 2 * blend)
+    multiple = round(upper / lower)
+    ticks = []
+    for index in range(floor(scale.domain_max / lower) + 1):
+        value = _stable_tick_value(index * lower)
+        x = scale.x_for_value(value)
+        opacity = 1.0 if index % multiple == 0 else 1 - blend
+        # Fully transparent on entry, then gradually visible over the last 8%.
+        edge = min(1.0, max(0.0, (scale.right_x - x) / max(1, scale.width * .08)))
+        opacity *= edge * edge * (3 - 2 * edge)
+        if targets:
+            # Density selects identities; elapsed video time owns their fades.
+            readable = lower * scale.width / scale.domain_max >= label_width + 16
+            opacity = float((index % multiple == 0 or (blend < .5 and readable))
+                            and x < scale.right_x)
+        if opacity > 0:
+            ticks.append(ValueAxisTick(value, x,
+                "" if value == 0 else format_axis_tick(
+                    value, lower, config.value_format, config.value_grid_tick_value_format),
+                opacity))
+    return replace(axis, scale=scale, tick_step=lower, ticks=tuple(ticks))
 
 
 VALUE_AXIS_HEADROOM = 1.12

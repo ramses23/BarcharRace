@@ -15,6 +15,72 @@ from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_review_controls_persist_and_final_settings_stay_intact(self):
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Export")
+        before = json.loads(app.json[0].value)['chart']
+        next(x for x in app.selectbox if x.label == 'Render quality').set_value('quick')
+        app.run()
+        next(x for x in app.selectbox if x.label == 'Review detail').set_value('draft')
+        app.run()
+        self.assertFalse(app.exception)
+        data = json.loads(app.json[0].value)
+        self.assertEqual(data['export']['review_mode'], 'quick')
+        self.assertEqual(data['export']['review_detail'], 'draft')
+        self.assertEqual(data['chart'], before)
+        self._select_editor_section(app, 'Canvas')
+        self._select_editor_section(app, 'Export')
+        self.assertEqual(next(x for x in app.selectbox if x.label == 'Render quality').value, 'quick')
+        self.assertEqual(next(x for x in app.selectbox if x.label == 'Review detail').value, 'draft')
+
+    def test_final_frame_hold_control_updates_duration_and_persists(self):
+        app_path = Path(__file__).resolve().parents[1] / 'src/ui/project_studio.py'
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, 'Export')
+        before = next(x for x in app.metric if x.label == 'Estimated video duration').value
+        next(x for x in app.number_input if x.label == 'Final frame hold (seconds)').set_value(10.0)
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(json.loads(app.json[0].value)['export']['final_frame_hold_seconds'], 10.0)
+        self.assertNotEqual(next(x for x in app.metric if x.label == 'Estimated video duration').value, before)
+        self._select_editor_section(app, 'Canvas')
+        self._select_editor_section(app, 'Export')
+        self.assertEqual(next(x for x in app.number_input if x.label == 'Final frame hold (seconds)').value, 10.0)
+
+    def test_intro_preview_controls(self):
+        app = AppTest.from_string(
+            "from ui.project_studio import _preview_controls\n"
+            "_preview_controls('', 'year', years=(2000, 2001))",
+            default_timeout=30).run()
+        mode = next(x for x in app.segmented_control if x.label == "Mode")
+        mode.set_value("Intro")
+        app.run()
+        self.assertFalse(app.exception)
+        next(x for x in app.slider if x.label == "Intro progress").set_value(.5)
+        app.run()
+        self.assertFalse(app.exception)
+
+    def test_visibility_and_card_minimum_controls_persist_across_sections(self):
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+        next(x for x in app.selectbox if x.label == "Bar visibility").set_value("all")
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(json.loads(app.json[0].value)["chart"]["bar_visibility_mode"], "all")
+        self._select_editor_section(app, "Fun facts")
+        next(x for x in app.toggle if x.label == "Enable fun facts").set_value(True)
+        app.run()
+        next(x for x in app.number_input if x.label == "Minimum card duration (seconds)").set_value(12.5)
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(json.loads(app.json[0].value)["fun_facts"]["minimum_duration_seconds"], 12.5)
+        self._select_editor_section(app, "Canvas")
+        self.assertEqual(next(x for x in app.selectbox if x.label == "Bar visibility").value, "all")
+        self._select_editor_section(app, "Fun facts")
+        self.assertEqual(next(x for x in app.number_input if x.label == "Minimum card duration (seconds)").value, 12.5)
+
     def test_activity_weighted_controls_persist_and_summary_preserves_duration(self):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()

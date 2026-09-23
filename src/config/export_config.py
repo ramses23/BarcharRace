@@ -3,8 +3,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ExportConfig:
+    review_mode: str = "final"
+    review_detail: str = "visual"
     render_start_frame: int | None = None
     render_end_frame: int | None = None
+    final_frame_hold_seconds: float = 0.0
     mode: str = "standard"
     short_width: int = 1080
     short_height: int = 1920
@@ -24,3 +27,7 @@ class ExportConfig:
     @property
     def is_short(self):
         return self.mode == "short"
+
+    @property
+    def is_review(self):
+        return self.review_mode != "final"

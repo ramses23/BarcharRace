@@ -238,7 +238,7 @@ class TransitionTimingIntegrationTest(unittest.TestCase):
                 export = ExportConfig(mode=mode)
                 full = self.scenes(config, export)
                 plan = self.plan(config, export)
-                self.assertEqual(len(full), plan.frame_count)
+                self.assertEqual(len(full), plan.frame_count + 2 * config.fps)
                 for start, end in ((0, 3), (9, 15), (50, 62), (len(full) - 3, len(full))):
                     clip = self.scenes(config, replace(export, render_start_frame=start, render_end_frame=end))
                     self.assertEqual(clip, full[start:end])
@@ -256,8 +256,33 @@ class TransitionTimingIntegrationTest(unittest.TestCase):
             a, b = resolver.anchors[i:i + 2]
             self.assertEqual(resolver.state_at(frame).display_datetime, a + (b - a) * t)
 
-    def test_no_false_growth_and_rank_duration_scales_with_local_transition(self):
+    def test_opening_intro_zero_fixed_axis_calendar_and_preview_parity(self):
+        from dataclasses import asdict
         full = self.scenes(self.chart)
+        intro = 2 * self.chart.fps
+        self.assertTrue(all(b.value == 0 and b.width == 0 for b in full[0].bars))
+        self.assertEqual([b.value for b in full[intro].bars], [100, 50])
+        for scene in full[:intro]:
+            self.assertEqual(scene.display_calendar, full[0].display_calendar)
+            self.assertEqual(scene.value_axis, full[0].value_axis)
+            self.assertIsNone(scene.fun_fact)
+        clip = self.scenes(self.chart, ExportConfig(render_start_frame=intro-2, render_end_frame=intro+3))
+        self.assertEqual(clip, full[intro-2:intro+3])
+        data = {"chart": {k:v for k,v in asdict(self.chart).items() if k not in ("animation", "selection", "value_format", "theme")},
+                "animation": asdict(self.chart.animation), "data_source": asdict(self.source)}
+        data = json.loads(json.dumps(data))
+        for progress in (0, .5):
+            with patch("studio.preview.BarRenderer") as renderer:
+                render_project_preview("test", root_dir=self.root, project_data=data,
+                                       preview_mode="intro", transition_progress=progress)
+                scene = renderer.return_value.render.call_args.args[0]
+            expected = full[round(progress * intro)]
+            self.assertEqual(scene.bars, expected.bars)
+            self.assertEqual(scene.frame_index, expected.frame_index)
+            self.assertEqual(scene.value_axis, expected.value_axis)
+
+    def test_no_false_growth_and_rank_duration_scales_with_local_transition(self):
+        full = self.scenes(self.chart)[2 * self.chart.fps:]
         plan = self.plan(self.chart)
         for index in (0, 2):
             start, end = plan.frame_bounds(index)
@@ -285,6 +310,7 @@ class TransitionTimingIntegrationTest(unittest.TestCase):
                 years = resolve_export_periods(Timeline(self.df).get_years(), export)
                 for index, progress in ((i, p) for i in range(len(years) - 1) for p in (0., .37, 1.)):
                     frame = plan.frame_at_progress(index, progress)
+                    frame += 2 * chart.fps
                     with patch("studio.preview.BarRenderer") as renderer:
                         render_project_preview("test", root_dir=self.root, project_data=data,
                             year=years[index], preview_mode="transition", transition_progress=progress)
@@ -317,7 +343,7 @@ class TransitionTimingIntegrationTest(unittest.TestCase):
         explicit = replace(legacy, animation=replace(legacy.animation, transition_duration_mode="uniform", minimum_transition_duration_seconds=2.))
         old, new = self.scenes(legacy), self.scenes(explicit)
         self.assertEqual(old, new)
-        self.assertEqual(len(old), 161)
+        self.assertEqual(len(old), 181)
         with_renderer = BarRenderer(output_dir=None, config=legacy)
         try:
             for frame in (0, 39, 40, 41, 160):
@@ -364,6 +390,7 @@ class TransitionTimingIntegrationTest(unittest.TestCase):
             geometry = _effective_frame_geometry(**arguments)
         with patch("core.editorial_placement.build_smart_scene_geometry", side_effect=lambda c, f, s, **kw: s), patch("core.editorial_placement._cached_smart_text_bounds", return_value={}):
             smart = list(_iter_effective_smart_geometry(**arguments, logo_availability={}))
+        full = full[2 * self.chart.fps:]
         self.assertEqual(len(geometry), len(full))
         self.assertEqual(len(smart), len(full))
         for (frame, position), scene in geometry.items():

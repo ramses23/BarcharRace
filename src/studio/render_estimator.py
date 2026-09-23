@@ -44,10 +44,11 @@ class RenderEstimate:
     startup_seconds: float
     wall_seconds: float
     sample_seconds: tuple[float, ...]
+    sampled_output_count: int | None = None
 
     @property
     def output_frames(self):
-        return self.end_frame - self.start_frame
+        return self.sampled_output_count if self.sampled_output_count is not None else self.end_frame - self.start_frame
 
 
 def estimate_render_job(job, *, clock=perf_counter):
@@ -76,8 +77,13 @@ def estimate_render_job(job, *, clock=perf_counter):
     # over a warm frame is added; encoding/finalization has no invented factor.
     startup = max(0., result.profile.total_seconds - result.profile.render_frames_seconds)
     startup += max(0., warmups[0] - cost)
+    output_count = window[1] - window[0]
+    if getattr(getattr(job, 'export_config', None), 'is_review', False):
+        from core.review_render import review_frame_plan
+        output_count = len(review_frame_plan(window[0], window[1], job.config.fps,
+                                            job.export_config.review_mode)[0])
     return RenderEstimate(window[0], window[1], tuple(sampled), len(warmups), cost,
-        startup + cost * (window[1] - window[0]), startup, clock() - started, tuple(timings))
+        startup + cost * output_count, startup, clock() - started, tuple(timings), output_count)
 
 
 def estimate_cache_key(preset, project_root):

@@ -1,5 +1,5 @@
-from dataclasses import dataclass, replace
-from math import isfinite
+from dataclasses import dataclass, field, replace
+from math import isfinite, sqrt
 
 from core.motion_engine import MotionEngine
 from models.bar_value_scale import BarValueScale
@@ -22,6 +22,10 @@ class BarValueScaleResolver:
     initial_leader_occupancy: float
     legacy_mode: bool
     frame_count: int
+    expanding_axis: bool = False
+    leader_history: tuple = ()
+    timing_plan: object = None
+    display_timeline: object = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_config(cls, config, sprite_sets):
@@ -73,16 +77,44 @@ class BarValueScaleResolver:
             fps=config.fps,
             continuous_motion=config.animation.continuous_motion,
         )
+        expanding_axis = config.value_grid_enabled and config.value_grid_mode == "dynamic"
+        leader_history, timing_plan = (), None
+        fallback_width = max(0.0, float(config.max_bar_width))
+        if expanding_axis:
+            from itertools import accumulate
+            from core.transition_timing import build_transition_timing_plan, sample_timed_sprites
+            from core.opening_intro import opening_intro_frames
+            leader_history = tuple(accumulate((_leader_value(s) for s in sprite_sets), max))
+            timing_plan = build_transition_timing_plan(config, sprite_sets)
+            if sprite_sets:
+                # The chosen percentage belongs to the effective output timeline,
+                # including its opening, but never to a partial-render window.
+                intro = opening_intro_frames(config)
+                target = round(full_width_point * (timing_plan.frame_count + intro - 1)) - intro
+                reference_sprites = (sample_timed_sprites(
+                    MotionEngine(config.animation), sprite_sets, timing_plan,
+                    min(timing_plan.frame_count - 1, target))
+                    if target >= 0 and timing_plan.steps_per_transition else sprite_sets[0])
+                reference_value = max(MIN_BAR_DOMAIN, _leader_value(reference_sprites))
+            widths = [structural_bar_width(s, fallback_width=fallback_width) for s in sprite_sets]
+            fallback_width = min((w for w in widths if w > 0), default=fallback_width)
+        from core.display_timeline import DisplayTimeline
+        display_timeline = DisplayTimeline(config, sprite_sets, reference_value,
+                                           project_max, fallback_width)
         return cls(
             origin_x=float(config.left_margin),
             domain_max=reference_value,
-            fallback_width=max(0.0, float(config.max_bar_width)),
+            fallback_width=fallback_width,
             project_max=project_max,
             start_bars_at_zero=start_bars_at_zero,
             full_width_point=full_width_point,
             initial_leader_occupancy=initial_leader_occupancy,
             legacy_mode=legacy_scale,
             frame_count=duration.frame_count,
+            expanding_axis=expanding_axis,
+            leader_history=leader_history,
+            timing_plan=timing_plan,
+            display_timeline=display_timeline,
         )
 
     def for_sprites(self, sprites, *, frame_index=0, timeline_progress=None):
@@ -118,16 +150,34 @@ class BarValueScaleResolver:
                 initial_occupancy=self.initial_leader_occupancy,
             )
             width_multiplier = leader_occupancy
+        width = structural_bar_width(sprites, fallback_width=self.fallback_width)
+        if self.expanding_axis:
+            frame = round(timeline_progress * max(0, self.frame_count - 1))
+            index = (self.timing_plan.locate(frame)[0]
+                     if self.timing_plan.steps_per_transition else 0)
+            history = self.leader_history[index] if self.leader_history else 0.0
+            record = max(MIN_BAR_DOMAIN, history, current_leader_value)
+            # Before the reference, domain grows slower than values: both the
+            # bar's occupancy and the grid's leftward compression can increase.
+            # At the reference occupancy reaches 100%; thereafter follow records.
+            scale_domain = max(record, sqrt(self.domain_max) * sqrt(record))
+            width_multiplier = 1.0
+            width = self.fallback_width
+            leader_occupancy = current_leader_value / scale_domain
+        display_ranks, display_ticks = (None, None)
+        if self.display_timeline is not None:
+            display_ranks, display_ticks = self.display_timeline.at(
+                round(timeline_progress * max(0, self.frame_count - 1)))
         return BarValueScale(
             origin_x=self.origin_x,
-            width=structural_bar_width(
-                sprites,
-                fallback_width=self.fallback_width,
-            ),
+            width=width,
             domain_max=scale_domain,
             timeline_progress=timeline_progress,
             growth_envelope=width_multiplier,
             leader_occupancy=leader_occupancy,
+            tick_label_domain=self.project_max if self.expanding_axis else None,
+            display_ranks=display_ranks,
+            display_ticks=display_ticks,
         )
 
 
@@ -207,8 +257,8 @@ def structural_bar_width(sprites, *, fallback_width):
     return max(widths) if widths else max(0.0, float(fallback_width))
 
 
-def scale_bar_sprites(sprites, scale):
-    return [
+def scale_bar_sprites(sprites, scale, config=None):
+    scaled = [
         replace(
             sprite,
             x=scale.origin_x,
@@ -216,6 +266,11 @@ def scale_bar_sprites(sprites, scale):
         )
         for sprite in sprites
     ]
+    if config is not None:
+        from core.value_ranking import position_bars_by_value
+        ranks = dict(scale.display_ranks) if scale.display_ranks is not None else None
+        return position_bars_by_value(scaled, config, ranks)
+    return scaled
 
 
 def _visible_positive_value(sprite):
@@ -270,6 +325,12 @@ def _sprites_at_effective_progress(config, sprite_sets, progress):
         return ()
     if len(sprite_sets) == 1:
         return sprite_sets[0]
+
+    if config.animation.transition_duration_mode == "activity_weighted":
+        from core.transition_timing import build_transition_timing_plan, sample_timed_sprites
+        plan = build_transition_timing_plan(config, sprite_sets)
+        frame = round(_unit_interval(progress, default=1.0) * (plan.frame_count - 1))
+        return sample_timed_sprites(MotionEngine(config.animation), sprite_sets, plan, frame)
 
     transition_count = len(sprite_sets) - 1
     steps = max(1, int(config.steps_per_transition))

@@ -252,13 +252,7 @@ class MotionEngine:
                 next_sprite.width,
                 t,
             )),
-            height=max(0.0, self._bounded_catmull_rom(
-                previous.height,
-                start.height,
-                end.height,
-                next_sprite.height,
-                t,
-            )),
+            height=max(0.0, lerp(start.height, end.height, rank_t)),
             rank=rank,
             logo_path=start.logo_path or end.logo_path,
             secondary_logo_path=(
@@ -327,7 +321,7 @@ class MotionEngine:
             x=lerp(start_x, end_x, t),
             y=lerp(start_y, end_y, rank_t),
             width=lerp(start_width, end_width, t),
-            height=lerp(start_height, end_height, t),
+            height=lerp(start_height, end_height, rank_t),
             rank=(
                 lerp(start_rank, end_rank, rank_t)
                 if start_rank is not None and end_rank is not None

@@ -4,15 +4,19 @@ from models.bar_data import BarData
 
 class Timeline:
 
-    def __init__(self, dataframe, config=None):
+    def __init__(self, dataframe, config=None, *, include_missing_categories=False):
         self.config = config or DatasetConfig()
         self.df = dataframe
+        self.include_missing_categories = include_missing_categories
         self.years = sorted(int(y) for y in dataframe[self.config.year_column].unique())
         self._time_labels = self._build_time_labels(dataframe)
         self._period_indexes = {
             period: index for index, period in enumerate(self.years)
         }
         self._periods_by_label = self._build_periods_by_label()
+        self._category_rows = tuple(
+            row for _, row in dataframe.drop_duplicates(self.config.name_column).iterrows()
+        ) if include_missing_categories else ()
 
     def get_years(self):
         return self.years
@@ -21,10 +25,19 @@ class Timeline:
         frame = self.df[self.df[self.config.year_column] == year]
         frame = frame.sort_values(by=self.config.value_column, ascending=False)
 
-        return [
+        bars = [
             self._bar_data_from_row(row)
             for _, row in frame.iterrows()
         ]
+        if not self.include_missing_categories:
+            return bars
+        present = set(frame[self.config.name_column])
+        for row in self._category_rows:
+            if row[self.config.name_column] not in present:
+                missing = row.copy()
+                missing[self.config.value_column] = 0
+                bars.append(self._bar_data_from_row(missing))
+        return bars
 
     def get_time_label(self, period):
         # Return the display label nearest to a numeric timeline position.

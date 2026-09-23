@@ -148,7 +148,37 @@ Validation media and diagnostic JSON must remain outside version control.
 - Auto-fit visible bars to the available vertical layout space.
 - Choose legacy manual bar rows or a reactive `fill_available` vertical layout
   that reserves only visible title, subtitle, and source layers; the date
-  watermark never consumes bar-row space.
+  watermark never consumes bar-row space. Rows and gaps fill the usable height
+  between those reserved layers and the axis labels, respecting padding.
+  Fewer visible rows become taller; use manual mode for fixed-height rows.
+  `Canvas and text -> Available content area -> Bar visibility` selects
+  progressive entry or all categories including zero values. Top N and visible
+  slot limits still apply; disable both to display the entire catalog.
+  Incoming rows enter from below and ranking follows the displayed values,
+  not the next year's final ranking.
+  Inside logos keep their complete configured badge size, even at zero visual
+  width. Bars with an available inside logo use that badge as a visual minimum
+  (`max(data_width, logo_width)`); larger bars are not stretched. Ticks retain
+  the numeric scale, including growth, so only bars below this explicit visual
+  minimum depart from a literal value-to-length representation.
+  Dynamic grids use an expansion-only numeric domain and
+  stable structural width. Fixed-value ticks move left as the domain expands,
+  never right because of artificial reveal growth. With `Start bars at zero`,
+  a two-second opening counts from zero to the first dataset values against a
+  fixed scale, keeping complete logos and pausing the calendar and fun facts.
+  These extra frames precede the unchanged race; partial ranges include them.
+  `Preview frame -> Intro` inspects this opening; Year previews show actual
+  dataset snapshots. `Leader full width point` sets the full-width reference
+  from the interpolated leader at that percentage of the effective video,
+  including the opening and Activity Weighted timing. Bars grow against that
+  shared scale that grows gradually with leader records. Below the reference R,
+  the domain is sqrt(R * record); at/above R it follows the record. Thus bars
+  gain occupancy while persistent grid lines compress left, without shrinking
+  the domain when values fall. Grid identities use nested 1/2/10 decimal steps,
+  smooth density fades and a soft right-edge entrance, not hard collision removal.
+  Earlier equal/larger values may fill the width sooner. Partial exports retain
+  the full video's reference; Short uses its selected periods. Static/grid-off
+  modes retain their existing progressive-width behavior.
 - Place category labels outside-left, inside-left, inside-center, inside-right,
   or outside-right with independent X/Y offsets and logo/value collision guards.
 - Apply reusable layout presets for common video formats.
@@ -188,11 +218,54 @@ Validation media and diagnostic JSON must remain outside version control.
   `editorial_right` column, or a movable `editorial_floating` card. Floating
   cards can be vertical or horizontal and configure their canvas rectangle,
   image side, bar safety gap, typography, image fit/area, and
-  transparent/solid/card background.
+  transparent/solid/card background. `Fun Facts -> Minimum card duration
+  (seconds)` configures a 0-120 second minimum (default 6), in both Uniform and
+  Activity Weighted playback. This window includes fades, extending beyond the ending
+  year when needed. The next scheduled card or video end takes priority; no
+  cards overlap and no transition frames are added. Transition previews and
+  partial exports use the same global-frame schedule. Forced/year snapshots
+  remain editorial inspection views.
 - Run a complete local production from a strict version-2 brief, including
   dataset construction, optional local logos, project assembly, preflight, and
   an isolated MP4 render.
 - Run a minimal automated test suite with `unittest`.
+
+## Review rendering
+
+In Export, `Final frame hold (seconds)` can keep the exact last scene on screen
+for up to 60 seconds. Set it to `10` for a ten-second ending, including the
+race's existing last frame. The duration estimate and render window include
+the hold; a clip starting inside it shows that same final scene. The setting
+defaults to zero for existing projects and also works with review and Short
+exports.
+
+Rank crossings and dynamic-grid density changes settle in video time, including
+when values stop changing. Grid fades finish in approximately 0.3 seconds;
+value-ranked row changes finish within 0.6 seconds (shorter with reduced rank
+movement duration). Tick positions still follow the same numeric scale as bars.
+These bounded transitions are deterministic for previews, partial exports and
+both review modes, without changing data or the video duration.
+
+In Export, `Render quality` selects Final, Quick review (about 15 FPS), or
+Motion review (original FPS). `Review detail` selects Visual (real logos) or
+Draft (rectangular bars and same-size logo placeholders). Both review modes
+remove decorative bar gradients, shadows, textures, bevels, shines and glows.
+Solid category colors, text, cards and original scene placement remain.
+
+Reviews sample the original global animation frames; they do not change project
+FPS, transition allocation, the opening, calendars or card schedules. The output
+frame rate is adjusted slightly when needed to preserve the exact range duration.
+Quick mode can miss very brief collisions; Draft cannot validate actual logo art.
+Use final-quality partial renders to inspect suspicious intervals.
+
+Output is a separate `_review_<mode>_<detail>.mp4`, streamed directly to FFmpeg
+with ultrafast encoding and maximum 960-pixel long edge. Final video and PNG
+sequences are not overwritten or cleaned. Rasterization retains original canvas
+geometry and resolution before encoder downscaling: most speed savings come
+from fewer frames, simplified effects and avoiding PNG I/O, not low-resolution
+layout. Motion review may offer only a modest speedup. `Estimate render time`
+measures the selected review renderer and extrapolates its actual frame count;
+encoding and machine load are still excluded.
 
 ## Requirements
 

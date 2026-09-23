@@ -36,6 +36,7 @@ class ChartConfig:
     auto_fit_bar_count: bool = True
     max_visible_bars: int | None = None
     bar_vertical_layout_mode: str = "manual"
+    bar_visibility_mode: str = "progressive"
     bar_vertical_top_padding: int = 24
     bar_vertical_bottom_padding: int = 24
     bar_shape: str = "rectangle"

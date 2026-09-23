@@ -24,7 +24,7 @@ def primary_logo_is_inside(config, sprite):
 
 
 def resolved_primary_logo_size(config, sprite, requested_size):
-    """Resolve primary-logo outer size from bar height, never bar width."""
+    """Resolve the complete badge from row height, independent of data width."""
     bar_height = max(0.0, float(sprite.height))
     logo_size_percent = max(0.0, min(100.0, float(requested_size)))
     size_from_slider = bar_height * logo_size_percent / 100.0
@@ -50,14 +50,15 @@ def final_visual_bar_sprite(
 ):
     """Return render-only bar geometry after rank and logo constraints."""
     visual = visual_rank_motion_sprite(sprite)
+    if config.bar_vertical_layout_mode == "fill_available":
+        from core.layout_engine import structural_race_vertical_bounds
+        top, bottom = structural_race_vertical_bounds(config)
+        height = min(visual.height, max(0.0, bottom - top))
+        visual = replace(visual, height=height,
+                         y=max(top + height / 2, min(bottom - height / 2, visual.y)))
     if not primary_logo_is_inside(config, visual):
         return visual
 
-    nominal_logo_width = resolved_primary_logo_size(
-        config,
-        sprite,
-        config.logo_size,
-    )
     effective_logo_width = resolved_primary_logo_size(
         config,
         visual,
@@ -71,16 +72,19 @@ def final_visual_bar_sprite(
     if not primary_logo_available or effective_logo_width <= 0.0:
         return visual
 
-    structural_width = _primary_logo_containment_width(config, visual)
-    return replace(
-        visual,
-        width=continuous_logo_minimum_width(
+    if not config.value_grid_enabled:
+        # Without a numeric axis the badge is the starting width, not a floor
+        # hiding the first part of progressive growth. Keep the same full-width
+        # endpoint and never shrink the complete logo.
+        return replace(visual, width=continuous_logo_minimum_width(
             visual.width,
-            structural_width,
-            nominal_logo_width,
-            effective_logo_width=effective_logo_width,
-        ),
-    )
+            _primary_logo_containment_width(config, visual),
+            effective_logo_width,
+        ))
+
+    # The badge is a visual minimum, not an additive offset or affine remap.
+    # Once the data width clears this floor, its endpoint stays axis-exact.
+    return replace(visual, width=max(visual.width, effective_logo_width))
 
 
 def resolved_bar_visual_sprite(

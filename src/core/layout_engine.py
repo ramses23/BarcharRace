@@ -148,7 +148,8 @@ class LayoutEngine:
         return self._visible_bars(sorted(bars, key=self._sort_key))
 
     def _visible_bars(self, sorted_bars):
-        nonzero_bars = [bar for bar in sorted_bars if bar.value != 0]
+        nonzero_bars = [bar for bar in sorted_bars
+                        if self.config.bar_visibility_mode == "all" or bar.value != 0]
         limit = len(nonzero_bars)
 
         if self.config.max_visible_bars is not None:
@@ -174,14 +175,10 @@ class LayoutEngine:
             return self.config.bar_height, self.config.bar_gap, first_y
         top, bottom_edge = structural_race_vertical_bounds(self.config)
         available = max(count, bottom_edge - top)
-        if count == 1:
-            height = min(self.config.bar_height, available)
-            return height, 0, top + (available / 2)
         ratio = max(0.0, self.config.bar_gap / max(1, self.config.bar_height))
         height = max(1.0, available / (count + ratio * (count - 1)))
         gap = max(0.0, height * ratio)
-        used = height * count + gap * (count - 1)
-        return height, gap, top + ((available - used) / 2) + (height / 2)
+        return height, gap, top + (height / 2)
 
     def _text_half_height(self, point_size):
         return _text_half_height(self.config, point_size)

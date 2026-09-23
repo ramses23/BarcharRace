@@ -1,4 +1,5 @@
 import os
+from core.opening_intro import opening_intro_frames
 import shutil
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -25,7 +26,7 @@ from studio.short_export import (
 from studio.workspace_paths import WorkspacePathError, assert_user_write_path
 from validators.dataset_validator import DatasetValidator
 from utils.render_window import resolve_render_window
-from utils.video_duration import estimate_video_duration
+from utils.video_duration import estimate_video_duration, final_frame_hold_frames
 
 
 @dataclass(frozen=True)
@@ -154,6 +155,10 @@ def run_render_preflight(
                         steps_per_transition=preset.chart_config.steps_per_transition,
                         fps=preset.chart_config.fps,
                         continuous_motion=preset.chart_config.animation.continuous_motion,
+                        intro_frames=opening_intro_frames(preset.chart_config),
+                        final_frame_hold_frames=final_frame_hold_frames(
+                            preset.export_config.final_frame_hold_seconds,
+                            preset.chart_config.fps),
                     ).frame_count
                     start, end = resolve_render_window(total, preset.export_config)
                     checks.append(_ok("render_window", "Render window", f"Frames [{start}, {end}): {end - start} frames."))

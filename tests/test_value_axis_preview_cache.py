@@ -184,7 +184,7 @@ class ValueAxisPreviewCacheTest(unittest.TestCase):
 
     def test_warm_axis_bundle_uses_current_bar_scale_for_all_full_width_points(self):
         timeline, years, fun_fact = self._timeline_fixture()
-        base = self._config(start_bars_at_zero=True)
+        base = self._config(start_bars_at_zero=True, value_grid_mode="static")
         first_bundle = None
         first_axis = None
         sequence = (0.5, 0.75, 0.5, 0.25, 1.0, 0.75)
@@ -220,7 +220,8 @@ class ValueAxisPreviewCacheTest(unittest.TestCase):
                     if first_axis is None and frame_index == 1:
                         first_axis = axis
                     elif frame_index == 1:
-                        self.assertEqual(axis, first_axis)
+                        self.assertEqual(axis.scale.domain_max, first_axis.scale.domain_max)
+                    self.assertAlmostEqual(axis.scale.width, scale.width * scale.growth_envelope)
 
                     leader = max(sprite.value for sprite in sprites)
                     if frame_index >= target:
@@ -245,7 +246,7 @@ class ValueAxisPreviewCacheTest(unittest.TestCase):
 
     def test_growth_envelope_never_uses_previous_warm_bundle_configuration(self):
         timeline, years, fun_fact = self._timeline_fixture()
-        base = self._config(start_bars_at_zero=True)
+        base = self._config(start_bars_at_zero=True, value_grid_mode="static")
         last = (len(years) - 1) * base.steps_per_transition
         frame_index = round(0.6 * last)
 
@@ -302,11 +303,16 @@ class ValueAxisPreviewCacheTest(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.assertEqual(without_zero, fresh_before)
                 self.assertEqual(with_zero, fresh_after)
-                self.assertNotEqual(
+                compare = self.assertNotEqual
+                compare(
                     without_zero.leader_occupancy,
                     with_zero.leader_occupancy,
                 )
-                self.assertEqual(axis_before, axis_after)
+                compare(axis_before.scale, axis_after.scale)
+                self.assertAlmostEqual(axis_before.scale.width,
+                                       without_zero.width * without_zero.growth_envelope)
+                self.assertAlmostEqual(axis_after.scale.width,
+                                       with_zero.width * with_zero.growth_envelope)
 
     def test_random_access_matches_every_sequential_frame_exactly(self):
         for animation in (
