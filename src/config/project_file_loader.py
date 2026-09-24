@@ -249,6 +249,10 @@ def _chart_base_config(base_config, chart_data):
 
 
 def _convert_chart_value(key, value):
+    if key == "rank_celebration":
+        if value not in ("off", "first", "top_two", "podium"):
+            raise ProjectFileError("Rank celebration must be 'off', 'first', 'top_two', or 'podium'.")
+        return value
     if key == "intro_text_behavior":
         if value not in ("persistent", "timed_fade"):
             raise ProjectFileError("Intro text behavior must be 'persistent' or 'timed_fade'.")

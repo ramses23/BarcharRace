@@ -109,7 +109,7 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
                 sprites = sample_timed_sprites(MotionEngine(chart_config.animation),
                     tuple(_sprites_for_year(timeline, selector, layout, p) for p in years), timing_plan, frame_index)
 
-    bar_value_scale, value_axis = _preview_value_scales(
+    bar_value_scale, value_axis, rank_celebrations = _preview_value_scales(
         timeline=timeline,
         selector=selector,
         layout=layout,
@@ -117,6 +117,7 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
         years=years,
         target_frame_index=frame_index,
         target_sprites=sprites,
+        include_celebrations=True,
     )
     sprites = scale_bar_sprites(sprites, bar_value_scale, chart_config)
     output_frame_index = frame_index + intro_frames
@@ -143,5 +144,6 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
             frame_index=output_frame_index,
             value_axis=value_axis,
             bar_value_scale=bar_value_scale,
+            rank_celebrations=rank_celebrations,
         ),
     )

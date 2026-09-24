@@ -420,6 +420,7 @@ class RenderJob:
                     )
                     scene.value_axis = align_axis_to_bar_scale(value_axis, bar_value_scale, chart_config)
                     scene.bar_value_scale = bar_value_scale
+                    scene.rank_celebrations = bar_scale_resolver.celebrations_at(max(0, global_frame)) if not is_intro else ()
                     scene.short_overlay = short_overlay_for_frame(
                         self.export_config,
                         frame_index=scene.frame_index,

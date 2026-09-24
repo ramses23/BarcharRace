@@ -37,6 +37,7 @@ class ChartConfig:
     max_visible_bars: int | None = None
     bar_vertical_layout_mode: str = "manual"
     bar_visibility_mode: str = "progressive"
+    rank_celebration: str = "off"
     bar_vertical_top_padding: int = 24
     bar_vertical_bottom_padding: int = 24
     bar_shape: str = "rectangle"

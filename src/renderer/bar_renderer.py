@@ -33,6 +33,7 @@ from core.logo_geometry import (
 from core.rank_motion import (
     ordered_rank_motion_sprites,
 )
+from core.rank_celebration import celebration_particles
 from core.bar_text_geometry import resolve_value_text_geometry
 from core.source_text_geometry import resolve_source_text_layout
 from renderer.artists import (
@@ -86,6 +87,8 @@ class BarRenderer(TextCompositorMixin):
         self._advanced_glow_collection = None
         self._bar_artists = []
         self._bar_visual_groups = []
+        self._rank_celebration_artist = None
+        self._rank_celebration_glints = None
         self._advanced_fill_cache = OrderedDict()
         self._advanced_material_cache = OrderedDict()
         self._advanced_resized_fill_cache = OrderedDict()
@@ -169,6 +172,8 @@ class BarRenderer(TextCompositorMixin):
             self._advanced_glow_collection = None
             self._bar_artists = []
             self._bar_visual_groups = []
+            self._rank_celebration_artist = None
+            self._rank_celebration_glints = None
             self.logo_cache.clear()
             self._advanced_fill_cache.clear()
             self._advanced_material_cache.clear()
@@ -308,6 +313,11 @@ class BarRenderer(TextCompositorMixin):
         self._text_foreground_artist = ImageCommandsArtist(self.config.height)
         self._text_foreground_artist.set_zorder(5)
         ax.add_artist(self._text_foreground_artist)
+        if self.config.rank_celebration != "off":
+            self._rank_celebration_artist = ax.scatter([], [], marker="o", s=[],
+                linewidths=0, zorder=4.8)
+            self._rank_celebration_glints = ax.scatter([], [], marker="*", s=[],
+                linewidths=0, zorder=4.9)
         self._fun_fact_artist = ImageCommandsArtist(self.config.height)
         self._fun_fact_artist.set_zorder(6)
         ax.add_artist(self._fun_fact_artist)
@@ -458,7 +468,38 @@ class BarRenderer(TextCompositorMixin):
             self._set_bar_visual_group_visible(group, False)
 
         self._update_fun_fact_overlay(scene.fun_fact)
+        self._update_rank_celebrations(scene.rank_celebrations)
         self._update_short_overlay(scene.short_overlay)
+
+    def _update_rank_celebrations(self, active):
+        if self._rank_celebration_artist is None:
+            return
+        particles, glints = [], []
+        for celebration in active:
+            origin = self._rank_celebration_origin(celebration.anchor_sprite)
+            samples = celebration_particles(celebration.event,
+                                            celebration.age_frames, self.config.fps, origin)
+            particles.extend(samples)
+            if celebration.event.rank == 1:
+                glints.extend(samples[::6])
+        for artist, samples, size_multiplier in (
+            (self._rank_celebration_artist, particles, 1.0),
+            (self._rank_celebration_glints, glints, 2.0),
+        ):
+            artist.set_offsets(np.asarray([(x, y) for x, y, _, _ in samples],
+                                          dtype=float).reshape(-1, 2))
+            artist.set_sizes([size * size_multiplier for _, _, size, _ in samples])
+            artist.set_facecolors([rgba for _, _, _, rgba in samples])
+
+    def _rank_celebration_origin(self, anchor_sprite):
+        visual, _ = self._final_visual_geometry(anchor_sprite)
+        if self.config.logos_enabled and visual.logo_path:
+            layout = self._logo_layout(visual)
+            if layout is not None and self._load_logo(visual.logo_path,
+                    max(1, int(round(layout["bottom"] - layout["top"])))) is not None:
+                return ((layout["left"] + layout["right"]) / 2,
+                        (layout["top"] + layout["bottom"]) / 2)
+        return visual.x + visual.width, visual.y
 
     def _mirror_bar_group_commands(self, count):
         groups = self._bar_visual_groups[:count]

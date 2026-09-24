@@ -191,7 +191,7 @@ def render_project_preview(
         else:
             active_fact = fun_fact_scheduler.force(force_fun_fact_id)
 
-    bar_value_scale, value_axis = _preview_value_scales(
+    bar_value_scale, value_axis, rank_celebrations = _preview_value_scales(
         timeline=timeline,
         selector=selector,
         layout=layout,
@@ -199,6 +199,7 @@ def render_project_preview(
         years=years,
         target_frame_index=frame_index,
         target_sprites=sprites,
+        include_celebrations=True,
     )
     sprites = scale_bar_sprites(sprites, bar_value_scale, chart_config)
     output_frame_index = frame_index + intro_frames
@@ -222,6 +223,7 @@ def render_project_preview(
         frame_index=output_frame_index,
         value_axis=value_axis,
         bar_value_scale=bar_value_scale,
+        rank_celebrations=rank_celebrations,
     )
     duration = estimate_export_duration(
         timeline.get_years(),
@@ -458,17 +460,20 @@ def _preview_value_scales(
     years,
     target_frame_index,
     target_sprites,
+    include_celebrations=False,
 ):
     if not chart_config.value_grid_enabled:
         sprites_by_year = {
             year: _sprites_for_year(timeline, selector, layout, year)
             for year in years
         }
-        bar_value_scale = BarValueScaleResolver.from_config(
+        resolver = BarValueScaleResolver.from_config(
             chart_config,
             sprites_by_year.values(),
-        ).for_sprites(target_sprites, frame_index=target_frame_index)
-        return bar_value_scale, None
+        )
+        bar_value_scale = resolver.for_sprites(target_sprites, frame_index=target_frame_index)
+        result = (bar_value_scale, None)
+        return (*result, resolver.celebrations_at(target_frame_index)) if include_celebrations else result
 
     bundle = get_preview_value_axis_bundle(
         chart_config,
@@ -477,12 +482,14 @@ def _preview_value_scales(
         selector,
         layout,
     )
-    bar_value_scale = BarValueScaleResolver.from_config(
+    resolver = BarValueScaleResolver.from_config(
         chart_config,
         bundle.sprite_sets,
-    ).for_sprites(target_sprites, frame_index=target_frame_index)
-    return bar_value_scale, align_axis_to_bar_scale(
-        bundle.resolver.state_at(target_frame_index), bar_value_scale, chart_config)
+    )
+    bar_value_scale = resolver.for_sprites(target_sprites, frame_index=target_frame_index)
+    result = (bar_value_scale, align_axis_to_bar_scale(
+        bundle.resolver.state_at(target_frame_index), bar_value_scale, chart_config))
+    return (*result, resolver.celebrations_at(target_frame_index)) if include_celebrations else result
 
 
 def _sprites_for_year(timeline, selector, layout, year):

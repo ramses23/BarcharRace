@@ -32,3 +32,4 @@ class Scene:
     frame_index: int = 0
     value_axis: ValueAxisState | None = None
     bar_value_scale: BarValueScale | None = None
+    rank_celebrations: tuple = ()

@@ -1423,6 +1423,7 @@ def _project_form(
         frame_output_mode=render_settings["frame_output_mode"],
         motion_mode=render_settings["motion_mode"],
         rank_movement_duration=render_settings["rank_movement_duration"],
+        rank_celebration=render_settings["rank_celebration"],
         transition_duration_mode=render_settings.get("transition_duration_mode", "uniform"),
         minimum_transition_duration_seconds=render_settings.get("minimum_transition_duration_seconds", 1.0),
         bar_style=bars_settings["bar_style"],
@@ -2950,6 +2951,7 @@ def _render_settings_from_values(
         ),
         "motion_mode": motion_mode,
         "rank_movement_duration": rank_movement_duration,
+        "rank_celebration": values.get("rank_celebration", "off"),
         "transition_duration_mode": values.get("transition_duration_mode", "uniform"),
         "minimum_transition_duration_seconds": values.get("minimum_transition_duration_seconds", 1.0),
         "frame_output_mode": frame_output_mode,
@@ -4489,6 +4491,18 @@ def _animation_output_section(
         ),
         key=_widget_key("rank_movement_duration"),
     )
+    rank_celebration = st.segmented_control(
+        "Rank Celebration",
+        options=("off", "first", "top_two", "podium"),
+        default=values.get("rank_celebration", "off"),
+        format_func=lambda option: {
+            "off": "Off", "first": "#1 only",
+            "top_two": "Top 2", "podium": "Podium",
+        }[option],
+        selection_mode="single",
+        key=_widget_key("rank_celebration"),
+        help="Celebrate a settled rise to the selected podium ranks.",
+    ) or "off"
     hold_key = _widget_key("final_frame_hold_seconds")
     _reconcile_numeric_widget_state(
         hold_key, float(export_settings["final_frame_hold_seconds"]),
@@ -4605,6 +4619,7 @@ def _animation_output_section(
         "steps": int(steps),
         "motion_mode": motion_mode,
         "rank_movement_duration": rank_movement_percent / 100.0,
+        "rank_celebration": rank_celebration,
         "transition_duration_mode": transition_duration_mode,
         "minimum_transition_duration_seconds": float(minimum_duration),
         "frame_output_mode": frame_output_mode,

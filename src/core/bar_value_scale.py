@@ -26,6 +26,7 @@ class BarValueScaleResolver:
     leader_history: tuple = ()
     timing_plan: object = None
     display_timeline: object = field(default=None, compare=False, repr=False)
+    rank_celebration_timeline: object = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_config(cls, config, sprite_sets):
@@ -101,7 +102,7 @@ class BarValueScaleResolver:
         from core.display_timeline import DisplayTimeline
         display_timeline = DisplayTimeline(config, sprite_sets, reference_value,
                                            project_max, fallback_width)
-        return cls(
+        resolver = cls(
             origin_x=float(config.left_margin),
             domain_max=reference_value,
             fallback_width=fallback_width,
@@ -116,6 +117,16 @@ class BarValueScaleResolver:
             timing_plan=timing_plan,
             display_timeline=display_timeline,
         )
+        if getattr(config, "rank_celebration", "off") != "off":
+            from core.rank_celebration import RankCelebrationTimeline
+            resolver = replace(resolver, rank_celebration_timeline=RankCelebrationTimeline(
+                config, sprite_sets, display_timeline))
+        return resolver
+
+    def celebrations_at(self, frame_index):
+        if self.rank_celebration_timeline is None:
+            return ()
+        return self.rank_celebration_timeline.active_at(frame_index, self)
 
     def for_sprites(self, sprites, *, frame_index=0, timeline_progress=None):
         if timeline_progress is None:
