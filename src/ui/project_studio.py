@@ -1435,6 +1435,9 @@ def _project_form(
         rank_label_font_family=canvas_settings["rank_label_font_family"],
         title_text_color=canvas_settings["title_text_color"],
         title_text_opacity=canvas_settings["title_text_opacity"],
+        intro_text_behavior=canvas_settings["intro_text_behavior"],
+        intro_text_visible_duration_seconds=canvas_settings["intro_text_visible_duration_seconds"],
+        intro_text_fade_duration_seconds=canvas_settings["intro_text_fade_duration_seconds"],
         subtitle_text_color=canvas_settings["subtitle_text_color"],
         subtitle_text_opacity=canvas_settings["subtitle_text_opacity"],
         label_text_color=bars_settings["label_text_color"],
@@ -2002,6 +2005,9 @@ def _canvas_settings_from_values(
         "title_text_opacity": _opacity_or_default(
             values.get("title_text_opacity"), 1.0,
         ),
+        "intro_text_behavior": values.get("intro_text_behavior", "persistent"),
+        "intro_text_visible_duration_seconds": float(values.get("intro_text_visible_duration_seconds", 10.0)),
+        "intro_text_fade_duration_seconds": float(values.get("intro_text_fade_duration_seconds", 1.5)),
         "subtitle_text_color": _color_or_default(
             values.get("subtitle_text_color"),
             theme_settings.muted_text_color,
@@ -3437,6 +3443,27 @@ def _canvas_text_section(
                 value=bool(values.get("subtitle_enabled", True)),
                 key=_widget_key("subtitle_enabled"),
             )
+            intro_text_behavior = st.selectbox(
+                "Intro text behavior",
+                ("persistent", "timed_fade"),
+                index=_option_index(("persistent", "timed_fade"), values.get("intro_text_behavior", "persistent")),
+                format_func=lambda value: "Persistent" if value == "persistent" else "Timed fade",
+                key=_widget_key("intro_text_behavior"),
+            )
+            if intro_text_behavior == "timed_fade":
+                intro_text_visible_duration_seconds = st.number_input(
+                    "Visible duration (seconds)", min_value=0.0, step=0.5,
+                    value=float(values.get("intro_text_visible_duration_seconds", 10.0)),
+                    key=_widget_key("intro_text_visible_duration_seconds"),
+                )
+                intro_text_fade_duration_seconds = st.number_input(
+                    "Fade duration (seconds)", min_value=0.0, step=0.5,
+                    value=float(values.get("intro_text_fade_duration_seconds", 1.5)),
+                    key=_widget_key("intro_text_fade_duration_seconds"),
+                )
+            else:
+                intro_text_visible_duration_seconds = float(values.get("intro_text_visible_duration_seconds", 10.0))
+                intro_text_fade_duration_seconds = float(values.get("intro_text_fade_duration_seconds", 1.5))
 
         with bars_column:
             st.markdown("**Bars**")
@@ -3886,6 +3913,9 @@ def _canvas_text_section(
         "text_styles": text_styles,
         "title_text_color": title_text_color,
         "title_text_opacity": title_text_opacity,
+        "intro_text_behavior": intro_text_behavior,
+        "intro_text_visible_duration_seconds": float(intro_text_visible_duration_seconds),
+        "intro_text_fade_duration_seconds": float(intro_text_fade_duration_seconds),
         "subtitle_text_color": subtitle_text_color,
         "subtitle_text_opacity": subtitle_text_opacity,
         "label_text_color": label_text_color,

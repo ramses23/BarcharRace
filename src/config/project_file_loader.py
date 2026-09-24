@@ -1,5 +1,6 @@
 import json
 from dataclasses import fields, replace
+from math import isfinite
 from pathlib import Path
 
 from config.animation_config import AnimationConfig, MIN_RANK_MOVEMENT_DURATION, MAX_RANK_MOVEMENT_DURATION
@@ -248,6 +249,17 @@ def _chart_base_config(base_config, chart_data):
 
 
 def _convert_chart_value(key, value):
+    if key == "intro_text_behavior":
+        if value not in ("persistent", "timed_fade"):
+            raise ProjectFileError("Intro text behavior must be 'persistent' or 'timed_fade'.")
+        return value
+
+    if key in ("intro_text_visible_duration_seconds", "intro_text_fade_duration_seconds"):
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not isfinite(value) or value < 0):
+            raise ProjectFileError(f"Chart field '{key}' must be a finite nonnegative duration.")
+        return float(value)
+
     if key == "animation":
         raise ProjectFileError(
             "Use the top-level 'animation' section instead of 'chart.animation'."

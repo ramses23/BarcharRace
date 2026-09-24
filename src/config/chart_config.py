@@ -181,6 +181,9 @@ class ChartConfig:
 
     title_enabled: bool = True
     subtitle_enabled: bool = True
+    intro_text_behavior: str = "persistent"
+    intro_text_visible_duration_seconds: float = 10.0
+    intro_text_fade_duration_seconds: float = 1.5
     time_label_enabled: bool = True
     date_style: str = "standard"
     flip_calendar_scale: float = 1.0

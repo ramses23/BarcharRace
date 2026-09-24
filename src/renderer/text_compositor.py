@@ -6,12 +6,26 @@ from renderer.artists import TextSprite
 from utils.value_formatter import format_value
 
 
+def intro_text_lifecycle_opacity(config, global_frame):
+    if config.intro_text_behavior != "timed_fade":
+        return 1.0
+    elapsed = global_frame / config.fps - config.intro_text_visible_duration_seconds
+    if elapsed <= 0:
+        return 1.0
+    duration = config.intro_text_fade_duration_seconds
+    if duration <= 0:
+        return 0.0
+    progress = min(1.0, elapsed / duration)
+    return 1.0 - progress * progress * (3.0 - 2.0 * progress)
+
+
 class TextCompositorMixin:
 
     def _update_text_composites(self, scene, *, include_bar_commands=True):
         background_commands = []
         bar_commands = []
         foreground_commands = []
+        intro_opacity = intro_text_lifecycle_opacity(self.config, scene.frame_index)
 
         if (
             self.config.time_label_enabled
@@ -58,7 +72,7 @@ class TextCompositorMixin:
                 self.config.title_font_family,
                 self.config.title_font_weight,
                 self.config.resolved_title_text_color,
-                self.config.title_text_opacity,
+                self.config.title_text_opacity * intro_opacity,
             ),
             (
                 (
@@ -72,7 +86,7 @@ class TextCompositorMixin:
                 self.config.subtitle_font_family,
                 self.config.subtitle_font_weight,
                 self.config.resolved_subtitle_text_color,
-                self.config.subtitle_text_opacity,
+                self.config.subtitle_text_opacity * intro_opacity,
             ),
             (
                 (
