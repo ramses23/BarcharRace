@@ -9,9 +9,11 @@ import _test_path
 from config.animation_config import AnimationConfig
 from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
+from config.dataset_config import DatasetConfig
 from config.export_config import ExportConfig
 from config.project_file_loader import ProjectFileError, load_project_data, load_project_file
 from core.bar_value_scale import BarValueScaleResolver
+from core.opening_intro import opening_intro_frames
 from core.rank_celebration import RankCelebrationTimeline, celebration_particles
 from models.bar_sprite import BarSprite
 from models.scene import Scene
@@ -154,6 +156,54 @@ class RankCelebrationTest(unittest.TestCase):
             rebuilt = RankCelebrationTimeline(
                 result.config, result.sprite_sets, result.display_timeline)
         self.assertEqual([event.rank for event in rebuilt.events if event.name == "D"], [3])
+
+    def test_walmart_sequential_podium_events_from_brand_finance_production_data(self):
+        # Values from the production World's Most Valuable Brands CSV, 2007-2010,
+        # in USD millions. These brands preserve Walmart's real crossing frames.
+        rows = (
+            {"Coca-Cola": 43146, "Microsoft": 37074, "Citi": 35148,
+             "Walmart": 34899, "IBM": 34074},
+            {"Coca-Cola": 45441, "Microsoft": 44501, "Google": 43085,
+             "Walmart": 39001, "IBM": 37949, "Citi": 27187},
+            {"Walmart": 40616, "Coca-Cola": 32728, "IBM": 31530,
+             "Microsoft": 30882, "Google": 29261},
+            {"Walmart": 41365, "Google": 36191, "Coca-Cola": 34844,
+             "IBM": 33706, "Microsoft": 33604},
+        )
+        config = ChartConfig(width=960, height=540, fps=30, steps_per_transition=750,
+            rank_celebration="podium", start_bars_at_zero=True, value_grid_enabled=True,
+            bar_vertical_layout_mode="fill_available",
+            animation=AnimationConfig(motion_mode="continuous", rank_movement_duration=.25))
+        result = BarValueScaleResolver.from_config(config, tuple(sprites(row) for row in rows))
+        events = [(event.rank, event.frame) for event in
+                  result.rank_celebration_timeline.events if event.name == "Walmart"]
+        self.assertEqual(events, [(3, 70), (3, 997), (2, 1050), (1, 1096)])
+
+        with tempfile.TemporaryDirectory() as directory:
+            csv = Path(directory) / "brands.csv"
+            csv.write_text("year,brand,value\n" + "".join(
+                f"{year},{brand},{millions * 1_000_000}\n"
+                for year, values in zip((2007, 2008, 2009, 2010), rows)
+                for brand, millions in values.items()), encoding="utf-8")
+            selected = []
+
+            def consume(scene, renderer):
+                walmart = [item for item in scene.rank_celebrations
+                           if item.event.name == "Walmart"]
+                renderer.render_rgba(scene)
+                selected.append((scene.frame_index,
+                    [(item.event.rank, item.age_frames) for item in walmart],
+                    len(renderer._rank_celebration_artist.get_offsets())))
+
+            intro = opening_intro_frames(config)
+            RenderJob(config=config, data_source_config=DataSourceConfig(csv_path=str(csv)),
+                dataset_config=DatasetConfig(name_column="brand", value_column="value")).run(
+                frame_sampler=lambda start, end: tuple(
+                    intro + frame for _, frame in events if start <= intro + frame < end),
+                frame_consumer=consume)
+            self.assertEqual(selected,
+                [(intro + frame, [(rank, 0)], {3: 8, 2: 12, 1: 17}[rank])
+                 for rank, frame in events])
 
     def test_activity_weighted_keeps_completion_on_its_global_timeline(self):
         end = {"D": 60, "A": 50, "B": 40, "C": 30, "E": 10}

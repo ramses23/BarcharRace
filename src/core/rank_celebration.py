@@ -66,14 +66,22 @@ class RankCelebrationTimeline:
                             episode = [name, new_rank, frame, old_rank]
                             rising[name] = episode
                         elif new_rank < episode[1]:
-                            episode[1:3] = (new_rank, frame)
+                            attained = round(episode[1])
+                            if (0 <= attained < 3 and
+                                    abs(episode[1] - attained) <= _SLOT_TOLERANCE):
+                                # Preserve each attained slot within this transition;
+                                # the settled-dwell check below rejects pass-throughs.
+                                episodes.append((*episode, frame - 1, True))
+                                rising[name] = [name, new_rank, frame, episode[1]]
+                            else:
+                                episode[1:3] = (new_rank, frame)
                     elif new_rank > old_rank + 1e-8 and episode is not None:
-                        episodes.append((*episode, frame - 1))
+                        episodes.append((*episode, frame - 1, False))
                         del rising[name]
                 previous, previous_count = current, count
-            episodes.extend((*episode, end - 1 + self.display_timeline.rank_frames)
+            episodes.extend((*episode, end - 1 + self.display_timeline.rank_frames, False)
                             for episode in rising.values())
-            for name, attained, first_frame, old_rank, latest in episodes:
+            for name, attained, first_frame, old_rank, latest, intermediate in episodes:
                 rank = round(attained) + 1
                 if not (1 <= rank <= limit and
                         abs(attained - (rank - 1)) <= _SLOT_TOLERANCE and
@@ -103,6 +111,11 @@ class RankCelebrationTimeline:
                     if target is None or abs(target - slot) > _SLOT_TOLERANCE:
                         continue
                     if visible is None or abs(visible - slot) > _SLOT_TOLERANCE:
+                        continue
+                    # A direct leap may momentarily pass through intermediate slots.
+                    # Count one as a separate stop only if the visible slot remains
+                    # settled for two rank-settling intervals before the next ascent.
+                    if intermediate and latest - frame + 1 < 2 * self.display_timeline.rank_frames:
                         continue
                     sampled = sample_timed_sprites(
                         self.display_timeline.motion, self.sprite_sets, self.plan, frame)
