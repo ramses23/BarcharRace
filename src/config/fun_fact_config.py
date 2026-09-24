@@ -21,6 +21,14 @@ class FunFactConfig:
     fade_out: float = 0.20
     minimum_duration_seconds: float = 6.0
     data_link: str = "off"
+    pulse_color: str | None = None
+    pulse_width: float = 2.5
+    pulse_border_color: str | None = None
+    pulse_border_opacity: float = 0.12
+    pulse_border_width: float = 9.0
+    pulse_fade_in_duration: float = 0.25
+    pulse_travel_duration: float = 0.60
+    wave_strength: float = 1.0
     editorial_background_mode: str = "card"
     editorial_background_color: str | None = None
     editorial_background_texture: str = "none"

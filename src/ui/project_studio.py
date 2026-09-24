@@ -39,6 +39,7 @@ from studio.render_estimator import cached_estimate, estimate_cache_key, human_r
 from studio.short_export import apply_export_profile
 from config.dataset_config import DatasetConfig
 from config.fun_fact_config import (
+    FunFactConfig,
     MAX_EDITORIAL_FONT_SIZE,
     MAX_EDITORIAL_SPACING,
     MIN_EDITORIAL_FONT_SIZE,
@@ -2223,6 +2224,7 @@ def _bars_settings_from_values(values):
 
 def _fun_fact_settings_from_values(values, *, layout_preset):
     layout = get_layout_preset(layout_preset)
+    pulse_defaults = FunFactConfig()
     default_width = round(layout.width * DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO)
     default_card_width = round(layout.width * DEFAULT_FLOATING_CARD_WIDTH_RATIO)
     default_card_height = round(layout.height * DEFAULT_FLOATING_CARD_HEIGHT_RATIO)
@@ -2251,6 +2253,14 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         "fade_in": float(values.get("fun_facts_fade_in", 0.20)),
         "minimum_duration_seconds": float(values.get("fun_facts_minimum_duration_seconds", 6.0)),
         "data_link": values.get("fun_facts_data_link", "off"),
+        **{
+            field: values.get(f"fun_facts_{field}", getattr(pulse_defaults, field))
+            for field in (
+                "pulse_color", "pulse_width", "pulse_border_color",
+                "pulse_border_opacity", "pulse_border_width",
+                "pulse_fade_in_duration", "pulse_travel_duration", "wave_strength",
+            )
+        },
         "fade_out": float(values.get("fun_facts_fade_out", 0.20)),
         "editorial_background_mode": values.get("fun_facts_editorial_background_mode", "card"),
         "editorial_background_color": values.get("fun_facts_editorial_background_color"),
@@ -2453,6 +2463,58 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         help="Add an optional anchor_category to a fact in its source JSON to connect it to a visible bar.",
         key=_widget_key("fun_facts_data_link"),
     )
+    pulse_settings = {
+        field: settings[field]
+        for field in (
+            "pulse_color", "pulse_width", "pulse_border_color",
+            "pulse_border_opacity", "pulse_border_width",
+            "pulse_fade_in_duration", "pulse_travel_duration", "wave_strength",
+        )
+    }
+    if data_link == "data_pulse":
+        color_column, width_column = st.columns(2)
+        pulse_settings["pulse_color"] = color_column.text_input(
+            "Pulse color", value=settings["pulse_color"] or "",
+            help="Use #RRGGBB; leave blank to inherit the anchor category color.",
+            key=_widget_key("fun_facts_pulse_color"),
+        ).strip() or None
+        pulse_settings["pulse_width"] = width_column.number_input(
+            "Pulse width", min_value=0.5, max_value=20.0,
+            value=float(settings["pulse_width"]), step=0.5,
+            key=_widget_key("fun_facts_pulse_width"),
+        )
+        border_color_column, border_width_column = st.columns(2)
+        pulse_settings["pulse_border_color"] = border_color_column.text_input(
+            "Pulse border color", value=settings["pulse_border_color"] or "",
+            help="Use #RRGGBB; leave blank to inherit the anchor category color.",
+            key=_widget_key("fun_facts_pulse_border_color"),
+        ).strip() or None
+        pulse_settings["pulse_border_width"] = border_width_column.number_input(
+            "Pulse border width", min_value=0.0, max_value=40.0,
+            value=float(settings["pulse_border_width"]), step=0.5,
+            key=_widget_key("fun_facts_pulse_border_width"),
+        )
+        pulse_settings["pulse_border_opacity"] = st.slider(
+            "Pulse border opacity", min_value=0.0, max_value=1.0,
+            value=float(settings["pulse_border_opacity"]), step=0.01,
+            key=_widget_key("fun_facts_pulse_border_opacity"),
+        )
+        fade_column, travel_column = st.columns(2)
+        pulse_settings["pulse_fade_in_duration"] = fade_column.number_input(
+            "Pulse fade-in duration (seconds)", min_value=0.0, max_value=10.0,
+            value=float(settings["pulse_fade_in_duration"]), step=0.05,
+            key=_widget_key("fun_facts_pulse_fade_in_duration"),
+        )
+        pulse_settings["pulse_travel_duration"] = travel_column.number_input(
+            "Pulse travel duration (seconds)", min_value=0.05, max_value=10.0,
+            value=float(settings["pulse_travel_duration"]), step=0.05,
+            key=_widget_key("fun_facts_pulse_travel_duration"),
+        )
+        pulse_settings["wave_strength"] = st.slider(
+            "Wave strength", min_value=0.25, max_value=3.0,
+            value=float(settings["wave_strength"]), step=0.05,
+            key=_widget_key("fun_facts_wave_strength"),
+        )
     fade_in_column, fade_out_column = st.columns(2)
     with fade_in_column:
         fade_in = st.slider(
@@ -2818,6 +2880,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "fade_in": float(fade_in),
         "minimum_duration_seconds": float(minimum_fact_duration),
         "data_link": data_link,
+        **pulse_settings,
         "fade_out": float(fade_out),
         **editorial,
     }

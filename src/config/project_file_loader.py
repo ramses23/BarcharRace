@@ -1087,6 +1087,27 @@ def _convert_fun_fact_value(key, value):
         if value not in ("off", "data_pulse"):
             raise ProjectFileError("Fun facts field 'data_link' must be 'off' or 'data_pulse'.")
         return value
+    if key in ("pulse_color", "pulse_border_color"):
+        if value is None:
+            return None
+        if (not isinstance(value, str) or len(value) != 7 or value[0] != "#"
+                or any(char not in "0123456789abcdefABCDEF" for char in value[1:])):
+            raise ProjectFileError(f"Fun facts field '{key}' must be null or #RRGGBB.")
+        return value.upper()
+    pulse_ranges = {
+        "pulse_width": (0.5, 20.0),
+        "pulse_border_opacity": (0.0, 1.0),
+        "pulse_border_width": (0.0, 40.0),
+        "pulse_fade_in_duration": (0.0, 10.0),
+        "pulse_travel_duration": (0.05, 10.0),
+        "wave_strength": (0.25, 3.0),
+    }
+    if key in pulse_ranges:
+        low, high = pulse_ranges[key]
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not isfinite(value) or not low <= value <= high):
+            raise ProjectFileError(f"Fun facts field '{key}' must be from {low} to {high}.")
+        return float(value)
     if key.endswith("_font_weight"):
         if value not in ("normal", "bold"):
             raise ProjectFileError(

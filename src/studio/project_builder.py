@@ -834,6 +834,9 @@ def project_form_values(project_data=None):
         **{
             f"fun_facts_{field}": fun_facts.get(field, getattr(_DEFAULT_FUN_FACT_CONFIG, field))
             for field in (
+                "pulse_color", "pulse_width", "pulse_border_color",
+                "pulse_border_opacity", "pulse_border_width",
+                "pulse_fade_in_duration", "pulse_travel_duration", "wave_strength",
                 "editorial_background_mode", "editorial_background_color",
                 "editorial_background_texture",
                 "editorial_background_texture_intensity",

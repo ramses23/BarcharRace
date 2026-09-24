@@ -9,6 +9,7 @@ from config.project_file_loader import (
     ProjectFileError,
     load_project_data as load_project_config,
 )
+from config.fun_fact_config import FunFactConfig
 from config.layout_config import get_layout_preset
 from studio.project_builder import BAR_STYLE_FIELDS
 from studio.project_storage import atomic_write_json
@@ -121,6 +122,14 @@ BAR_APPEARANCE_FIELDS = (
 )
 FUN_FACT_APPEARANCE_FIELDS = (
     "data_link",
+    "pulse_color",
+    "pulse_width",
+    "pulse_border_color",
+    "pulse_border_opacity",
+    "pulse_border_width",
+    "pulse_fade_in_duration",
+    "pulse_travel_duration",
+    "wave_strength",
     "layout",
     "panel_width",
     "panel_margin",
@@ -623,9 +632,17 @@ def _validated_preset(data):
     )
     fun_facts = None
     if schema_version >= 2:
-        fun_fact_defaults = None
+        default_fun_facts = FunFactConfig()
+        fun_fact_defaults = {
+            field: getattr(default_fun_facts, field)
+            for field in (
+                "pulse_color", "pulse_width", "pulse_border_color",
+                "pulse_border_opacity", "pulse_border_width",
+                "pulse_fade_in_duration", "pulse_travel_duration", "wave_strength",
+            )
+        }
         if schema_version <= 13:
-            fun_fact_defaults = {
+            fun_fact_defaults.update({
                 "editorial_layout_mode": "reserved",
                 "editorial_headline_alignment": "left",
                 "editorial_body_alignment": "left",
@@ -641,12 +658,12 @@ def _validated_preset(data):
                 "editorial_shadow_offset": 0,
                 "editorial_protect_top_n": 3,
                 "editorial_bar_clearance": 16,
-            }
+            })
         elif schema_version == 14:
-            fun_fact_defaults = {
+            fun_fact_defaults.update({
                 "editorial_protect_top_n": 3,
                 "editorial_bar_clearance": 16,
-            }
+            })
         if schema_version <= 5:
             fun_fact_defaults.update({
                 "editorial_headline_font_weight": "bold",

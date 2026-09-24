@@ -984,50 +984,54 @@ class BarRenderer(TextCompositorMixin):
                 if abs(logo_x - (left + width / 2)) < abs(origin_x - (left + width / 2)):
                     origin_x = logo_x
                     origin_y = (layout["top"] + layout["bottom"]) / 2
-        nearest = (
-            (left, min(max(origin_y, top), top + height)),
-            (left + width, min(max(origin_y, top), top + height)),
-            (min(max(origin_x, left), left + width), top),
-            (min(max(origin_x, left), left + width), top + height),
-        )
-        target_x, target_y = min(
-            nearest,
-            key=lambda point: (point[0] - origin_x) ** 2 + (point[1] - origin_y) ** 2,
-        )
+        target_x = left + max(4.0, min(12.0, width * .03))
+        target_y = top + max(4.0, min(12.0, height * .03))
         dx = target_x - origin_x
-        control_a = (origin_x + dx * .38, origin_y)
-        control_b = (target_x - dx * .38, target_y)
+        wave = max(
+            self.config.height * .055,
+            max(abs(dx) * .18, self.config.height * .14)
+            * self.fun_fact_config.wave_strength,
+        )
+        control_a = (origin_x + dx / 3, origin_y + wave)
+        control_b = (target_x - dx / 3, target_y - wave)
         age = max(0.0, active_fact.age_frames / max(1, self.config.fps))
-        reveal = min(1.0, age / .25)
+        fade_duration = self.fun_fact_config.pulse_fade_in_duration
+        fade = min(1.0, age / fade_duration) if fade_duration > 0 else 1.0
         samples = [self._cubic_point(
             (origin_x, origin_y), control_a, control_b, (target_x, target_y),
             step / 32,
-        ) for step in range(max(1, int(round(32 * reveal))) + 1)]
+        ) for step in range(33)]
         path = Path(samples)
-        color = mcolors.to_rgb(sprite.color)
-        alpha = min(1.0, max(0.0, active_fact.opacity * self._opacity(sprite)))
+        color = mcolors.to_rgb(self.fun_fact_config.pulse_color or sprite.color)
+        border_color = mcolors.to_rgb(
+            self.fun_fact_config.pulse_border_color or sprite.color
+        )
+        alpha = min(1.0, max(0.0, active_fact.opacity * self._opacity(sprite))) * fade
         self._fun_fact_link_glow.set_path(path)
-        self._fun_fact_link_glow.set_edgecolor((*color, alpha * .12))
-        self._fun_fact_link_glow.set_visible(reveal > 0)
+        self._fun_fact_link_glow.set_linewidth(self.fun_fact_config.pulse_border_width)
+        self._fun_fact_link_glow.set_edgecolor((
+            *border_color, alpha * self.fun_fact_config.pulse_border_opacity,
+        ))
+        self._fun_fact_link_glow.set_visible(alpha > 0 and self.fun_fact_config.pulse_border_width > 0)
         self._fun_fact_link.set_path(path)
+        self._fun_fact_link.set_linewidth(self.fun_fact_config.pulse_width)
         self._fun_fact_link.set_edgecolor((*color, alpha * .5))
-        self._fun_fact_link.set_visible(reveal > 0)
+        self._fun_fact_link.set_visible(alpha > 0)
 
-        pulse_progress = (age - .20) / .60
-        if 0.0 <= pulse_progress <= 1.0 and reveal > 0:
+        pulse_progress = age / self.fun_fact_config.pulse_travel_duration
+        if 0.0 <= pulse_progress < 1.0 and alpha > 0:
             eased = pulse_progress * pulse_progress * (3 - 2 * pulse_progress)
             point = self._cubic_point(
                 (origin_x, origin_y), control_a, control_b, (target_x, target_y),
-                min(reveal, eased),
+                eased,
             )
             self._fun_fact_pulse.set_offsets(np.asarray([point]))
             self._fun_fact_pulse.set_sizes([115])
-            pulse_color = tuple(.45 * channel + .55 for channel in color)
-            self._fun_fact_pulse.set_facecolors([pulse_color + (alpha,)])
+            self._fun_fact_pulse.set_facecolors([color + (alpha,)])
             self._fun_fact_pulse.set_visible(True)
             self._fun_fact_pulse_glow.set_offsets(np.asarray([point]))
             self._fun_fact_pulse_glow.set_sizes([360])
-            self._fun_fact_pulse_glow.set_facecolors([pulse_color + (alpha * .22,)])
+            self._fun_fact_pulse_glow.set_facecolors([border_color + (alpha * .22,)])
             self._fun_fact_pulse_glow.set_visible(True)
         else:
             self._fun_fact_pulse.set_visible(False)

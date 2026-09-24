@@ -25,7 +25,9 @@ from models.fun_fact import ActiveFunFact, FunFact, FunFactCollection
 from models.scene import Scene
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
+from studio.appearance_presets import build_appearance_preset
 from studio.fun_fact_loader import FunFactFileError, parse_fun_fact_data
+from studio.project_builder import project_form_values
 
 
 class FunFactDataPulseTest(unittest.TestCase):
@@ -57,10 +59,12 @@ class FunFactDataPulseTest(unittest.TestCase):
         self.assertLess(middle['Beta'].width, 150)
         self.assertGreater(middle['Beta'].width, 80)
 
-    def _render(self, data_link='data_pulse', *, fact=None, bars=None, age=30):
+    def _render(self, data_link='data_pulse', *, fact=None, bars=None, age=30, pulse=None):
         renderer = BarRenderer(
             output_dir=None, config=self.chart,
-            fun_fact_config=FunFactConfig(enabled=True, panel_width=180, data_link=data_link),
+            fun_fact_config=pulse or FunFactConfig(
+                enabled=True, panel_width=180, data_link=data_link,
+            ),
         )
         scene = Scene(
             title='', bars=[self.bar] if bars is None else bars,
@@ -92,7 +96,11 @@ class FunFactDataPulseTest(unittest.TestCase):
             first_path = renderer._fun_fact_link.get_path().vertices.copy()
             self.assertAlmostEqual(first_path[0, 0], self.bar.x + self.bar.width)
             self.assertAlmostEqual(first_path[0, 1], self.bar.y)
-            self.assertAlmostEqual(first_path[-1, 0], 428)
+            left, top, width, height = renderer._fun_fact_rect(
+                ActiveFunFact(self.fact, 1.0, age_frames=30)
+            )
+            self.assertAlmostEqual(first_path[-1, 0], left + max(4, min(12, width * .03)))
+            self.assertAlmostEqual(first_path[-1, 1], top + max(4, min(12, height * .03)))
             self.assertTrue(renderer._fun_fact_artist.commands)
 
             moved = BarSprite('Alpha', 140, '#40A0E0', 40, 200, 240, 30, rank=2)
@@ -138,21 +146,22 @@ class FunFactDataPulseTest(unittest.TestCase):
             finally:
                 renderer.close()
 
-    def test_reveal_pulse_and_random_access_are_global_age_deterministic(self):
+    def test_fade_pulse_and_random_access_are_global_age_deterministic(self):
         renderer = self._render(age=10)
         try:
             entering = renderer._fun_fact_link.get_path().vertices.copy()
             renderer.render_rgba(Scene(
-                title='', bars=[self.bar], fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=40),
+                title='', bars=[self.bar], fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=25),
                 frame_index=400,
             ))
             settled = renderer._fun_fact_link.get_path().vertices.copy()
-            self.assertLess(len(entering), len(settled))
+            self.assertEqual(len(entering), len(settled))
+            self.assertLess(renderer._fun_fact_link.get_edgecolor()[-1], .51)
             self.assertTrue(renderer._fun_fact_pulse.get_visible())
             pulse = renderer._fun_fact_pulse.get_offsets().copy()
 
             renderer.render_rgba(Scene(
-                title='', bars=[self.bar], fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=40),
+                title='', bars=[self.bar], fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=25),
                 frame_index=400,
             ))
             self.assertTrue((renderer._fun_fact_link.get_path().vertices == settled).all())
@@ -162,10 +171,12 @@ class FunFactDataPulseTest(unittest.TestCase):
 
     def test_config_and_anchor_json_are_backward_compatible(self):
         self.assertEqual(load_project_data({'name': 'legacy'}).fun_fact_config.data_link, 'off')
+        self.assertIsNone(load_project_data({'name': 'legacy'}).fun_fact_config.pulse_color)
         with tempfile.TemporaryDirectory() as temp_dir:
             project = Path(temp_dir) / 'project.json'
             project.write_text(json.dumps({'name': 'pulse', 'fun_facts': {'data_link': 'data_pulse'}}), encoding='utf-8')
             self.assertEqual(load_project_file(project).fun_fact_config.data_link, 'data_pulse')
+            self.assertEqual(load_project_file(project).fun_fact_config.wave_strength, 1.0)
             source = {'version': 1, 'fun_facts': [{
                 'id': 'fact', 'start': '2000', 'end': '2000', 'headline': 'Headline',
                 'anchor_category': 'Alpha',
@@ -181,6 +192,119 @@ class FunFactDataPulseTest(unittest.TestCase):
                 'id': 'fact', 'start': '2000', 'end': '2000', 'headline': 'Headline',
                 'anchor_category': '',
             }]}, project_root=Path('.'))
+
+    def test_top_left_anchor_and_same_height_wave_strength(self):
+        baseline = self._render()
+        try:
+            left, top, width, height = baseline._fun_fact_rect(
+                ActiveFunFact(self.fact, 1.0, age_frames=30)
+            )
+            target = (left + max(4, min(12, width * .03)),
+                      top + max(4, min(12, height * .03)))
+        finally:
+            baseline.close()
+        same_height_bar = replace(self.bar, y=target[1])
+        def measure(strength):
+            renderer = self._render(
+                bars=[same_height_bar],
+                pulse=FunFactConfig(enabled=True, panel_width=180,
+                                    data_link='data_pulse', wave_strength=strength),
+            )
+            try:
+                path = renderer._fun_fact_link.get_path().vertices.copy()
+                self.assertAlmostEqual(path[-1, 0], target[0])
+                self.assertAlmostEqual(path[-1, 1], target[1])
+                return abs(path[8, 1] - target[1])
+            finally:
+                renderer.close()
+        self.assertGreater(measure(.25), 3.0)
+        self.assertGreater(measure(2.0), measure(.25) * 2)
+        for bar_y in (10, 300):
+            renderer = self._render(bars=[replace(self.bar, y=bar_y)])
+            try:
+                self.assertAlmostEqual(renderer._fun_fact_link.get_path().vertices[-1, 0], target[0])
+                self.assertAlmostEqual(renderer._fun_fact_link.get_path().vertices[-1, 1], target[1])
+            finally:
+                renderer.close()
+
+    def test_style_fade_travel_and_moving_origin(self):
+        config = FunFactConfig(
+            enabled=True, panel_width=180, data_link='data_pulse',
+            pulse_color='#112233', pulse_width=4.0,
+            pulse_border_color='#AABBCC', pulse_border_opacity=.4,
+            pulse_border_width=12.0, pulse_fade_in_duration=.5,
+            pulse_travel_duration=1.0,
+        )
+        renderer = self._render(pulse=config, age=0)
+        try:
+            self.assertFalse(renderer._fun_fact_link.get_visible())
+            def draw(age, bar=self.bar):
+                renderer.render_rgba(Scene(
+                    title='', bars=[bar],
+                    fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=age),
+                    frame_index=500 + age,
+                ))
+            draw(15)
+            self.assertAlmostEqual(renderer._fun_fact_link.get_edgecolor()[-1], .25)
+            self.assertAlmostEqual(renderer._fun_fact_link_glow.get_edgecolor()[-1], .2)
+            self.assertEqual(renderer._fun_fact_link.get_linewidth(), 4.0)
+            self.assertEqual(renderer._fun_fact_link_glow.get_linewidth(), 12.0)
+            self.assertEqual(renderer._fun_fact_link.get_edgecolor()[:3], (17/255, 34/255, 51/255))
+            self.assertEqual(renderer._fun_fact_link_glow.get_edgecolor()[:3], (170/255, 187/255, 204/255))
+            self.assertTrue((renderer._fun_fact_link.get_path().vertices
+                             == renderer._fun_fact_link_glow.get_path().vertices).all())
+            draw(30)
+            self.assertAlmostEqual(renderer._fun_fact_link.get_edgecolor()[-1], .5)
+            self.assertTrue(renderer._fun_fact_pulse.get_visible())
+            self.assertTrue((renderer._fun_fact_pulse.get_offsets()[0]
+                             == renderer._fun_fact_link.get_path().vertices[16]).all())
+            moved = replace(self.bar, y=180, width=200)
+            draw(30, moved)
+            self.assertTrue((renderer._fun_fact_pulse.get_offsets()[0]
+                             == renderer._fun_fact_link.get_path().vertices[16]).all())
+            draw(60, moved)
+            self.assertFalse(renderer._fun_fact_pulse.get_visible())
+            self.assertTrue(renderer._fun_fact_link.get_visible())
+        finally:
+            renderer.close()
+
+    def test_style_project_and_appearance_round_trip(self):
+        style = {
+            'data_link': 'data_pulse', 'pulse_color': '#112233',
+            'pulse_width': 3.5, 'pulse_border_color': '#AABBCC',
+            'pulse_border_opacity': .35, 'pulse_border_width': 11.0,
+            'pulse_fade_in_duration': .4, 'pulse_travel_duration': 1.2,
+            'wave_strength': 1.7,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = Path(temp_dir) / 'project.json'
+            project.write_text(json.dumps({'name': 'pulse', 'fun_facts': style}), encoding='utf-8')
+            loaded = load_project_file(project).fun_fact_config
+        for field, expected in style.items():
+            self.assertEqual(getattr(loaded, field), expected)
+        preset = build_appearance_preset('Pulse', {'name': 'pulse', 'fun_facts': style})
+        form_values = project_form_values({'name': 'pulse', 'fun_facts': style})
+        for field, expected in style.items():
+            self.assertEqual(preset.fun_facts[field], expected)
+            self.assertEqual(form_values[f'fun_facts_{field}'], expected)
+
+    def test_travel_uses_seconds_not_frame_count(self):
+        config = FunFactConfig(enabled=True, panel_width=180, data_link='data_pulse',
+                               pulse_travel_duration=1.0)
+        positions = []
+        for fps in (30, 60):
+            renderer = BarRenderer(output_dir=None, config=replace(self.chart, fps=fps),
+                                   fun_fact_config=config)
+            try:
+                renderer.render_rgba(Scene(
+                    title='', bars=[self.bar],
+                    fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=int(.3 * fps)),
+                    frame_index=500,
+                ))
+                positions.append(renderer._fun_fact_pulse.get_offsets().copy())
+            finally:
+                renderer.close()
+        self.assertTrue((positions[0] == positions[1]).all())
 
     def test_scheduler_age_uses_global_frames_and_minimum_duration(self):
         timeline = Timeline(pd.DataFrame({
@@ -236,6 +360,8 @@ class FunFactDataPulseTest(unittest.TestCase):
                             captured[scene.frame_index] = (
                                 renderer._fun_fact_link.get_path().vertices.copy(),
                                 renderer._fun_fact_pulse.get_offsets().copy(),
+                                renderer._fun_fact_link.get_edgecolor(),
+                                renderer._fun_fact_pulse.get_visible(),
                             )
                         RenderJob(
                             config=chart,
@@ -253,6 +379,7 @@ class FunFactDataPulseTest(unittest.TestCase):
                     for frame in full:
                         self.assertTrue((full[frame][0] == partial[frame][0]).all())
                         self.assertTrue((full[frame][1] == partial[frame][1]).all())
+                        self.assertEqual(full[frame][2:], partial[frame][2:])
 
 
 if __name__ == '__main__':
