@@ -46,17 +46,47 @@ class RankCelebrationTest(unittest.TestCase):
     def test_promotions_only_final_attained_rank(self):
         for target, expected in (
             ({"A": 50, "B": 40, "D": 35, "C": 30, "E": 10}, 3),
+            ({"A": 50, "B": 40, "E": 35, "C": 30, "D": 20}, 3),
             ({"A": 50, "C": 45, "B": 40, "D": 20, "E": 10}, 2),
+            ({"A": 50, "E": 45, "B": 40, "C": 30, "D": 20}, 2),
             ({"B": 55, "A": 50, "C": 30, "D": 20, "E": 10}, 1),
             ({"D": 60, "A": 50, "B": 40, "C": 30, "E": 10}, 1),
         ):
             with self.subTest(expected=expected, target=target):
                 result, _ = timeline((BASE, target))
                 self.assertEqual([(event.name, event.rank) for event in result.events],
-                                 [("D" if target["D"] > BASE["D"] else
+                                 [("E" if target["E"] > BASE["E"] else
+                                   "D" if target["D"] > BASE["D"] else
                                    "C" if target["C"] > BASE["C"] else "B", expected)])
                 self.assertGreater(result.events[0].frame, 0)
                 self.assertGreaterEqual(result.events[0].frame, 35)
+
+    def test_crossing_triggers_at_first_visually_attained_slot(self):
+        for target, name, rank in (
+            ({"A": 50, "B": 40, "D": 35, "C": 30, "E": 10}, "D", 3),
+            ({"A": 50, "C": 45, "B": 40, "D": 20, "E": 10}, "C", 2),
+            ({"B": 55, "A": 50, "C": 30, "D": 20, "E": 10}, "B", 1),
+        ):
+            with self.subTest(rank=rank):
+                result, _ = timeline((BASE, target), duration=1.0)
+                self.assertEqual([(e.name, e.rank) for e in result.events], [(name, rank)])
+                event = result.events[0]
+                self.assertLess(event.frame, result.plan.frame_bounds(0)[1] - 1)
+                first_visual_slot = next(frame for frame in range(1, event.frame + 1)
+                    if result.display_timeline._targets(frame)[0].get(name) == rank - 1
+                    and abs(dict(result.display_timeline.at(frame)[0])[name]
+                            - (rank - 1)) <= .035)
+                self.assertEqual(event.frame, first_visual_slot)
+
+    def test_nearby_distinct_promotions_are_not_globally_suppressed(self):
+        end = {"A": 50, "B": 40, "C": 30, "D": 95, "E": 92}
+        result, resolver = timeline((BASE, end), duration=1.0)
+        self.assertEqual([(e.name, e.rank) for e in result.events],
+                         [("D", 1), ("E", 2)])
+        self.assertLess(result.events[1].frame - result.events[0].frame, 10)
+        self.assertEqual(len(set(result.events)), len(result.events))
+        for event in result.events:
+            self.assertEqual(resolver.celebrations_at(event.frame)[-1].age_frames, 0)
 
     def test_descent_stable_tie_and_initial_podium_do_not_celebrate(self):
         for rows in ((BASE, BASE),

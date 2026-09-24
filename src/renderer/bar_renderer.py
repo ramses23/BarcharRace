@@ -80,6 +80,7 @@ class BarRenderer(TextCompositorMixin):
         self._text_background_artist = None
         self._text_bar_artist = None
         self._text_foreground_artist = None
+        self._intro_text_artist = None
         self._fun_fact_artist = None
         self._short_overlay_artist = None
         self._advanced_track_collection = None
@@ -165,6 +166,7 @@ class BarRenderer(TextCompositorMixin):
             self._text_background_artist = None
             self._text_bar_artist = None
             self._text_foreground_artist = None
+            self._intro_text_artist = None
             self._fun_fact_artist = None
             self._short_overlay_artist = None
             self._advanced_track_collection = None
@@ -324,6 +326,10 @@ class BarRenderer(TextCompositorMixin):
         self._short_overlay_artist = ImageCommandsArtist(self.config.height)
         self._short_overlay_artist.set_zorder(7)
         ax.add_artist(self._short_overlay_artist)
+        if self.config.intro_text_behavior == "timed_fade":
+            self._intro_text_artist = ImageCommandsArtist(self.config.height)
+            self._intro_text_artist.set_zorder(8)
+            ax.add_artist(self._intro_text_artist)
         self._scene_artists_initialized = True
 
     def _initialize_background_artist(self, ax):

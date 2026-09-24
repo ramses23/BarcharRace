@@ -411,7 +411,7 @@ def build_smart_text_bounds(chart_config, fun_fact_config, scene):
         time_label=scene.time_label,
         display_calendar=scene.display_calendar,
     )
-    return (
+    intro_bounds = () if chart_config.intro_text_behavior == "timed_fade" else (
         _rounded_scene_rect(_text_rect(
             scene.title,
             _title_x(chart_config),
@@ -432,6 +432,8 @@ def build_smart_text_bounds(chart_config, fun_fact_config, scene):
             chart_config.subtitle_font_weight,
             chart_config.subtitle_font_style,
         )),
+    )
+    return (*intro_bounds,
         _rounded_scene_rect(_date_rect(chart_config, scene)),
         _rounded_scene_rect(_text_rect(
             source_layout.fitted_text,

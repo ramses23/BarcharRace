@@ -15,12 +15,12 @@ def structural_race_vertical_bounds(config):
     if config.bar_vertical_layout_mode == "fill_available":
         top = max(0.0, float(config.bar_vertical_top_padding))
         bottom = float(config.height - max(0, config.bar_vertical_bottom_padding))
-        if config.title_enabled:
+        if config.intro_text_behavior != "timed_fade" and config.title_enabled:
             top = max(
                 top,
                 config.title_y + _text_half_height(config, config.title_font_size) + 12,
             )
-        if config.subtitle_enabled:
+        if config.intro_text_behavior != "timed_fade" and config.subtitle_enabled:
             top = max(
                 top,
                 config.subtitle_y
@@ -59,12 +59,12 @@ def _reserves_value_axis_lane(config):
 
 def _value_axis_min_row_top(config):
     text_bottom = 0.0
-    if config.title_enabled:
+    if config.intro_text_behavior != "timed_fade" and config.title_enabled:
         text_bottom = max(
             text_bottom,
             config.title_y + _text_half_height(config, config.title_font_size),
         )
-    if config.subtitle_enabled:
+    if config.intro_text_behavior != "timed_fade" and config.subtitle_enabled:
         text_bottom = max(
             text_bottom,
             config.subtitle_y + _text_half_height(config, config.subtitle_font_size),

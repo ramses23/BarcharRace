@@ -11,6 +11,9 @@ from config.chart_config import ChartConfig
 from config.data_source_config import DataSourceConfig
 from config.export_config import ExportConfig
 from config.project_file_loader import ProjectFileError, load_project_data, load_project_file
+from core.layout_engine import structural_race_vertical_bounds
+from core.scene_geometry import build_smart_text_bounds
+from config.fun_fact_config import FunFactConfig
 from models.scene import Scene
 from pipeline.render_job import RenderJob
 from renderer.bar_renderer import BarRenderer
@@ -45,25 +48,68 @@ class IntroTextFadeTest(unittest.TestCase):
             def commands(frame):
                 scene.frame_index = frame
                 renderer.render_rgba(scene)
-                return (renderer._text_foreground_artist.commands,
+                return (renderer._intro_text_artist.commands,
+                        renderer._text_foreground_artist.commands,
                         renderer._text_background_artist.commands)
 
-            full, date_full = commands(0)
-            halfway, date_halfway = commands(215)
-            gone, date_gone = commands(230)
-            self.assertEqual(len(full), 3)
-            self.assertEqual(len(halfway), 3)
-            self.assertEqual(len(gone), 1)
+            full, source_full, date_full = commands(0)
+            halfway, source_halfway, date_halfway = commands(215)
+            gone, source_gone, date_gone = commands(230)
+            self.assertEqual(len(full), 2)
+            self.assertEqual(len(halfway), 2)
+            self.assertEqual(len(gone), 0)
             for index in (0, 1):
                 self.assertEqual(full[index][1:], halfway[index][1:])
                 self.assertAlmostEqual(halfway[index][0][:, :, 3].max()
                                        / full[index][0][:, :, 3].max(), .5, delta=.02)
-            self.assertEqual(full[2][0].tobytes(), halfway[2][0].tobytes())
-            self.assertEqual(full[2][0].tobytes(), gone[0][0].tobytes())
+            self.assertEqual(source_full[0][0].tobytes(), source_halfway[0][0].tobytes())
+            self.assertEqual(source_full[0][0].tobytes(), source_gone[0][0].tobytes())
             self.assertEqual(date_full[0][0].tobytes(), date_halfway[0][0].tobytes())
             self.assertEqual(date_full[0][0].tobytes(), date_gone[0][0].tobytes())
+            self.assertGreater(renderer._intro_text_artist.get_zorder(),
+                               renderer._logo_composite_artist.get_zorder())
+            self.assertGreater(renderer._intro_text_artist.get_zorder(),
+                               renderer._text_bar_artist.get_zorder())
+            self.assertGreater(renderer._intro_text_artist.get_zorder(),
+                               renderer._fun_fact_artist.get_zorder())
         finally:
             renderer.close()
+
+    def test_timed_overlay_does_not_reserve_rows_or_smart_card_space(self):
+        persistent = ChartConfig(width=640, height=400, dpi=72,
+            bar_vertical_layout_mode="fill_available", bar_vertical_top_padding=0,
+            value_grid_enabled=True, title_y=55, subtitle_y=105)
+        overlay = replace(persistent, intro_text_behavior="timed_fade")
+        old_top, old_bottom = structural_race_vertical_bounds(persistent)
+        new_top, new_bottom = structural_race_vertical_bounds(overlay)
+        self.assertLess(new_top, old_top)
+        self.assertEqual(new_bottom, old_bottom)
+        self.assertEqual(overlay.bar_vertical_top_padding, persistent.bar_vertical_top_padding)
+        scene = Scene(title="Title", subtitle="Range · units", source_label="Source")
+        facts = FunFactConfig()
+        self.assertEqual(len(build_smart_text_bounds(persistent, facts, scene)), 4)
+        self.assertEqual(len(build_smart_text_bounds(overlay, facts, scene)), 2)
+
+    def test_timed_overlay_geometry_is_fixed_across_fade(self):
+        with tempfile.TemporaryDirectory() as directory:
+            csv = Path(directory) / "data.csv"
+            csv.write_text("year,country,value\n0,A,100\n0,B,60\n1,A,100\n1,B,60\n", encoding="utf-8")
+            config = ChartConfig(width=640, height=400, fps=20,
+                steps_per_transition=260, bar_vertical_layout_mode="fill_available",
+                value_grid_enabled=True, intro_text_behavior="timed_fade")
+            scenes = []
+            with patch("pipeline.render_job.BarRenderer"), patch("builtins.print"):
+                RenderJob(config=config,
+                    data_source_config=DataSourceConfig(csv_path=str(csv))).run(
+                    frame_sampler=lambda start, end: (180, 200, 215, 230, 240),
+                    frame_consumer=lambda scene, renderer: scenes.append(scene))
+            geometry = [tuple((bar.name, bar.y, bar.height) for bar in scene.bars)
+                        for scene in scenes]
+            self.assertTrue(all(rows == geometry[0] for rows in geometry))
+            self.assertTrue(all(scene.value_axis.line_top == scenes[0].value_axis.line_top
+                                for scene in scenes))
+            self.assertEqual([intro_text_lifecycle_opacity(config, scene.frame_index)
+                              for scene in scenes], [1.0, 1.0, .5, 0.0, 0.0])
 
     def test_config_json_round_trip_and_invalid_values(self):
         self.assertEqual(load_project_data({}).chart_config.intro_text_behavior, "persistent")

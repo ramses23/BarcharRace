@@ -56,6 +56,7 @@ _SMART_CHART_FIELDS = (
     "label_font_style", "value_font_weight", "value_font_style",
     "title_font_weight", "subtitle_font_weight", "source_font_weight",
     "title_x", "title_y", "subtitle_x", "subtitle_y", "time_label_x",
+    "intro_text_behavior",
     "time_label_y", "source_x", "source_y", "time_label_enabled",
     "date_style", "flip_calendar_scale", "category_labels_enabled",
     "value_labels_enabled", "label_text_opacity", "value_text_opacity",
@@ -963,6 +964,8 @@ def _resolve_window(chart_config, config, fact_id, geometries):
                         protected.append(expanded)
             text = geometry.get("text_bounds", {})
             for name in ("date", "source", "title", "subtitle"):
+                if chart_config.intro_text_behavior == "timed_fade" and name in ("title", "subtitle"):
+                    continue
                 item = text.get(name)
                 if item:
                     static.append(_rect(item))
@@ -986,6 +989,8 @@ def _resolve_window(chart_config, config, fact_id, geometries):
             )
         text = geometry.get("text_bounds", {})
         for name in ("date", "source", "title", "subtitle"):
+            if chart_config.intro_text_behavior == "timed_fade" and name in ("title", "subtitle"):
+                continue
             item = text.get(name)
             if item:
                 static.append(_rect(item))

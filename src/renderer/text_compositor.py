@@ -25,6 +25,7 @@ class TextCompositorMixin:
         background_commands = []
         bar_commands = []
         foreground_commands = []
+        intro_commands = []
         intro_opacity = intro_text_lifecycle_opacity(self.config, scene.frame_index)
 
         if (
@@ -108,7 +109,7 @@ class TextCompositorMixin:
             self.config.subtitle_font_style,
             self.config.source_font_style,
         )
-        for spec, font_style in zip(header_specs, header_styles):
+        for index, (spec, font_style) in enumerate(zip(header_specs, header_styles)):
             text, x, y, font_size, font_family, font_weight, color, opacity = spec
             command = self._text_command(
                 text,
@@ -124,7 +125,10 @@ class TextCompositorMixin:
                 opacity=opacity,
             )
             if command is not None:
-                foreground_commands.append(command)
+                if index < 2 and self.config.intro_text_behavior == "timed_fade":
+                    intro_commands.append(command)
+                else:
+                    foreground_commands.append(command)
 
         if include_bar_commands:
             for sprite in scene.bars:
@@ -133,6 +137,8 @@ class TextCompositorMixin:
         self._text_background_artist.set_commands(background_commands)
         self._text_bar_artist.set_commands(bar_commands)
         self._text_foreground_artist.set_commands(foreground_commands)
+        if self._intro_text_artist is not None:
+            self._intro_text_artist.set_commands(intro_commands)
 
     def _bar_text_commands(self, sprite):
         opacity = self._opacity(sprite)
