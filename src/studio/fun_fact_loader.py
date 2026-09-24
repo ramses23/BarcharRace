@@ -21,6 +21,7 @@ _FACT_FIELDS = {
     "accent_color",
     "image_fit",
     "credit",
+    "anchor_category",
 }
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -127,6 +128,13 @@ def _parse_fact(item, *, index, project_root, validate_images):
     headline = _required_text(item, "headline", context)
     body = _optional_text(item, "body", context)
     credit = _optional_text(item, "credit", context)
+    anchor_category = item.get("anchor_category")
+    if anchor_category is not None:
+        if not isinstance(anchor_category, str) or not anchor_category.strip():
+            raise FunFactFileError(
+                f"{context} field 'anchor_category' must be null or a non-empty category name."
+            )
+        anchor_category = anchor_category.strip()
     layout = item.get("layout", "right_panel")
     if layout not in ("right_panel", "editorial_right"):
         raise FunFactFileError(
@@ -186,6 +194,7 @@ def _parse_fact(item, *, index, project_root, validate_images):
         accent_color=accent_color,
         image_fit=image_fit,
         credit=credit,
+        anchor_category=anchor_category,
     )
 
 

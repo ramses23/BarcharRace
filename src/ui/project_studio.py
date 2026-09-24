@@ -2250,6 +2250,7 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         ),
         "fade_in": float(values.get("fun_facts_fade_in", 0.20)),
         "minimum_duration_seconds": float(values.get("fun_facts_minimum_duration_seconds", 6.0)),
+        "data_link": values.get("fun_facts_data_link", "off"),
         "fade_out": float(values.get("fun_facts_fade_out", 0.20)),
         "editorial_background_mode": values.get("fun_facts_editorial_background_mode", "card"),
         "editorial_background_color": values.get("fun_facts_editorial_background_color"),
@@ -2443,6 +2444,14 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         value=float(settings["minimum_duration_seconds"]), step=0.5,
         help="Includes fades. Works with Uniform and Activity Weighted. The next card or video end takes priority; cards never overlap.",
         key=_widget_key("fun_facts_minimum_duration_seconds"),
+    )
+    data_link = st.selectbox(
+        "Fun Fact Data Link",
+        ("off", "data_pulse"),
+        index=_option_index(("off", "data_pulse"), settings["data_link"]),
+        format_func=lambda value: {"off": "Off", "data_pulse": "Data Pulse"}[value],
+        help="Add an optional anchor_category to a fact in its source JSON to connect it to a visible bar.",
+        key=_widget_key("fun_facts_data_link"),
     )
     fade_in_column, fade_out_column = st.columns(2)
     with fade_in_column:
@@ -2808,6 +2817,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         "panel_padding": int(panel_padding),
         "fade_in": float(fade_in),
         "minimum_duration_seconds": float(minimum_fact_duration),
+        "data_link": data_link,
         "fade_out": float(fade_out),
         **editorial,
     }

@@ -120,6 +120,7 @@ BAR_APPEARANCE_FIELDS = (
     *BAR_STYLE_FIELDS,
 )
 FUN_FACT_APPEARANCE_FIELDS = (
+    "data_link",
     "layout",
     "panel_width",
     "panel_margin",

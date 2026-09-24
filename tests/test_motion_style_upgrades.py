@@ -1,7 +1,6 @@
 import tempfile
 import unittest
 from dataclasses import replace
-from math import pi, sin
 from pathlib import Path
 from unittest.mock import patch
 
@@ -184,8 +183,8 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         ))
 
         midpoint = {item.name: item for item in frames[2]}
-        self.assertEqual(rank_motion_effective_height(midpoint["A"]), 14)
-        self.assertEqual(rank_motion_effective_height(midpoint["B"]), 26)
+        self.assertEqual(rank_motion_effective_height(midpoint["A"]), 20)
+        self.assertEqual(rank_motion_effective_height(midpoint["B"]), 20)
         self.assertEqual(
             visual_rank_motion_sprite(midpoint["A"]).y,
             midpoint["A"].y,
@@ -285,27 +284,26 @@ class MotionStyleUpgradeTest(unittest.TestCase):
         self.assertGreater(rank_motion_effective_height(tiny), 0)
         self.assertGreater(rank_motion_effective_height(zero), 0)
 
-    def test_rank_motion_uses_six_pixel_sine_delta_with_exact_endpoints(self):
+    def test_rank_motion_preserves_height_throughout_rank_changes(self):
         base = sprite("Motion", 1, 40)
         rising = replace(base, rank_motion_state="rising")
         falling = replace(base, rank_motion_state="falling")
 
         for progress in (0.0, 0.25, 0.5, 0.75, 1.0):
             with self.subTest(progress=progress):
-                delta = 6.0 * sin(pi * progress)
                 self.assertAlmostEqual(
                     rank_motion_effective_height(replace(
                         rising,
                         rank_motion_progress=progress,
                     )),
-                    base.height + delta,
+                    base.height,
                 )
                 self.assertAlmostEqual(
                     rank_motion_effective_height(replace(
                         falling,
                         rank_motion_progress=progress,
                     )),
-                    base.height - delta,
+                    base.height,
                 )
 
         self.assertEqual(rank_motion_effective_height(rising), base.height)
@@ -334,7 +332,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             rank_motion_progress=0.5,
             rank_motion_target=1,
         )
-        self.assertEqual(RANK_MOTION_HEIGHT_EMPHASIS, 6)
+        self.assertEqual(RANK_MOTION_HEIGHT_EMPHASIS, 0)
 
         modes = {
             "solid": dict(
@@ -392,7 +390,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                                 for command in renderer._advanced_composite_artist.commands
                             ]
                             self.assertEqual(track_heights, [20, 20])
-                            self.assertEqual(body_heights, [14, 26])
+                            self.assertEqual(body_heights, [20, 20])
                             body_colors = []
                             for command in renderer._advanced_composite_artist.commands:
                                 pixels = command[0]
@@ -407,7 +405,7 @@ class MotionStyleUpgradeTest(unittest.TestCase):
                                 artists.border.get_path().get_extents().height
                                 for artists in renderer._bar_artists[:2]
                             ]
-                            self.assertEqual(border_heights, [14, 26])
+                            self.assertEqual(border_heights, [20, 20])
                             if mode == "gradient":
                                 colors = renderer._gradient_artist.get_facecolors()
                                 self.assertGreater(colors[0][0], colors[0][2])
@@ -520,9 +518,9 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             finally:
                 renderer.close()
 
-        self.assertEqual(rank_motion_effective_height(item), 26)
-        self.assertEqual(logo_image.shape[:2], (26, 26))
-        self.assertEqual(bar_image.shape[0], 26)
+        self.assertEqual(rank_motion_effective_height(item), 20)
+        self.assertEqual(logo_image.shape[:2], (20, 20))
+        self.assertEqual(bar_image.shape[0], 20)
 
     def test_primary_and_secondary_logos_follow_one_fractional_bar_geometry(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1425,8 +1423,8 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             try:
                 for state, expected_height in (
                     ("stable", 20),
-                    ("rising", 26),
-                    ("falling", 14),
+                    ("rising", 20),
+                    ("falling", 20),
                 ):
                     with self.subTest(state=state):
                         item = BarSprite(
@@ -1626,10 +1624,10 @@ class MotionStyleUpgradeTest(unittest.TestCase):
 
                     self.assertEqual(item.width, 26)
                     self.assertAlmostEqual(bar["width"],
-                        continuous_logo_minimum_width(26, width - 200, 26), places=3)
-                    self.assertEqual(bar["height"], 26)
-                    self.assertEqual(logo["width"], 26)
-                    self.assertEqual(logo["height"], 26)
+                        continuous_logo_minimum_width(26, width - 200, 20), places=3)
+                    self.assertEqual(bar["height"], 20)
+                    self.assertEqual(logo["width"], 20)
+                    self.assertEqual(logo["height"], 20)
                     self.assertGreater(logo["x"], bar["x"])
                     self.assertAlmostEqual(logo["x"] + logo["width"], bar["x"] + bar["width"], places=3)
                     self.assertEqual(logo["y"], bar["y"])

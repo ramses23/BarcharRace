@@ -82,6 +82,10 @@ class BarRenderer(TextCompositorMixin):
         self._text_foreground_artist = None
         self._intro_text_artist = None
         self._fun_fact_artist = None
+        self._fun_fact_link = None
+        self._fun_fact_link_glow = None
+        self._fun_fact_pulse = None
+        self._fun_fact_pulse_glow = None
         self._short_overlay_artist = None
         self._advanced_track_collection = None
         self._advanced_shadow_collection = None
@@ -168,6 +172,10 @@ class BarRenderer(TextCompositorMixin):
             self._text_foreground_artist = None
             self._intro_text_artist = None
             self._fun_fact_artist = None
+            self._fun_fact_link = None
+            self._fun_fact_link_glow = None
+            self._fun_fact_pulse = None
+            self._fun_fact_pulse_glow = None
             self._short_overlay_artist = None
             self._advanced_track_collection = None
             self._advanced_shadow_collection = None
@@ -320,6 +328,22 @@ class BarRenderer(TextCompositorMixin):
                 linewidths=0, zorder=4.8)
             self._rank_celebration_glints = ax.scatter([], [], marker="*", s=[],
                 linewidths=0, zorder=4.9)
+        if self.fun_fact_config.data_link == "data_pulse":
+            empty = Path(np.empty((0, 2)))
+            self._fun_fact_link_glow = PathPatch(
+                empty, fill=False, linewidth=9, capstyle="round", zorder=5.45,
+            )
+            self._fun_fact_link = PathPatch(
+                empty, fill=False, linewidth=2.5, capstyle="round", zorder=5.5,
+            )
+            ax.add_patch(self._fun_fact_link_glow)
+            ax.add_patch(self._fun_fact_link)
+            self._fun_fact_pulse = ax.scatter(
+                [], [], s=[], linewidths=0, zorder=5.6,
+            )
+            self._fun_fact_pulse_glow = ax.scatter(
+                [], [], s=[], linewidths=0, zorder=5.55,
+            )
         self._fun_fact_artist = ImageCommandsArtist(self.config.height)
         self._fun_fact_artist.set_zorder(6)
         ax.add_artist(self._fun_fact_artist)
@@ -473,6 +497,7 @@ class BarRenderer(TextCompositorMixin):
             self._set_bar_artists_visible(artists, False)
             self._set_bar_visual_group_visible(group, False)
 
+        self._update_fun_fact_data_link(scene.fun_fact, visual_sprites)
         self._update_fun_fact_overlay(scene.fun_fact)
         self._update_rank_celebrations(scene.rank_celebrations)
         self._update_short_overlay(scene.short_overlay)
@@ -892,6 +917,21 @@ class BarRenderer(TextCompositorMixin):
             self._fun_fact_artist.set_commands(())
             return
 
+        left, panel_top, panel_width, panel_height = self._fun_fact_rect(active_fact)
+        image = self._fun_fact_panel_image(
+            active_fact.fact,
+            panel_width,
+            panel_height,
+        )
+        opacity = max(0.0, min(1.0, float(active_fact.opacity)))
+        if opacity < 0.999:
+            image = image.copy(order="C")
+            image[:, :, 3] = np.uint8(
+                np.asarray(image[:, :, 3], dtype=np.float32) * opacity
+            )
+        self._fun_fact_artist.set_commands(((image, left, panel_top),))
+
+    def _fun_fact_rect(self, active_fact):
         if self.fun_fact_config.layout == "editorial_floating":
             left, panel_top, panel_width, panel_height = editorial_geometry(
                 self.config,
@@ -918,18 +958,91 @@ class BarRenderer(TextCompositorMixin):
                 1,
                 int(round(self.config.height - panel_top - self.fun_fact_config.panel_margin)),
             )
-        image = self._fun_fact_panel_image(
-            active_fact.fact,
-            panel_width,
-            panel_height,
+        return left, panel_top, panel_width, panel_height
+
+    def _update_fun_fact_data_link(self, active_fact, visual_sprites):
+        if self._fun_fact_link is None:
+            return
+        anchor = getattr(getattr(active_fact, "fact", None), "anchor_category", None)
+        sprite = next((item for item in visual_sprites
+                       if item.name == anchor and self._opacity(item) > 0.03), None)
+        if active_fact is None or active_fact.opacity <= 0 or sprite is None:
+            self._fun_fact_link.set_visible(False)
+            self._fun_fact_link_glow.set_visible(False)
+            self._fun_fact_pulse.set_visible(False)
+            self._fun_fact_pulse_glow.set_visible(False)
+            return
+
+        left, top, width, height = self._fun_fact_rect(active_fact)
+        origin_x, origin_y = sprite.x + sprite.width, sprite.y
+        if self.config.logos_enabled and sprite.logo_path:
+            layout = self._logo_layout(sprite)
+            if layout is not None and self._load_logo(
+                sprite.logo_path, max(1, int(round(layout["bottom"] - layout["top"])))
+            ) is not None:
+                logo_x = layout["right"]
+                if abs(logo_x - (left + width / 2)) < abs(origin_x - (left + width / 2)):
+                    origin_x = logo_x
+                    origin_y = (layout["top"] + layout["bottom"]) / 2
+        nearest = (
+            (left, min(max(origin_y, top), top + height)),
+            (left + width, min(max(origin_y, top), top + height)),
+            (min(max(origin_x, left), left + width), top),
+            (min(max(origin_x, left), left + width), top + height),
         )
-        opacity = max(0.0, min(1.0, float(active_fact.opacity)))
-        if opacity < 0.999:
-            image = image.copy(order="C")
-            image[:, :, 3] = np.uint8(
-                np.asarray(image[:, :, 3], dtype=np.float32) * opacity
+        target_x, target_y = min(
+            nearest,
+            key=lambda point: (point[0] - origin_x) ** 2 + (point[1] - origin_y) ** 2,
+        )
+        dx = target_x - origin_x
+        control_a = (origin_x + dx * .38, origin_y)
+        control_b = (target_x - dx * .38, target_y)
+        age = max(0.0, active_fact.age_frames / max(1, self.config.fps))
+        reveal = min(1.0, age / .25)
+        samples = [self._cubic_point(
+            (origin_x, origin_y), control_a, control_b, (target_x, target_y),
+            step / 32,
+        ) for step in range(max(1, int(round(32 * reveal))) + 1)]
+        path = Path(samples)
+        color = mcolors.to_rgb(sprite.color)
+        alpha = min(1.0, max(0.0, active_fact.opacity * self._opacity(sprite)))
+        self._fun_fact_link_glow.set_path(path)
+        self._fun_fact_link_glow.set_edgecolor((*color, alpha * .12))
+        self._fun_fact_link_glow.set_visible(reveal > 0)
+        self._fun_fact_link.set_path(path)
+        self._fun_fact_link.set_edgecolor((*color, alpha * .5))
+        self._fun_fact_link.set_visible(reveal > 0)
+
+        pulse_progress = (age - .20) / .60
+        if 0.0 <= pulse_progress <= 1.0 and reveal > 0:
+            eased = pulse_progress * pulse_progress * (3 - 2 * pulse_progress)
+            point = self._cubic_point(
+                (origin_x, origin_y), control_a, control_b, (target_x, target_y),
+                min(reveal, eased),
             )
-        self._fun_fact_artist.set_commands(((image, left, panel_top),))
+            self._fun_fact_pulse.set_offsets(np.asarray([point]))
+            self._fun_fact_pulse.set_sizes([115])
+            pulse_color = tuple(.45 * channel + .55 for channel in color)
+            self._fun_fact_pulse.set_facecolors([pulse_color + (alpha,)])
+            self._fun_fact_pulse.set_visible(True)
+            self._fun_fact_pulse_glow.set_offsets(np.asarray([point]))
+            self._fun_fact_pulse_glow.set_sizes([360])
+            self._fun_fact_pulse_glow.set_facecolors([pulse_color + (alpha * .22,)])
+            self._fun_fact_pulse_glow.set_visible(True)
+        else:
+            self._fun_fact_pulse.set_visible(False)
+            self._fun_fact_pulse_glow.set_visible(False)
+
+    @staticmethod
+    def _cubic_point(start, control_a, control_b, end, t):
+        remaining = 1 - t
+        return tuple(
+            remaining ** 3 * start[axis]
+            + 3 * remaining ** 2 * t * control_a[axis]
+            + 3 * remaining * t ** 2 * control_b[axis]
+            + t ** 3 * end[axis]
+            for axis in (0, 1)
+        )
 
     def _fun_fact_panel_image(self, fact, width, height):
         cache_key = (

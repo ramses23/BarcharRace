@@ -377,7 +377,7 @@ class MotionEngineTest(unittest.TestCase):
         self.assertLess(later.value, final.value)
         self.assertEqual(final.value, 110)
         self.assertEqual(halfway_rank.rank_motion_progress, 0.5)
-        self.assertEqual(rank_motion_effective_height(halfway_rank), 46)
+        self.assertEqual(rank_motion_effective_height(halfway_rank), 40)
         self.assertEqual(arrived.rank_motion_state, "stable")
         self.assertEqual(rank_motion_effective_height(arrived), 40)
 

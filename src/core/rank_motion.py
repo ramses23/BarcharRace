@@ -1,11 +1,11 @@
 from dataclasses import replace
-from math import isfinite, pi, sin
+from math import isfinite
 
 
 RANK_MOTION_FALLING = "falling"
 RANK_MOTION_STABLE = "stable"
 RANK_MOTION_RISING = "rising"
-RANK_MOTION_HEIGHT_EMPHASIS = 6.0
+RANK_MOTION_HEIGHT_EMPHASIS = 0.0
 MIN_RANK_MOTION_HEIGHT = 1e-6
 
 _RANK_MOTION_DEPTH = {
@@ -65,24 +65,8 @@ def ordered_rank_motion_sprites(sprites):
 
 
 def rank_motion_effective_height(sprite):
-    base_height = max(MIN_RANK_MOTION_HEIGHT, float(sprite.height))
-    state = getattr(sprite, "rank_motion_state", RANK_MOTION_STABLE)
-    if state == RANK_MOTION_STABLE:
-        return base_height
-
-    progress = min(
-        1.0,
-        max(0.0, float(getattr(sprite, "rank_motion_progress", 0.0))),
-    )
-    if progress <= 0.0 or progress >= 1.0:
-        return base_height
-
-    delta = RANK_MOTION_HEIGHT_EMPHASIS * sin(pi * progress)
-    if state == RANK_MOTION_RISING:
-        return base_height + delta
-    if state == RANK_MOTION_FALLING:
-        return max(MIN_RANK_MOTION_HEIGHT, base_height - delta)
-    return base_height
+    # Rank changes affect depth and vertical position, never visual size.
+    return max(MIN_RANK_MOTION_HEIGHT, float(sprite.height))
 
 
 def visual_rank_motion_sprite(sprite):

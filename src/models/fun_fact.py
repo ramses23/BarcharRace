@@ -13,6 +13,7 @@ class FunFact:
     accent_color: str | None = None
     image_fit: str = "cover"
     credit: str = ""
+    anchor_category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,3 +39,4 @@ class ActiveFunFact:
     forced: bool = False
     resolved_x: int | None = None
     resolved_y: int | None = None
+    age_frames: int = 0

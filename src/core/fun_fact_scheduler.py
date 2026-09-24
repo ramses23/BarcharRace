@@ -84,7 +84,7 @@ class FunFactScheduler:
         for resolved, start, end in self._frame_windows:
             if start <= frame_index < end:
                 opacity = self._normalized_opacity((frame_index - start) / max(1, end - start))
-                return self._active(resolved.fact, opacity) if opacity > 0 else None
+                return self._active(resolved.fact, opacity, age_frames=frame_index - start) if opacity > 0 else None
         return None
 
     def set_placement_resolver(self, resolver):
@@ -113,7 +113,14 @@ class FunFactScheduler:
             if resolved.start_index <= position < resolved.end_index + 1.0:
                 opacity = self._opacity(resolved, position)
                 if opacity > 0:
-                    return self._active(resolved.fact, opacity)
+                    age_frames = 0
+                    if self._frame_windows is not None:
+                        start_frame = next(
+                            start for item, start, _ in self._frame_windows
+                            if item.fact.id == resolved.fact.id
+                        )
+                        age_frames = max(0, self._frame_for_position(position) - start_frame)
+                    return self._active(resolved.fact, opacity, age_frames=age_frames)
         return None
 
     def force(self, fact_id):
@@ -125,7 +132,7 @@ class FunFactScheduler:
             ) from exc
         return self._active(fact, 1.0, forced=True)
 
-    def _active(self, fact, opacity, *, forced=False):
+    def _active(self, fact, opacity, *, forced=False, age_frames=0):
         position = (
             self._placement_resolver.position_for(fact.id)
             if self._placement_resolver is not None
@@ -137,6 +144,7 @@ class FunFactScheduler:
             forced=forced,
             resolved_x=(position[0] if position is not None else None),
             resolved_y=(position[1] if position is not None else None),
+            age_frames=age_frames,
         )
 
     def _resolve(self, collection):

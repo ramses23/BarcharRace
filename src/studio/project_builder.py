@@ -823,6 +823,7 @@ def project_form_values(project_data=None):
         "fun_facts_fade_in": fun_facts.get("fade_in", 0.20),
         "fun_facts_minimum_duration_seconds": fun_facts.get("minimum_duration_seconds", 6.0),
         "fun_facts_fade_out": fun_facts.get("fade_out", 0.20),
+        "fun_facts_data_link": fun_facts.get("data_link", "off"),
         **{
             field.name: export.get(
                 field.name,

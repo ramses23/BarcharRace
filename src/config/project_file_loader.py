@@ -1083,6 +1083,10 @@ def _convert_dataset_value(key, value):
 
 
 def _convert_fun_fact_value(key, value):
+    if key == "data_link":
+        if value not in ("off", "data_pulse"):
+            raise ProjectFileError("Fun facts field 'data_link' must be 'off' or 'data_pulse'.")
+        return value
     if key.endswith("_font_weight"):
         if value not in ("normal", "bold"):
             raise ProjectFileError(
