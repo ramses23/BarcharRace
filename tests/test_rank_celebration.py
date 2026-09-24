@@ -12,7 +12,7 @@ from config.data_source_config import DataSourceConfig
 from config.export_config import ExportConfig
 from config.project_file_loader import ProjectFileError, load_project_data, load_project_file
 from core.bar_value_scale import BarValueScaleResolver
-from core.rank_celebration import celebration_particles
+from core.rank_celebration import RankCelebrationTimeline, celebration_particles
 from models.bar_sprite import BarSprite
 from models.scene import Scene
 from pipeline.render_job import RenderJob
@@ -40,6 +40,7 @@ def timeline(rows, mode="podium", duration=.4, timing="uniform"):
 
 
 BASE = {"A": 50, "B": 40, "C": 30, "D": 20, "E": 10}
+BRONZE = {"A": 50, "B": 40, "D": 35, "C": 30, "E": 10}
 
 
 class RankCelebrationTest(unittest.TestCase):
@@ -105,6 +106,54 @@ class RankCelebrationTest(unittest.TestCase):
         result, _ = timeline(rows)
         self.assertEqual([(event.name, event.rank) for event in result.events],
                          [("B", 1), ("A", 1)])
+
+    def test_bronze_rearms_after_departure_then_progresses_to_silver_and_gold(self):
+        silver = {"A": 50, "D": 45, "B": 40, "C": 30, "E": 10}
+        gold = {"D": 60, "A": 50, "B": 40, "C": 30, "E": 10}
+        result, resolver = timeline((BASE, BRONZE, BASE, BRONZE, BRONZE, silver, gold))
+        events = [event for event in result.events if event.name == "D"]
+        self.assertEqual([event.rank for event in events], [3, 3, 2, 1])
+        self.assertEqual([result.plan.locate(event.frame)[0] for event in events],
+                         [0, 2, 4, 5])
+        self.assertEqual(len({event.frame for event in events}), 4)
+        for event in events:
+            self.assertEqual(resolver.celebrations_at(event.frame)[-1].age_frames, 0)
+
+    def test_rearm_uses_clear_departure_before_the_immediate_previous_frame(self):
+        result, _ = timeline((BASE, BRONZE, BASE, BRONZE))
+        second_start, second_end = result.plan.frame_bounds(2)
+        crossing = next(frame for frame in range(second_start, second_end)
+            if result.display_timeline._targets(frame)[0]["D"] == 2)
+        original_at = result.display_timeline.at
+
+        def near_slot_on_previous_frame(frame):
+            ranks, ticks = original_at(frame)
+            if frame == crossing - 1:
+                ranks = tuple((name, 2.01 if name == "D" else rank)
+                              for name, rank in ranks)
+            return ranks, ticks
+
+        with patch.object(result.display_timeline, "at", side_effect=near_slot_on_previous_frame):
+            rebuilt = RankCelebrationTimeline(
+                result.config, result.sprite_sets, result.display_timeline)
+        self.assertEqual([event.rank for event in rebuilt.events if event.name == "D"], [3, 3])
+
+    def test_small_visual_oscillation_does_not_rearm_bronze(self):
+        result, _ = timeline((BASE, BRONZE, BASE, BRONZE))
+        first_bronze = next(event for event in result.events if event.name == "D")
+        original_at = result.display_timeline.at
+
+        def near_slot_without_departure(frame):
+            ranks, ticks = original_at(frame)
+            if frame > first_bronze.frame:
+                ranks = tuple((name, 2.01 if frame % 2 else 1.99) if name == "D"
+                              else (name, rank) for name, rank in ranks)
+            return ranks, ticks
+
+        with patch.object(result.display_timeline, "at", side_effect=near_slot_without_departure):
+            rebuilt = RankCelebrationTimeline(
+                result.config, result.sprite_sets, result.display_timeline)
+        self.assertEqual([event.rank for event in rebuilt.events if event.name == "D"], [3])
 
     def test_activity_weighted_keeps_completion_on_its_global_timeline(self):
         end = {"D": 60, "A": 50, "B": 40, "C": 30, "E": 10}

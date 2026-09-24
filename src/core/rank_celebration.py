@@ -48,6 +48,8 @@ class RankCelebrationTimeline:
         if not limit or len(self.sprite_sets) < 2:
             return ()
         events = []
+        initial_ranks = dict(self.display_timeline.at(0)[0])
+        last_entries = {}
         for index in range(len(self.plan.steps_per_transition)):
             start, end = self.plan.frame_bounds(index)
             previous, previous_count, _ = self.display_timeline._targets(max(0, start - 1))
@@ -77,15 +79,30 @@ class RankCelebrationTimeline:
                         abs(attained - (rank - 1)) <= _SLOT_TOLERANCE and
                         old_rank > attained + _DEPARTURE_TOLERANCE):
                     continue
-                before = dict(self.display_timeline.at(max(0, first_frame - 1))[0]).get(name)
-                if before is not None and before < rank - 1 + _DEPARTURE_TOLERANCE:
-                    continue
-                for frame in range(first_frame, min(self.plan.frame_count - 1, latest) + 1):
-                    target = self.display_timeline._targets(frame)[0].get(name)
-                    if target is None or abs(target - (rank - 1)) > _SLOT_TOLERANCE:
-                        continue
+                slot = rank - 1
+                key = (name, rank)
+                last_entry = last_entries.get(key)
+                initial = initial_ranks.get(name)
+                armed = last_entry is None and (
+                    initial is None or abs(initial - slot) > _DEPARTURE_TOLERANCE)
+                search_start = max(first_frame, (last_entry + 1) if last_entry is not None else 1)
+                if not armed:
+                    for frame in range((last_entry + 1) if last_entry is not None else 1,
+                                       search_start):
+                        visible = dict(self.display_timeline.at(frame)[0]).get(name)
+                        if visible is None or abs(visible - slot) > _DEPARTURE_TOLERANCE:
+                            armed = True
+                            break
+                for frame in range(search_start, min(self.plan.frame_count - 1, latest) + 1):
                     visible = dict(self.display_timeline.at(frame)[0]).get(name)
-                    if visible is None or abs(visible - (rank - 1)) > _SLOT_TOLERANCE:
+                    if not armed:
+                        if visible is None or abs(visible - slot) > _DEPARTURE_TOLERANCE:
+                            armed = True
+                        continue
+                    target = self.display_timeline._targets(frame)[0].get(name)
+                    if target is None or abs(target - slot) > _SLOT_TOLERANCE:
+                        continue
+                    if visible is None or abs(visible - slot) > _SLOT_TOLERANCE:
                         continue
                     sampled = sample_timed_sprites(
                         self.display_timeline.motion, self.sprite_sets, self.plan, frame)
@@ -96,6 +113,7 @@ class RankCelebrationTimeline:
                     ):
                         continue
                     events.append(RankCelebrationEvent(name, rank, frame))
+                    last_entries[key] = frame
                     break
         return tuple(sorted(events, key=lambda event: (event.frame, event.name)))
 
