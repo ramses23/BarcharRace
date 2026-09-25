@@ -2473,22 +2473,21 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     }
     if data_link == "data_pulse":
         color_column, width_column = st.columns(2)
-        pulse_settings["pulse_color"] = color_column.text_input(
-            "Pulse color", value=settings["pulse_color"] or "",
-            help="Use #RRGGBB; leave blank to inherit the anchor category color.",
-            key=_widget_key("fun_facts_pulse_color"),
-        ).strip() or None
+        with color_column:
+            pulse_settings["pulse_color"] = _inheritable_pulse_color_picker(
+                "Pulse color", settings["pulse_color"], "fun_facts_pulse_color",
+            )
         pulse_settings["pulse_width"] = width_column.number_input(
             "Pulse width", min_value=0.5, max_value=20.0,
             value=float(settings["pulse_width"]), step=0.5,
             key=_widget_key("fun_facts_pulse_width"),
         )
         border_color_column, border_width_column = st.columns(2)
-        pulse_settings["pulse_border_color"] = border_color_column.text_input(
-            "Pulse border color", value=settings["pulse_border_color"] or "",
-            help="Use #RRGGBB; leave blank to inherit the anchor category color.",
-            key=_widget_key("fun_facts_pulse_border_color"),
-        ).strip() or None
+        with border_color_column:
+            pulse_settings["pulse_border_color"] = _inheritable_pulse_color_picker(
+                "Pulse border color", settings["pulse_border_color"],
+                "fun_facts_pulse_border_color",
+            )
         pulse_settings["pulse_border_width"] = border_width_column.number_input(
             "Pulse border width", min_value=0.0, max_value=40.0,
             value=float(settings["pulse_border_width"]), step=0.5,
@@ -6396,6 +6395,40 @@ def _widget_key(name):
 
 def _set_session_value(key, value):
     st.session_state[key] = value
+
+
+def _reset_pulse_color(picker_key, selected_key, reset_key):
+    st.session_state.pop(picker_key, None)
+    st.session_state.pop(selected_key, None)
+    st.session_state[reset_key] = True
+
+
+def _inheritable_pulse_color_picker(label, value, key):
+    picker_key = _widget_key(f"{key}_picker")
+    selected_key = _widget_key(f"{key}_selected")
+    reset_key = _widget_key(f"{key}_reset")
+    if st.session_state.pop(reset_key, False):
+        value = None
+    selected = st.color_picker(
+        label, value=value or "#FFFFFF", key=picker_key,
+        help="Choose a HEX override, or use the category color.",
+        on_change=_set_session_value, args=(selected_key, True),
+    )
+    if st.session_state.pop(selected_key, False):
+        value = selected
+    if value is None and st.button(
+        "Use selected color", key=_widget_key(f"{key}_apply"),
+    ):
+        value = selected
+    if value is None:
+        st.caption("Inherited / category color")
+    else:
+        st.button(
+            "Use category color", key=_widget_key(f"{key}_inherit"),
+            on_click=_reset_pulse_color,
+            args=(picker_key, selected_key, reset_key),
+        )
+    return value
 
 
 def _reconcile_numeric_widget_state(

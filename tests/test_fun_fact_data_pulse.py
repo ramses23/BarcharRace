@@ -101,6 +101,10 @@ class FunFactDataPulseTest(unittest.TestCase):
             )
             self.assertAlmostEqual(first_path[-1, 0], left + max(4, min(12, width * .03)))
             self.assertAlmostEqual(first_path[-1, 1], top + max(4, min(12, height * .03)))
+            self.assertEqual(renderer._fun_fact_link.get_edgecolor()[:3],
+                             (64/255, 160/255, 224/255))
+            self.assertEqual(renderer._fun_fact_link_glow.get_edgecolor()[:3],
+                             (64/255, 160/255, 224/255))
             self.assertTrue(renderer._fun_fact_artist.commands)
 
             moved = BarSprite('Alpha', 140, '#40A0E0', 40, 200, 240, 30, rank=2)
@@ -280,6 +284,15 @@ class FunFactDataPulseTest(unittest.TestCase):
             project = Path(temp_dir) / 'project.json'
             project.write_text(json.dumps({'name': 'pulse', 'fun_facts': style}), encoding='utf-8')
             loaded = load_project_file(project).fun_fact_config
+            project.write_text(json.dumps({
+                'name': 'pulse', 'fun_facts': {
+                    'data_link': 'data_pulse',
+                    'pulse_color': None, 'pulse_border_color': None,
+                },
+            }), encoding='utf-8')
+            inherited = load_project_file(project).fun_fact_config
+            self.assertIsNone(inherited.pulse_color)
+            self.assertIsNone(inherited.pulse_border_color)
         for field, expected in style.items():
             self.assertEqual(getattr(loaded, field), expected)
         preset = build_appearance_preset('Pulse', {'name': 'pulse', 'fun_facts': style})

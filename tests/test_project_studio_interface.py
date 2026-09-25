@@ -342,25 +342,52 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
         self._select_editor_section(app, "Fun facts")
-        self.assertNotIn("Pulse color", {control.label for control in app.text_input})
+        self.assertNotIn("Pulse color", {control.label for control in app.color_picker})
         next(control for control in app.selectbox
              if control.label == "Fun Fact Data Link").select("data_pulse")
         app.run()
         self.assertFalse(app.exception)
-        self.assertIn("Pulse color", {control.label for control in app.text_input})
-        self.assertIn("Pulse border color", {control.label for control in app.text_input})
+        self.assertIn("Pulse color", {control.label for control in app.color_picker})
+        self.assertIn("Pulse border color", {control.label for control in app.color_picker})
+        facts = json.loads(app.json[0].value)["fun_facts"]
+        self.assertIsNone(facts.get("pulse_color"))
+        self.assertIsNone(facts.get("pulse_border_color"))
+        next(control for control in app.button
+             if control.label == "Use selected color").click()
+        app.run()
+        facts = json.loads(app.json[0].value)["fun_facts"]
+        self.assertEqual(facts["pulse_color"], "#FFFFFF")
+        self.assertIsNone(facts.get("pulse_border_color"))
+        next(control for control in app.button
+             if control.label == "Use category color").click()
+        app.run()
         self.assertIn("Pulse width", {control.label for control in app.number_input})
         self.assertIn("Pulse border opacity", {control.label for control in app.slider})
         self.assertIn("Wave strength", {control.label for control in app.slider})
-        next(control for control in app.text_input
+        next(control for control in app.color_picker
              if control.label == "Pulse color").set_value("#112233")
+        next(control for control in app.color_picker
+             if control.label == "Pulse border color").set_value("#445566")
         next(control for control in app.number_input
              if control.label == "Pulse travel duration (seconds)").set_value(1.2)
         app.run()
         self.assertFalse(app.exception)
         facts = json.loads(app.json[0].value)["fun_facts"]
         self.assertEqual(facts["pulse_color"], "#112233")
+        self.assertEqual(facts["pulse_border_color"], "#445566")
         self.assertEqual(facts["pulse_travel_duration"], 1.2)
+        next(control for control in app.button
+             if control.label == "Use category color").click()
+        app.run()
+        facts = json.loads(app.json[0].value)["fun_facts"]
+        self.assertIsNone(facts.get("pulse_color"))
+        self.assertEqual(facts["pulse_border_color"], "#445566")
+        next(control for control in app.button
+             if control.label == "Use category color").click()
+        app.run()
+        facts = json.loads(app.json[0].value)["fun_facts"]
+        self.assertIsNone(facts.get("pulse_color"))
+        self.assertIsNone(facts.get("pulse_border_color"))
 
     def test_date_opacity_updates_the_in_memory_project_draft(self):
         app_path = (
