@@ -58,6 +58,7 @@ from core.scene_geometry import build_scene_geometry
 from core.timeline import Timeline
 from studio.fun_fact_layout import (
     apply_fun_fact_layout,
+    clamp_editorial_rect,
     editorial_block_geometry,
     DEFAULT_FLOATING_CARD_HEIGHT_RATIO,
     DEFAULT_FLOATING_CARD_WIDTH_RATIO,
@@ -2432,6 +2433,10 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
             manual_top=current_rect["y"],
         )
         current_rect.update({"x": resolved_x, "y": resolved_y})
+    if composition == "card" and settings["editorial_placement_mode"] != "manual":
+        displayed_rect = st.session_state.get(f"{editorial_editor_key}_display_rect")
+        if isinstance(displayed_rect, dict):
+            current_rect = displayed_rect
     editorial_state = editorial_layout_component_state(
         key=editorial_editor_key,
         rect=current_rect,
@@ -4314,14 +4319,23 @@ def _mount_editorial_layout_editor(
                 f"The selected frame geometry is unavailable: {error}",
                 icon=":material/warning:",
             )
+        displayed_rect = (
+            editor["rect"]
+            if project_data.get("fun_facts", {}).get("editorial_placement_mode") == "manual"
+            else geometry.get("editorial_rect") or editor["rect"]
+        )
+        x, y, width, height = clamp_editorial_rect(
+            displayed_rect["x"], displayed_rect["y"],
+            displayed_rect["width"], displayed_rect["height"],
+            canvas_width, canvas_height,
+        )
+        st.session_state[f'{editor["key"]}_display_rect'] = {
+            "x": x, "y": y, "width": width, "height": height,
+        }
         editorial_layout_editor(
             canvas_width=canvas_width,
             canvas_height=canvas_height,
-            rect=(
-                editor["rect"]
-                if project_data.get("fun_facts", {}).get("editorial_placement_mode") == "manual"
-                else geometry.get("editorial_rect") or editor["rect"]
-            ),
+            rect=displayed_rect,
             rects=editor.get("rects"),
             composition=editor.get("composition", "card"),
             overlay=geometry,

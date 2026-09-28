@@ -433,6 +433,105 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         after_fit = json.loads(app.json[0].value)["fun_facts"]
         self.assertEqual({field: after_fit[field] for field in expected}, expected)
 
+    def test_editorial_card_drag_state_survives_font_and_image_fit_reruns(self):
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Fun facts")
+        next(item for item in app.selectbox if item.label == "Layout").select(
+            "editorial_floating",
+        )
+        app.run()
+        self.assertFalse(app.exception)
+        facts = json.loads(app.json[0].value)["fun_facts"]
+        base = {field: facts[f"editorial_card_{field}"]
+                for field in ("x", "y", "width", "height")}
+        moved = {"x": 420, "y": 300, "width": 500, "height": 250}
+        app.session_state["fun_facts_editorial_layout_editor_card_0"] = {
+            "geometry": {"block": "card", "rect": moved,
+                         "base_rect": base, "event_id": "real-gesture:1"},
+        }
+        app.run()
+        self.assertFalse(app.exception)
+
+        def assert_card_geometry():
+            current = json.loads(app.json[0].value)["fun_facts"]
+            self.assertEqual(
+                {field: current[f"editorial_card_{field}"] for field in moved},
+                moved,
+            )
+
+        assert_card_geometry()
+        next(item for item in app.number_input if item.label == "Body size").set_value(30)
+        app.run()
+        self.assertFalse(app.exception)
+        assert_card_geometry()
+        next(item for item in app.selectbox if item.label == "Image fit").select("cover")
+        app.run()
+        self.assertFalse(app.exception)
+        assert_card_geometry()
+        app.run()  # An unrelated rerun must not re-hydrate the old rectangle.
+        assert_card_geometry()
+
+    def test_editorial_card_uses_displayed_smart_rect_as_drag_base(self):
+        displayed = {"x": 620, "y": 170, "width": 560, "height": 300}
+        moved = {"x": 400, "y": 280, "width": 520, "height": 270}
+        with mock.patch.object(
+            project_studio, "_layout_preview_geometry",
+            return_value=(None, {"editorial_rect": displayed}),
+        ):
+            app = AppTest.from_string(
+                "from ui.project_studio import main\nmain()",
+                default_timeout=30,
+            ).run()
+            self._select_editor_section(app, "Fun facts")
+            next(item for item in app.selectbox if item.label == "Layout").select(
+                "editorial_floating",
+            )
+            app.run()
+            next(item for item in app.selectbox if item.label == "Layout mode").select(
+                "overlay",
+            )
+            app.run()
+            next(item for item in app.selectbox if item.label == "Placement").select(
+                "smart",
+            )
+            app.run()
+            self.assertFalse(app.exception)
+            app.session_state["fun_facts_editorial_layout_editor_card_0"] = {
+                "geometry": {
+                    "block": "card", "rect": moved, "base_rect": displayed,
+                    "event_id": "smart-gesture:1",
+                },
+            }
+            app.run()
+            self.assertFalse(app.exception)
+
+            def assert_manual_geometry():
+                facts = json.loads(app.json[0].value)["fun_facts"]
+                self.assertEqual(facts["editorial_placement_mode"], "manual")
+                self.assertEqual(
+                    {field: facts[f"editorial_card_{field}"] for field in moved},
+                    moved,
+                )
+
+            assert_manual_geometry()
+            next(item for item in app.number_input if item.label == "Body size").set_value(30)
+            app.run()
+            assert_manual_geometry()
+            next(item for item in app.selectbox if item.label == "Image fit").select("cover")
+            app.run()
+            assert_manual_geometry()
+            app.run()
+            assert_manual_geometry()
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "project.json"
+                save_project_data(json.loads(app.json[0].value), path)
+                reloaded = load_project_data(path)["fun_facts"]
+                self.assertEqual(
+                    {field: reloaded[f"editorial_card_{field}"] for field in moved},
+                    moved,
+                )
+
     def test_data_pulse_controls_are_conditional_and_persist(self):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
