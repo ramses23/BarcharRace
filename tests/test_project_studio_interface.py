@@ -7,14 +7,37 @@ from unittest import mock
 from uuid import uuid4
 
 import _test_path
+import pandas as pd
 from PIL import Image
 from streamlit.testing.v1 import AppTest
+import ui.project_studio as project_studio
 from studio.project_builder import load_project_data, save_project_data
 from studio.workspace_paths import ProjectLocation, WorkspaceLayout
 from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_layout_preview_geometry_reuses_only_unchanged_inputs(self):
+        dataset = pd.DataFrame({"year": [2000], "name": ["A"], "value": [1]})
+        project = {"chart": {"title": "A"}}
+        preview = mock.Mock()
+        with (
+            mock.patch.object(project_studio.st, "session_state", {}),
+            mock.patch.object(project_studio, "build_studio_layout_preview", return_value=preview) as build,
+            mock.patch.object(project_studio, "build_scene_geometry", return_value={}),
+        ):
+            project_studio._layout_preview_geometry(project, dataset, {})
+            project_studio._layout_preview_geometry(project, dataset, {})
+            self.assertEqual(build.call_count, 1)
+            project_studio._layout_preview_geometry(
+                {"chart": {"title": "B"}}, dataset, {},
+            )
+            self.assertEqual(build.call_count, 2)
+            changed_dataset = dataset.copy()
+            changed_dataset.loc[0, "value"] = 2
+            project_studio._layout_preview_geometry(project, changed_dataset, {})
+            self.assertEqual(build.call_count, 3)
+
     def test_review_controls_persist_and_final_settings_stay_intact(self):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()
@@ -337,6 +360,15 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self.assertEqual(project_data["fun_facts"]["editorial_card_y"], 300)
         self.assertEqual(project_data["fun_facts"]["editorial_card_width"], 520)
         self.assertEqual(project_data["fun_facts"]["editorial_card_height"], 260)
+        next(control for control in app.color_picker
+             if control.label == "Background color").set_value("#224466")
+        app.run()
+        fact_style = json.loads(app.json[0].value)["fun_facts"]
+        self.assertEqual(
+            tuple(fact_style[f"editorial_card_{field}"]
+                  for field in ("x", "y", "width", "height")),
+            (400, 300, 520, 260),
+        )
 
     def test_data_pulse_controls_are_conditional_and_persist(self):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
@@ -361,6 +393,11 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         next(control for control in app.button
              if control.label == "Use category color").click()
         app.run()
+        self.assertIsNone(json.loads(app.json[0].value)["fun_facts"].get("pulse_color"))
+        next(control for control in app.number_input
+             if control.label == "Pulse width").set_value(3.0)
+        app.run()
+        self.assertIsNone(json.loads(app.json[0].value)["fun_facts"].get("pulse_color"))
         self.assertIn("Pulse width", {control.label for control in app.number_input})
         self.assertIn("Pulse border opacity", {control.label for control in app.slider})
         self.assertIn("Wave strength", {control.label for control in app.slider})

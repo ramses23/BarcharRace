@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import os
 import subprocess
 import sys
@@ -76,7 +77,7 @@ from studio.project_bundle import (
     build_project_bundle,
     import_project_bundle,
 )
-from studio.project_draft import ProjectDraft
+from studio.project_draft import ProjectDraft, preview_fingerprint
 from ui.category_editor import (
     CATEGORY_FILTERS,
     CATEGORY_PAGE_SIZES,
@@ -4054,6 +4055,30 @@ def _canvas_text_section(
     }
 
 
+def _layout_preview_geometry(project_data, dataset, preview_settings):
+    """Reuse the selected-frame geometry on reruns with unchanged inputs."""
+    dataset_hash = hashlib.sha256(
+        pd.util.hash_pandas_object(dataset, index=True).values.tobytes()
+    ).hexdigest()
+    key = (
+        preview_fingerprint(project_data, preview_settings),
+        tuple(dataset.columns),
+        tuple(str(dtype) for dtype in dataset.dtypes),
+        dataset_hash,
+    )
+    cached = st.session_state.get("studio_layout_preview_cache")
+    if isinstance(cached, dict) and cached.get("key") == key:
+        return cached["preview"], cached["geometry"]
+    preview = build_studio_layout_preview(project_data, dataset, preview_settings)
+    geometry = build_scene_geometry(
+        preview.chart_config, preview.fun_fact_config, preview.scene,
+    )
+    st.session_state["studio_layout_preview_cache"] = {
+        "key": key, "preview": preview, "geometry": geometry,
+    }
+    return preview, geometry
+
+
 def _mount_text_layout_editor(
     *,
     project_data,
@@ -4070,15 +4095,8 @@ def _mount_text_layout_editor(
     preview = None
     error = None
     try:
-        preview = build_studio_layout_preview(
-            project_data,
-            dataset,
-            preview_settings,
-        )
-        geometry = build_scene_geometry(
-            preview.chart_config,
-            preview.fun_fact_config,
-            preview.scene,
+        preview, geometry = _layout_preview_geometry(
+            project_data, dataset, preview_settings,
         )
         elements["title"]["text"] = preview.scene.title or "Title"
         elements["subtitle"]["text"] = preview.scene.subtitle or "Subtitle"
@@ -4145,15 +4163,8 @@ def _mount_editorial_layout_editor(
     geometry = {}
     error = None
     try:
-        preview = build_studio_layout_preview(
-            project_data,
-            dataset,
-            preview_settings,
-        )
-        geometry = build_scene_geometry(
-            preview.chart_config,
-            preview.fun_fact_config,
-            preview.scene,
+        preview, geometry = _layout_preview_geometry(
+            project_data, dataset, preview_settings,
         )
     except (OSError, ValueError, ProjectFileError) as exc:
         error = str(exc)
@@ -4175,7 +4186,11 @@ def _mount_editorial_layout_editor(
         editorial_layout_editor(
             canvas_width=canvas_width,
             canvas_height=canvas_height,
-            rect=(geometry.get("editorial_rect") or editor["rect"]),
+            rect=(
+                editor["rect"]
+                if project_data.get("fun_facts", {}).get("editorial_placement_mode") == "manual"
+                else geometry.get("editorial_rect") or editor["rect"]
+            ),
             overlay=geometry,
             theme={
                 "background_color": background_color,
@@ -6397,27 +6412,32 @@ def _set_session_value(key, value):
     st.session_state[key] = value
 
 
-def _reset_pulse_color(picker_key, selected_key, reset_key):
+def _set_pulse_color(field, picker_key):
+    current_draft = st.session_state.get(CURRENT_DRAFT_STATE)
+    if isinstance(current_draft, dict) and isinstance(current_draft.get("project_data"), dict):
+        current_draft["project_data"].setdefault("fun_facts", {})[field] = (
+            st.session_state[picker_key]
+        )
+
+
+def _reset_pulse_color(field, picker_key):
+    current_draft = st.session_state.get(CURRENT_DRAFT_STATE)
+    if isinstance(current_draft, dict) and isinstance(current_draft.get("project_data"), dict):
+        current_draft["project_data"].setdefault("fun_facts", {})[field] = None
     st.session_state.pop(picker_key, None)
-    st.session_state.pop(selected_key, None)
-    st.session_state[reset_key] = True
 
 
 def _inheritable_pulse_color_picker(label, value, key):
     picker_key = _widget_key(f"{key}_picker")
-    selected_key = _widget_key(f"{key}_selected")
-    reset_key = _widget_key(f"{key}_reset")
-    if st.session_state.pop(reset_key, False):
-        value = None
+    field = key.removeprefix("fun_facts_")
     selected = st.color_picker(
         label, value=value or "#FFFFFF", key=picker_key,
         help="Choose a HEX override, or use the category color.",
-        on_change=_set_session_value, args=(selected_key, True),
+        on_change=_set_pulse_color, args=(field, picker_key),
     )
-    if st.session_state.pop(selected_key, False):
-        value = selected
     if value is None and st.button(
         "Use selected color", key=_widget_key(f"{key}_apply"),
+        on_click=_set_pulse_color, args=(field, picker_key),
     ):
         value = selected
     if value is None:
@@ -6426,7 +6446,7 @@ def _inheritable_pulse_color_picker(label, value, key):
         st.button(
             "Use category color", key=_widget_key(f"{key}_inherit"),
             on_click=_reset_pulse_color,
-            args=(picker_key, selected_key, reset_key),
+            args=(field, picker_key),
         )
     return value
 

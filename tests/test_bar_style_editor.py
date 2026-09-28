@@ -310,6 +310,8 @@ class BarStyleEditorTest(unittest.TestCase):
         self.assertIn("renderActiveSummary(state)", javascript)
         self.assertIn("bar_label_border_enabled", javascript)
         self.assertIn("webkitTextStroke", javascript)
+        self.assertIn("input.onchange = () => emit(state, descriptor.field, Number(input.value))", javascript)
+        self.assertIn("input.oninput = () => { output.textContent = input.value }", javascript)
         self.assertIn("bar_label_shadow_enabled", javascript)
         self.assertIn("name.style.textShadow", javascript)
         self.assertIn('bar_appearance_mode = "unified"', javascript)

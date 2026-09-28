@@ -3,6 +3,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from config.project_file_loader import (
@@ -418,10 +419,21 @@ def load_appearance_preset_catalog(directory):
             (f"Appearance preset path is not a directory: {directory}",),
         )
 
+    paths = tuple(sorted(directory.glob("*.json"), key=lambda item: item.name.casefold()))
+    signature = tuple(
+        (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+        for path in paths
+    )
+    return _cached_appearance_preset_catalog(signature)
+
+
+@lru_cache(maxsize=16)
+def _cached_appearance_preset_catalog(signature):
     presets = []
     errors = []
 
-    for path in sorted(directory.glob("*.json"), key=lambda item: item.name.casefold()):
+    for name, _, _ in signature:
+        path = Path(name)
         try:
             presets.append(load_appearance_preset(path))
         except AppearancePresetError as exc:
@@ -641,6 +653,8 @@ def _validated_preset(data):
                 "pulse_fade_in_duration", "pulse_travel_duration", "wave_strength",
             )
         }
+        if schema_version <= 14:
+            fun_fact_defaults["data_link"] = "off"
         if schema_version <= 13:
             fun_fact_defaults.update({
                 "editorial_layout_mode": "reserved",

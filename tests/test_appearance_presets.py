@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _test_path
 from studio.appearance_presets import (
@@ -460,6 +461,33 @@ class AppearancePresetsTest(unittest.TestCase):
             )
             self.assertEqual(len(catalog.errors), 1)
             self.assertIn("Invalid JSON", catalog.errors[0])
+
+    def test_legacy_preset_missing_data_link_defaults_to_off(self):
+        preset = build_appearance_preset("Legacy pulse", self.project_data())
+        data = preset.to_dict()
+        data["schema_version"] = 14
+        del data["fun_facts"]["data_link"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "legacy.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+            self.assertEqual(loaded.fun_facts["data_link"], "off")
+            catalog = load_appearance_preset_catalog(temp_dir)
+            self.assertEqual(catalog.errors, ())
+
+    def test_preset_catalog_reuses_validation_until_file_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            save_appearance_preset(
+                build_appearance_preset("Cached", self.project_data()), directory,
+            )
+            with mock.patch(
+                "studio.appearance_presets.load_appearance_preset",
+                wraps=load_appearance_preset,
+            ) as load:
+                load_appearance_preset_catalog(directory)
+                load_appearance_preset_catalog(directory)
+                self.assertEqual(load.call_count, 1)
 
     def test_loads_v6_preset_with_value_grid_disabled_compatibility_defaults(self):
         current = build_appearance_preset("Before value grid", self.project_data())

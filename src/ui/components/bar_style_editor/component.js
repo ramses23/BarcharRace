@@ -214,7 +214,10 @@ function fieldControl(state, descriptor) {
       const output = document.createElement("span")
       output.className = "bar-range-value"
       output.textContent = String(input.value)
-      input.oninput = () => { output.textContent = input.value; emit(state, descriptor.field, Number(input.value)) }
+      // Keep the thumb mounted throughout a drag. Publishing on every input
+      // rebuilds the component and interrupts the pointer gesture.
+      input.oninput = () => { output.textContent = input.value }
+      input.onchange = () => emit(state, descriptor.field, Number(input.value))
       label.append(title, input, output)
       return label
     }
