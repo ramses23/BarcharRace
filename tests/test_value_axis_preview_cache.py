@@ -526,6 +526,40 @@ class ValueAxisPreviewCacheTest(unittest.TestCase):
         )
         self.assertIsNot(changed, first)
 
+    def test_preview_podium_anchor_uses_current_color_with_warm_axis_bundle(self):
+        from core.transition_timing import sample_timed_sprites
+
+        config = replace(self._config(), steps_per_transition=90,
+                         rank_celebration="first")
+        frame = pd.DataFrame({
+            "year": [2000, 2000, 2001, 2001],
+            "country": ["A", "B", "A", "B"],
+            "value": [50, 40, 50, 60],
+        })
+        selector = BarSelector(config.selection)
+        colors = ("#334455", "#AA3300")
+        anchors = []
+        for color in colors:
+            timeline = Timeline(frame, DatasetConfig(category_colors={"B": color}))
+            years = timeline.get_years()
+            layout = LayoutEngine(config, FunFactConfig())
+            history = tuple(layout.build(selector.select(timeline.get_frame(year)))
+                            for year in years)
+            resolver = BarValueScaleResolver.from_config(config, history)
+            event_frame = resolver.rank_celebration_timeline.events[0].frame
+            target = sample_timed_sprites(MotionEngine(config.animation), history,
+                                          resolver.timing_plan, event_frame)
+            _, _, celebrations = _preview_value_scales(
+                timeline=timeline, selector=selector, layout=layout,
+                chart_config=config, years=years,
+                target_frame_index=event_frame, target_sprites=target,
+                include_celebrations=True,
+            )
+            anchors.append(celebrations[0].anchor_sprite.color)
+        self.assertEqual(anchors, list(colors))
+        self.assertEqual(value_axis_preview_cache_info()["bundle_misses"], 1)
+        self.assertEqual(value_axis_preview_cache_info()["bundle_hits"], 1)
+
     def test_cross_project_keys_and_bounded_lru_eviction(self):
         config = self._config()
         resolvers = []

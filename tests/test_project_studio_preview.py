@@ -2,12 +2,17 @@ import json
 import tempfile
 import unittest
 from contextlib import chdir
+from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 import _test_path
 from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
+from core.bar_value_scale import BarValueScaleResolver
+from models.bar_sprite import BarSprite
 from studio.package_paths import resolve_project_path
+from studio import preview as preview_module
 from studio.preview import (
     _clamped_progress,
     _resolved_chart_config,
@@ -19,6 +24,73 @@ from studio.preview import (
 
 
 class ProjectStudioPreviewTest(unittest.TestCase):
+    def test_auto_preview_skips_unchanged_and_export_only_edits(self):
+        from studio.project_draft import ProjectDraft
+        from ui import project_studio
+
+        def draft(**chart):
+            return ProjectDraft.create(
+                {"chart": {"label_font_size": 24, **chart}},
+                "projects/sample.json", {"year": 2000},
+            )
+
+        with mock.patch.object(project_studio.st, "session_state", {}):
+            initial = draft()
+            self.assertFalse(project_studio._should_auto_render_preview(
+                initial, enabled=True,
+            ))
+            self.assertFalse(project_studio._should_auto_render_preview(
+                initial, enabled=True,
+            ))
+            changed = draft(label_font_size=30)
+            self.assertTrue(project_studio._should_auto_render_preview(
+                changed, enabled=True,
+            ))
+            self.assertFalse(project_studio._should_auto_render_preview(
+                changed, enabled=True,
+            ))
+            self.assertFalse(project_studio._should_auto_render_preview(
+                draft(label_font_size=30, output_file="other.mp4"),
+                enabled=True,
+            ))
+
+    def test_preview_scale_reuses_history_for_style_but_not_scale_or_sprite_changes(self):
+        config = ChartConfig(steps_per_transition=4, rank_celebration="off")
+        first = BarSprite("A", 10, "#112233", 100, 100, 200, 30)
+        second = BarSprite("A", 20, "#112233", 100, 100, 300, 30)
+        history = ((first,), (second,))
+        preview_module._preview_scale_cache.clear()
+        try:
+            with mock.patch.object(
+                BarValueScaleResolver, "from_config",
+                wraps=BarValueScaleResolver.from_config,
+            ) as build:
+                initial, _ = preview_module._cached_preview_scale(
+                    config, history, history[0], 0, True,
+                )
+                styled, _ = preview_module._cached_preview_scale(
+                    replace(config, title="Changed title"), history,
+                    history[0], 0, True,
+                )
+                self.assertEqual(initial, styled)
+                self.assertEqual(build.call_count, 1)
+
+                preview_module._cached_preview_scale(
+                    replace(config, leader_full_width_point=0.5),
+                    history, history[0], 0, True,
+                )
+                changed_value = ((replace(first, value=11),), history[1])
+                preview_module._cached_preview_scale(
+                    config, changed_value, changed_value[0], 0, True,
+                )
+                changed_color = ((replace(first, color="#AABBCC"),), history[1])
+                preview_module._cached_preview_scale(
+                    config, changed_color, changed_color[0], 0, True,
+                )
+                self.assertEqual(build.call_count, 4)
+        finally:
+            preview_module._preview_scale_cache.clear()
+
     def test_selects_nearest_year_for_preview(self):
         self.assertEqual(_selected_year(None, [2000, 2005, 2010]), 2000)
         self.assertEqual(_selected_year(2006, [2000, 2005, 2010]), 2005)

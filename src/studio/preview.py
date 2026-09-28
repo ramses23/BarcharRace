@@ -1,4 +1,7 @@
+from collections import OrderedDict
 from dataclasses import replace
+from hashlib import sha256
+from threading import RLock
 
 from config.project_file_loader import load_project_data, load_project_file
 from core.bar_selector import BarSelector
@@ -26,8 +29,16 @@ from studio.short_export import (
     short_overlay_for_frame,
 )
 from studio.workspace_paths import assert_user_write_path
-from studio.value_axis_preview import get_preview_value_axis_bundle
+from studio.value_axis_preview import (
+    get_preview_value_axis_bundle,
+    value_axis_preview_fingerprint,
+)
 from validators.dataset_validator import DatasetValidator
+
+
+_PREVIEW_SCALE_CACHE_LIMIT = 4
+_preview_scale_cache = OrderedDict()
+_preview_scale_cache_lock = RLock()
 
 
 def render_project_preview(
@@ -471,13 +482,12 @@ def _preview_value_scales(
             year: _sprites_for_year(timeline, selector, layout, year)
             for year in years
         }
-        resolver = BarValueScaleResolver.from_config(
-            chart_config,
-            sprites_by_year.values(),
+        bar_value_scale, celebrations = _cached_preview_scale(
+            chart_config, tuple(sprites_by_year.values()), target_sprites,
+            target_frame_index, include_celebrations,
         )
-        bar_value_scale = resolver.for_sprites(target_sprites, frame_index=target_frame_index)
         result = (bar_value_scale, None)
-        return (*result, resolver.celebrations_at(target_frame_index)) if include_celebrations else result
+        return (*result, celebrations) if include_celebrations else result
 
     bundle = get_preview_value_axis_bundle(
         chart_config,
@@ -486,14 +496,50 @@ def _preview_value_scales(
         selector,
         layout,
     )
-    resolver = BarValueScaleResolver.from_config(
-        chart_config,
-        bundle.sprite_sets,
+    # Axis history is numeric-only; podium anchors also carry current color/logo
+    # styling, so never build them from an older axis bundle after a style edit.
+    sprite_sets = (
+        tuple(_sprites_for_year(timeline, selector, layout, year) for year in years)
+        if chart_config.rank_celebration != "off"
+        else bundle.sprite_sets
     )
-    bar_value_scale = resolver.for_sprites(target_sprites, frame_index=target_frame_index)
+    bar_value_scale, celebrations = _cached_preview_scale(
+        chart_config, sprite_sets, target_sprites,
+        target_frame_index, include_celebrations,
+    )
     result = (bar_value_scale, align_axis_to_bar_scale(
         bundle.resolver.state_at(target_frame_index), bar_value_scale, chart_config))
-    return (*result, resolver.celebrations_at(target_frame_index)) if include_celebrations else result
+    return (*result, celebrations) if include_celebrations else result
+
+
+def _cached_preview_scale(config, sprite_sets, target_sprites, frame_index,
+                          include_celebrations):
+    """Reuse the expensive podium history only when its complete inputs match."""
+    sprite_sets = tuple(tuple(sprites) for sprites in sprite_sets)
+    key = sha256(repr((
+        value_axis_preview_fingerprint(config, sprite_sets),
+        config.animation,
+        config.fps,
+        config.rank_celebration,
+        config.start_bars_at_zero,
+        config.leader_full_width_point,
+        config.selection.aggregate_other,
+        config.selection.other_label,
+        config.value_grid_tick_labels_enabled,
+        sprite_sets,
+    )).encode("utf-8")).digest()
+    with _preview_scale_cache_lock:
+        resolver = _preview_scale_cache.get(key)
+        if resolver is None:
+            resolver = BarValueScaleResolver.from_config(config, sprite_sets)
+            _preview_scale_cache[key] = resolver
+            while len(_preview_scale_cache) > _PREVIEW_SCALE_CACHE_LIMIT:
+                _preview_scale_cache.popitem(last=False)
+        else:
+            _preview_scale_cache.move_to_end(key)
+        scale = resolver.for_sprites(target_sprites, frame_index=frame_index)
+        celebrations = resolver.celebrations_at(frame_index) if include_celebrations else ()
+        return scale, celebrations
 
 
 def _sprites_for_year(timeline, selector, layout, year):
