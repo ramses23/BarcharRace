@@ -26,7 +26,8 @@ function buildInstance(parentElement) {
   root.append(toolbar, wrap, hint)
   parentElement.appendChild(root)
   return {
-    root, status, stage, data: null, rect: null, scale: 1, drag: null,
+    root, status, stage, data: null, rect: null, rects: null,
+    activeBlock: "card", scale: 1, drag: null,
     incoming: null, instanceId: createInstanceId(), eventCounter: 0,
     setStateValue: null, resizeObserver: null,
   }
@@ -41,9 +42,10 @@ function stageDimensions(state) {
   return { width, height: width * canvasHeight / canvasWidth }
 }
 
-function normalized(state, rect) {
-  const minWidth = Number(state.data.min_width)
-  const minHeight = Number(state.data.min_height)
+function normalized(state, rect, block = "card") {
+  const independent = block !== "card"
+  const minWidth = Number(independent ? state.data.block_min_width : state.data.min_width)
+  const minHeight = Number(independent ? state.data.block_min_height : state.data.min_height)
   const canvasWidth = Number(state.data.canvas_width)
   const canvasHeight = Number(state.data.canvas_height)
   const width = clamp(Math.round(rect.width), minWidth, canvasWidth)
@@ -67,12 +69,14 @@ function addOverlay(state, rect, className) {
 }
 
 function updateStatus(state) {
-  const r = state.rect
-  state.status.textContent = `Card: X ${r.x} · Y ${r.y} · ${r.width} × ${r.height} px`
+  const block = state.activeBlock
+  const r = block === "card" ? state.rect : state.rects?.[block]
+  if (!r) return
+  state.status.textContent = `${block[0].toUpperCase() + block.slice(1)}: X ${r.x} · Y ${r.y} · ${r.width} × ${r.height} px`
 }
 
-function positionCard(state, card) {
-  const r = state.rect
+function positionCard(state, card, block = "card") {
+  const r = block === "card" ? state.rect : state.rects[block]
   card.style.left = `${r.x * state.scale}px`
   card.style.top = `${r.y * state.scale}px`
   card.style.width = `${r.width * state.scale}px`
@@ -82,6 +86,10 @@ function positionCard(state, card) {
 
 function render(state) {
   if (!state.data || !state.rect) return
+  state.root.querySelector(".editorial-hint").textContent =
+    state.data.composition === "independent"
+      ? "Drag either block or its 8 handles. Arrow keys move 1 px; Shift + arrows move 10 px. Changes apply when the gesture ends."
+      : "Drag the card or its 8 handles. Arrow keys move 1 px; Shift + arrows move 10 px. Changes apply when the gesture ends."
   const dimensions = stageDimensions(state)
   state.scale = dimensions.width / Number(state.data.canvas_width)
   state.stage.style.width = `${dimensions.width}px`
@@ -92,48 +100,53 @@ function render(state) {
   addOverlay(state, overlay.safe_area, "overlay-safe-area")
   for (const bar of overlay.bar_rects || []) addOverlay(state, bar, "overlay-bar")
   for (const rect of Object.values(overlay.text_bounds || {})) addOverlay(state, rect, "overlay-text")
-  const card = document.createElement("div")
-  card.className = "editorial-card-editor"
-  const cardTheme = state.data.theme || {}
-  card.dataset.backgroundMode = cardTheme.card_background_mode || "card"
-  card.dataset.texture = cardTheme.card_background_texture || "none"
-  card.style.setProperty("--card-background", cardTheme.card_background_color || "#111827")
-  card.style.setProperty(
-    "--card-texture-opacity",
-    clamp(Number(cardTheme.card_background_texture_intensity) || 0, 0, 1),
-  )
-  card.tabIndex = 0
-  card.setAttribute("role", "group")
-  card.setAttribute("aria-label", "Editorial card. Drag to move; use handles to resize.")
-  const label = document.createElement("span")
-  label.className = "editorial-card-label"
-  label.textContent = "Editorial card"
-  card.appendChild(label)
-  for (const direction of handles) {
-    const handle = document.createElement("span")
-    handle.className = `resize-handle handle-${direction}`
-    handle.dataset.handle = direction
-    handle.setAttribute("role", "button")
-    handle.setAttribute("aria-label", `Resize editorial card ${direction}`)
-    card.appendChild(handle)
+  const blocks = state.data.composition === "independent" ? ["text", "image"] : ["card"]
+  for (const block of blocks) {
+    const card = document.createElement("div")
+    card.className = `editorial-card-editor editorial-${block}-editor`
+    const cardTheme = state.data.theme || {}
+    card.dataset.backgroundMode = cardTheme.card_background_mode || "card"
+    card.dataset.texture = cardTheme.card_background_texture || "none"
+    card.style.setProperty("--card-background", cardTheme.card_background_color || "#111827")
+    card.style.setProperty(
+      "--card-texture-opacity",
+      clamp(Number(cardTheme.card_background_texture_intensity) || 0, 0, 1),
+    )
+    card.tabIndex = 0
+    card.setAttribute("role", "group")
+    card.setAttribute("aria-label", `Editorial ${block} block. Drag to move; use handles to resize.`)
+    const label = document.createElement("span")
+    label.className = "editorial-card-label"
+    label.textContent = block === "card" ? "Editorial card" : `${block[0].toUpperCase() + block.slice(1)} block`
+    card.appendChild(label)
+    for (const direction of handles) {
+      const handle = document.createElement("span")
+      handle.className = `resize-handle handle-${direction}`
+      handle.dataset.handle = direction
+      handle.setAttribute("role", "button")
+      handle.setAttribute("aria-label", `Resize editorial ${block} ${direction}`)
+      card.appendChild(handle)
+    }
+    card.onpointerdown = event => startDrag(state, card, event, block)
+    card.onkeydown = event => keyboardMove(state, card, event, block)
+    positionCard(state, card, block)
+    state.stage.appendChild(card)
   }
-  card.onpointerdown = event => startDrag(state, card, event)
-  card.onkeydown = event => keyboardMove(state, card, event)
-  positionCard(state, card)
-  state.stage.appendChild(card)
-  state.card = card
 }
 
-function startDrag(state, card, event) {
+function startDrag(state, card, event, block = "card") {
   const handle = event.target?.dataset?.handle || "move"
+  state.activeBlock = block
+  const current = block === "card" ? state.rect : state.rects[block]
   card.setPointerCapture(event.pointerId)
   state.drag = {
+    block,
     mode: handle,
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
-    rect: clone(state.rect),
-    baseRect: clone(state.rect),
+    rect: clone(current),
+    baseRect: clone(current),
   }
   card.onpointermove = moveEvent => moveDrag(state, card, moveEvent)
   card.onpointerup = endEvent => endDrag(state, card, endEvent)
@@ -158,20 +171,25 @@ function moveDrag(state, card, event) {
     if (mode.includes("e")) right += dx
     if (mode.includes("n")) top += dy
     if (mode.includes("s")) bottom += dy
-    const minWidth = Number(state.data.min_width)
-    const minHeight = Number(state.data.min_height)
+    const independent = state.drag.block !== "card"
+    const minWidth = Number(independent ? state.data.block_min_width : state.data.min_width)
+    const minHeight = Number(independent ? state.data.block_min_height : state.data.min_height)
     if (right - left < minWidth) mode.includes("w") ? left = right - minWidth : right = left + minWidth
     if (bottom - top < minHeight) mode.includes("n") ? top = bottom - minHeight : bottom = top + minHeight
   }
-  state.rect = normalized(state, { x: left, y: top, width: right - left, height: bottom - top })
-  positionCard(state, card)
+  const block = state.drag.block
+  const next = normalized(state, { x: left, y: top, width: right - left, height: bottom - top }, block)
+  if (block === "card") state.rect = next
+  else state.rects[block] = next
+  positionCard(state, card, block)
 }
 
-function emit(state, baseRect) {
+function emit(state, baseRect, block = "card") {
   state.eventCounter += 1
   state.setStateValue("geometry", {
-    rect: clone(state.rect),
+    rect: clone(block === "card" ? state.rect : state.rects[block]),
     base_rect: clone(baseRect),
+    block,
     event_id: `${state.instanceId}:${state.eventCounter}`,
   })
 }
@@ -179,26 +197,31 @@ function emit(state, baseRect) {
 function endDrag(state, card) {
   if (!state.drag) return
   const baseRect = clone(state.drag.baseRect)
+  const block = state.drag.block
   state.drag = null
   card.onpointermove = null
   card.onpointerup = null
   card.onpointercancel = null
   card.onlostpointercapture = null
-  emit(state, baseRect)
+  emit(state, baseRect, block)
 }
 
-function keyboardMove(state, card, event) {
+function keyboardMove(state, card, event, block = "card") {
   if (!event.key.startsWith("Arrow")) return
   const distance = event.shiftKey ? 10 : 1
-  const baseRect = clone(state.rect)
-  const next = clone(state.rect)
+  state.activeBlock = block
+  const current = block === "card" ? state.rect : state.rects[block]
+  const baseRect = clone(current)
+  const next = clone(current)
   if (event.key === "ArrowLeft") next.x -= distance
   if (event.key === "ArrowRight") next.x += distance
   if (event.key === "ArrowUp") next.y -= distance
   if (event.key === "ArrowDown") next.y += distance
-  state.rect = normalized(state, next)
-  positionCard(state, card)
-  emit(state, baseRect)
+  const resolved = normalized(state, next, block)
+  if (block === "card") state.rect = resolved
+  else state.rects[block] = resolved
+  positionCard(state, card, block)
+  emit(state, baseRect, block)
   event.preventDefault()
 }
 
@@ -221,8 +244,20 @@ export default function (component) {
   state.setStateValue = setStateValue
   if (state.drag) return state.cleanup
   state.data = data
-  const incoming = JSON.stringify(data.rect)
-  if (!state.drag && (state.incoming === null || incoming !== state.incoming)) state.rect = normalized(state, data.rect)
+  const incoming = JSON.stringify([data.composition, data.rect, data.rects])
+  if (state.incoming === null || incoming !== state.incoming) {
+    state.rect = normalized(state, data.rect)
+    if (data.composition === "independent") {
+      state.rects = {
+        text: normalized(state, data.rects.text, "text"),
+        image: normalized(state, data.rects.image, "image"),
+      }
+      if (state.activeBlock === "card") state.activeBlock = "text"
+    } else {
+      state.rects = null
+      state.activeBlock = "card"
+    }
+  }
   state.incoming = incoming
   render(state)
   return state.cleanup

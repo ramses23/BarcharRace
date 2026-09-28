@@ -9,6 +9,7 @@ from core.motion_engine import MotionEngine
 from core.transition_timing import sample_timed_sprites
 from models.scene import Scene
 from studio.fun_fact_layout import apply_fun_fact_layout
+from studio.fun_fact_loader import load_fun_fact_scheduler
 from studio.preview import (
     _preview_mode,
     _preview_timing_plan,
@@ -35,7 +36,7 @@ class StudioLayoutPreview:
     scene: Scene
 
 
-def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
+def build_studio_layout_preview(project_data, dataframe, preview_settings=None, *, project_root=None):
     """Build the selected Studio frame without rendering or resolving assets."""
     preview_settings = preview_settings if isinstance(preview_settings, dict) else {}
     preset = load_project_data(project_data, default_name="studio-layout-preview")
@@ -58,9 +59,19 @@ def build_studio_layout_preview(project_data, dataframe, preview_settings=None):
         effective_fun_fact_config,
     )
     selector = BarSelector(config=chart_config.selection)
+    editorial_image_present = True
+    if (effective_fun_fact_config.enabled
+            and effective_fun_fact_config.layout == "editorial_floating"
+            and effective_fun_fact_config.editorial_composition == "independent"
+            and project_root is not None):
+        scheduler = load_fun_fact_scheduler(
+            effective_fun_fact_config, timeline, project_root=project_root,
+        )
+        editorial_image_present = any(item.fact.image_path for item in scheduler.facts)
     layout = LayoutEngine(
         config=chart_config,
         fun_fact_config=effective_fun_fact_config,
+        editorial_image_present=editorial_image_present,
     )
     timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
     calendar_resolver = _display_calendar_resolver(timeline, years, chart_config, timing_plan)

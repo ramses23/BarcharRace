@@ -1203,6 +1203,10 @@ def _convert_fun_fact_value(key, value):
                 "Editorial orientation must be 'vertical' or 'horizontal'."
             )
         return value
+    if key == "editorial_composition":
+        if value not in ("card", "independent"):
+            raise ProjectFileError("Editorial composition must be 'card' or 'independent'.")
+        return value
     if key == "editorial_image_position":
         if value not in ("left", "right"):
             raise ProjectFileError(
@@ -1247,7 +1251,9 @@ def _convert_fun_fact_value(key, value):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ProjectFileError(f"Fun facts field '{key}' must be a non-negative integer.")
         return value
-    if key in ("editorial_card_x", "editorial_card_y"):
+    if key in ("editorial_card_x", "editorial_card_y",
+               "editorial_text_x", "editorial_text_y",
+               "editorial_image_x", "editorial_image_y"):
         if value is None:
             return None
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -1255,10 +1261,14 @@ def _convert_fun_fact_value(key, value):
                 f"Fun facts field '{key}' must be null or a non-negative integer."
             )
         return value
-    if key in ("editorial_card_width", "editorial_card_height"):
+    if key in ("editorial_card_width", "editorial_card_height",
+               "editorial_text_width", "editorial_text_height",
+               "editorial_image_width", "editorial_image_height"):
         if value is None:
             return None
-        minimum = 240 if key == "editorial_card_width" else 140
+        minimum = (240 if key == "editorial_card_width" else 140
+                   if key == "editorial_card_height" else 160
+                   if key.endswith("_width") else 100)
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise ProjectFileError(
                 f"Fun facts field '{key}' must be null or at least {minimum}."

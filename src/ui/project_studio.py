@@ -58,6 +58,7 @@ from core.scene_geometry import build_scene_geometry
 from core.timeline import Timeline
 from studio.fun_fact_layout import (
     apply_fun_fact_layout,
+    editorial_block_geometry,
     DEFAULT_FLOATING_CARD_HEIGHT_RATIO,
     DEFAULT_FLOATING_CARD_WIDTH_RATIO,
     DEFAULT_FUN_FACT_PANEL_WIDTH_RATIO,
@@ -2300,10 +2301,12 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         "editorial_top_offset": int(values.get("fun_facts_editorial_top_offset", 0)),
         "editorial_reposition_time_label": bool(values.get("fun_facts_editorial_reposition_time_label", True)),
         "editorial_orientation": values.get("fun_facts_editorial_orientation", "vertical"),
+        "editorial_composition": values.get("fun_facts_editorial_composition", "card"),
         "editorial_card_x": _int_in_range_or_default(values.get("fun_facts_editorial_card_x"), round(layout.width * 0.50), 0, layout.width),
         "editorial_card_y": _int_in_range_or_default(values.get("fun_facts_editorial_card_y"), round(layout.height * 0.54), 0, layout.height),
         "editorial_card_width": _int_in_range_or_default(values.get("fun_facts_editorial_card_width"), default_card_width, 240, layout.width),
         "editorial_card_height": _int_in_range_or_default(values.get("fun_facts_editorial_card_height"), default_card_height, 140, layout.height),
+        **_independent_block_settings(values, layout),
         "editorial_image_position": values.get("fun_facts_editorial_image_position", "right"),
         "editorial_collision_gap": _int_in_range_or_default(values.get("fun_facts_editorial_collision_gap"), 24, 0, layout.width),
         "editorial_layout_mode": values.get("fun_facts_editorial_layout_mode", "reserved"),
@@ -2322,6 +2325,61 @@ def _fun_fact_settings_from_values(values, *, layout_preset):
         "editorial_protect_top_n": _int_in_range_or_default(values.get("fun_facts_editorial_protect_top_n"), 3, 0, 10),
         "editorial_bar_clearance": _int_in_range_or_default(values.get("fun_facts_editorial_bar_clearance"), 16, 0, 60),
     }
+
+
+def _independent_block_settings(values, layout):
+    settings = {}
+    defaults = FunFactConfig()
+    for block in ("text", "image"):
+        default_rect = editorial_block_geometry(layout, defaults, block)
+        for field, default, maximum, minimum in zip(
+            ("x", "y", "width", "height"), default_rect,
+            (layout.width, layout.height, layout.width, layout.height),
+            (0, 0, 160, 100),
+        ):
+            name = f"editorial_{block}_{field}"
+            settings[name] = _int_in_range_or_default(
+                values.get(f"fun_facts_{name}"), default, minimum, maximum,
+            )
+    return settings
+
+
+def _independent_block_controls(block, settings, layout):
+    label = block.title()
+    st.markdown(f"**{label} block**")
+    width_column, height_column = st.columns(2)
+    width_name = f"editorial_{block}_width"
+    height_name = f"editorial_{block}_height"
+    width = width_column.number_input(
+        f"{label} width", min_value=160, max_value=layout.width,
+        value=settings[width_name], step=8,
+        key=_widget_key(f"fun_facts_{width_name}"),
+    )
+    height = height_column.number_input(
+        f"{label} height", min_value=100, max_value=layout.height,
+        value=settings[height_name], step=8,
+        key=_widget_key(f"fun_facts_{height_name}"),
+    )
+    max_x = max(0, layout.width - int(width))
+    max_y = max(0, layout.height - int(height))
+    x_name = f"editorial_{block}_x"
+    y_name = f"editorial_{block}_y"
+    x_key = _widget_key(f"fun_facts_{x_name}")
+    y_key = _widget_key(f"fun_facts_{y_name}")
+    _drop_widget_value_outside_range(x_key, 0, max_x)
+    _drop_widget_value_outside_range(y_key, 0, max_y)
+    x_column, y_column = st.columns(2)
+    x = x_column.number_input(
+        f"{label} X", min_value=0, max_value=max_x,
+        value=_int_in_range_or_default(settings[x_name], 0, 0, max_x),
+        step=8, key=x_key,
+    )
+    y = y_column.number_input(
+        f"{label} Y", min_value=0, max_value=max_y,
+        value=_int_in_range_or_default(settings[y_name], 0, 0, max_y),
+        step=8, key=y_key,
+    )
+    return {width_name: width, height_name: height, x_name: x, y_name: y}
 
 
 def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
@@ -2355,7 +2413,8 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         for field, value in documentary_values.items():
             st.session_state[_widget_key(f"fun_facts_{field}")] = value
         st.session_state[_widget_key("fun_facts_editorial_headline_bold")] = True
-    editorial_editor_key = _widget_key("fun_facts_editorial_layout_editor")
+    composition = settings["editorial_composition"]
+    editorial_editor_key = _widget_key(f"fun_facts_editorial_layout_editor_{composition}")
     editorial_event_key = f"{editorial_editor_key}_consumed_event"
     current_rect = {
         "x": settings["editorial_card_x"],
@@ -2379,32 +2438,43 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         canvas_width=canvas_layout.width,
         canvas_height=canvas_layout.height,
     )
+    active_block = (
+        editorial_state["block"]
+        if composition == "independent" and editorial_state["block"] in ("text", "image")
+        else "card"
+    )
+    if active_block != "card":
+        current_rect = {
+            field: settings[f"editorial_{active_block}_{field}"]
+            for field in ("x", "y", "width", "height")
+        }
     rect, consumed_event_id, accepted_editor_event = reconcile_editorial_geometry(
         current_rect=current_rect,
         component_state=editorial_state,
         consumed_event_id=st.session_state.get(editorial_event_key),
         canvas_width=canvas_layout.width,
         canvas_height=canvas_layout.height,
+        min_width=160 if active_block != "card" else 240,
+        min_height=100 if active_block != "card" else 140,
     )
     if consumed_event_id is not None:
         st.session_state[editorial_event_key] = consumed_event_id
     if settings["layout"] == "editorial_floating" and accepted_editor_event:
         settings.update({
-            "editorial_card_x": rect["x"],
-            "editorial_card_y": rect["y"],
-            "editorial_card_width": rect["width"],
-            "editorial_card_height": rect["height"],
+            f"editorial_{active_block}_{field}": rect[field]
+            for field in ("x", "y", "width", "height")
         })
         for field in ("x", "y", "width", "height"):
             st.session_state.pop(
-                _widget_key(f"fun_facts_editorial_card_{field}"),
+                _widget_key(f"fun_facts_editorial_{active_block}_{field}"),
                 None,
             )
-        settings["editorial_placement_mode"] = "manual"
-        st.session_state.pop(
-            _widget_key("fun_facts_editorial_placement_mode"),
-            None,
-        )
+        if active_block == "card":
+            settings["editorial_placement_mode"] = "manual"
+            st.session_state.pop(
+                _widget_key("fun_facts_editorial_placement_mode"),
+                None,
+            )
     st.markdown("##### Source and scheduling")
     enabled = st.toggle(
         "Enable fun facts",
@@ -2546,6 +2616,17 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     if layout in ("editorial_right", "editorial_floating"):
         with st.expander("Editorial layout", expanded=True, icon=":material/article:"):
             st.markdown("**Layout behavior**")
+            if layout == "editorial_floating":
+                editorial["editorial_composition"] = st.selectbox(
+                    "Editorial composition", ("card", "independent"),
+                    index=_option_index(("card", "independent"), settings["editorial_composition"]),
+                    format_func=lambda value: "Card" if value == "card" else "Independent blocks",
+                    key=_widget_key("fun_facts_editorial_composition"),
+                )
+            independent = (
+                layout == "editorial_floating"
+                and editorial["editorial_composition"] == "independent"
+            )
             mode_column, placement_column = st.columns(2)
             editorial["editorial_layout_mode"] = mode_column.selectbox(
                 "Layout mode",
@@ -2553,6 +2634,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                 index=_option_index(("reserved", "overlay"), settings["editorial_layout_mode"]),
                 format_func=lambda value: value.title(),
                 key=_widget_key("fun_facts_editorial_layout_mode"),
+                disabled=independent,
                 help="Overlay composes above the chart without changing bar or Source geometry.",
             )
             placement_options = (
@@ -2570,7 +2652,7 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     "Smart / Avoid Bars" if value == "smart"
                     else value.replace("_", " ").title()
                 ),
-                disabled=layout != "editorial_floating",
+                disabled=layout != "editorial_floating" or independent,
                 key=_widget_key("fun_facts_editorial_placement_mode"),
             )
             editorial["editorial_keep_inside_safe_area"] = st.toggle(
@@ -2590,7 +2672,10 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     settings["editorial_bar_clearance"],
                     key=_widget_key("fun_facts_editorial_bar_clearance"),
                 )
-            if layout == "editorial_floating":
+            if independent:
+                editorial["editorial_layout_mode"] = "reserved"
+                editorial["editorial_placement_mode"] = "manual"
+            if layout == "editorial_floating" and not independent:
                 st.markdown("**Card composition**")
                 orientation_column, image_side_column = st.columns(2)
                 editorial["editorial_orientation"] = orientation_column.selectbox(
@@ -2679,7 +2764,24 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                     "after the gesture ends. All values are final-canvas pixels."
                 )
                 editorial_editor_slot = st.empty()
-            st.markdown("**Card background**")
+            if independent:
+                st.markdown("**Independent block geometry**")
+                for block in ("text", "image"):
+                    editorial.update(_independent_block_controls(
+                        block, settings, canvas_layout,
+                    ))
+                editorial["editorial_collision_gap"] = st.number_input(
+                    "Bar/block safety gap", min_value=0,
+                    max_value=canvas_layout.width,
+                    value=settings["editorial_collision_gap"], step=4,
+                    key=_widget_key("fun_facts_editorial_collision_gap"),
+                )
+                st.caption(
+                    "Drag or resize either block below. Numeric positions update "
+                    "when the gesture ends; all values are final-canvas pixels."
+                )
+                editorial_editor_slot = st.empty()
+            st.markdown("**Text block background**" if independent else "**Card background**")
             if st.button(
                 "Apply Documentary Overlay",
                 icon=":material/movie:",
@@ -2867,10 +2969,12 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                         key=_widget_key("fun_facts_editorial_credit_italic"),
                     ) else "normal"
                 )
-            st.markdown("**Image and attribution layout**")
-            editorial["editorial_image_area_ratio"] = st.slider("Image area", 0.0, 0.8, settings["editorial_image_area_ratio"], 0.05, key=_widget_key("fun_facts_editorial_image_area_ratio"))
+            st.markdown("**Image block content**" if independent else "**Image and attribution layout**")
+            if not independent:
+                editorial["editorial_image_area_ratio"] = st.slider("Image area", 0.0, 0.8, settings["editorial_image_area_ratio"], 0.05, key=_widget_key("fun_facts_editorial_image_area_ratio"))
             editorial["editorial_image_fit"] = st.selectbox("Image fit", ("contain", "cover"), index=_option_index(("contain", "cover"), settings["editorial_image_fit"]), key=_widget_key("fun_facts_editorial_image_fit"))
-            editorial["editorial_text_image_gap"] = _reconciled_number_input("Text/image gap", min_value=MIN_EDITORIAL_SPACING, max_value=MAX_EDITORIAL_SPACING, value=settings["editorial_text_image_gap"], key=_widget_key("fun_facts_editorial_text_image_gap"))
+            if not independent:
+                editorial["editorial_text_image_gap"] = _reconciled_number_input("Text/image gap", min_value=MIN_EDITORIAL_SPACING, max_value=MAX_EDITORIAL_SPACING, value=settings["editorial_text_image_gap"], key=_widget_key("fun_facts_editorial_text_image_gap"))
             editorial["editorial_top_offset"] = _reconciled_number_input("Top offset", min_value=MIN_EDITORIAL_SPACING, max_value=MAX_EDITORIAL_SPACING, value=settings["editorial_top_offset"], disabled=layout == "editorial_floating", key=_widget_key("fun_facts_editorial_top_offset"))
             editorial["editorial_reposition_time_label"] = st.toggle("Place date with editorial layout", value=settings["editorial_reposition_time_label"], key=_widget_key("fun_facts_editorial_reposition_time_label"))
 
@@ -2892,11 +2996,19 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         result["_editorial_layout_editor"] = {
             "slot": editorial_editor_slot,
             "key": editorial_editor_key,
+            "composition": editorial["editorial_composition"],
             "rect": {
                 "x": int(editorial["editorial_card_x"]),
                 "y": int(editorial["editorial_card_y"]),
                 "width": int(editorial["editorial_card_width"]),
                 "height": int(editorial["editorial_card_height"]),
+            },
+            "rects": {
+                block: {
+                    field: int(editorial[f"editorial_{block}_{field}"])
+                    for field in ("x", "y", "width", "height")
+                }
+                for block in ("text", "image")
             },
         }
     if not source:
@@ -4085,7 +4197,10 @@ def _layout_preview_geometry(project_data, dataset, preview_settings):
     cached = st.session_state.get("studio_layout_preview_cache")
     if isinstance(cached, dict) and cached.get("key") == key:
         return cached["preview"], cached["geometry"]
-    preview = build_studio_layout_preview(project_data, dataset, preview_settings)
+    preview = build_studio_layout_preview(
+        project_data, dataset, preview_settings,
+        project_root=_active_project_root(_current_workspace_layout()),
+    )
     geometry = build_scene_geometry(
         preview.chart_config, preview.fun_fact_config, preview.scene,
     )
@@ -4207,6 +4322,8 @@ def _mount_editorial_layout_editor(
                 if project_data.get("fun_facts", {}).get("editorial_placement_mode") == "manual"
                 else geometry.get("editorial_rect") or editor["rect"]
             ),
+            rects=editor.get("rects"),
+            composition=editor.get("composition", "card"),
             overlay=geometry,
             theme={
                 "background_color": background_color,

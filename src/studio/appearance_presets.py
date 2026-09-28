@@ -164,10 +164,19 @@ FUN_FACT_APPEARANCE_FIELDS = (
     "editorial_top_offset",
     "editorial_reposition_time_label",
     "editorial_orientation",
+    "editorial_composition",
     "editorial_card_x",
     "editorial_card_y",
     "editorial_card_width",
     "editorial_card_height",
+    "editorial_text_x",
+    "editorial_text_y",
+    "editorial_text_width",
+    "editorial_text_height",
+    "editorial_image_x",
+    "editorial_image_y",
+    "editorial_image_width",
+    "editorial_image_height",
     "editorial_image_position",
     "editorial_collision_gap",
     "editorial_layout_mode",
@@ -659,6 +668,15 @@ def _validated_preset(data):
                 "pulse_fade_in_duration", "pulse_travel_duration", "wave_strength",
             )
         }
+        fun_fact_defaults.update({
+            field: getattr(default_fun_facts, field)
+            for field in (
+                "editorial_composition", "editorial_text_x", "editorial_text_y",
+                "editorial_text_width", "editorial_text_height",
+                "editorial_image_x", "editorial_image_y", "editorial_image_width",
+                "editorial_image_height",
+            )
+        })
         if schema_version <= 14:
             fun_fact_defaults["data_link"] = "off"
         if schema_version <= 13:

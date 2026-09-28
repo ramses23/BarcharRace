@@ -55,6 +55,9 @@ def panel_geometry(chart_config, fun_fact_config):
 
 def editorial_geometry(chart_config, fun_fact_config):
     """Return the active editorial rectangle as left, top, width, height."""
+    if (fun_fact_config.layout == "editorial_floating"
+            and fun_fact_config.editorial_composition == "independent"):
+        return editorial_block_geometry(chart_config, fun_fact_config, "text")
     if fun_fact_config.layout != "editorial_floating":
         width = resolved_panel_width(chart_config, fun_fact_config)
         left = chart_config.width - fun_fact_config.panel_margin - width
@@ -89,6 +92,33 @@ def editorial_geometry(chart_config, fun_fact_config):
         manual_top=top,
     )
     return int(left), int(top), int(width), int(height)
+
+
+def editorial_block_geometry(chart_config, fun_fact_config, block):
+    """Return one independent block without coupling it to the other block."""
+    if block not in ("text", "image"):
+        raise ValueError("Editorial block must be 'text' or 'image'.")
+    defaults = {
+        "text": (0.56, 0.28, 0.40, 0.32),
+        "image": (0.65, 0.63, 0.28, 0.28),
+    }[block]
+    values = tuple(
+        getattr(fun_fact_config, f"editorial_{block}_{field}")
+        for field in ("x", "y", "width", "height")
+    )
+    scales = (chart_config.width, chart_config.height,
+              chart_config.width, chart_config.height)
+    return tuple(int(value if value is not None else round(ratio * scale))
+                 for value, ratio, scale in zip(values, defaults, scales))
+
+
+def editorial_obstacle_rects(chart_config, fun_fact_config, *, has_image=True):
+    if fun_fact_config.editorial_composition != "independent":
+        return (editorial_geometry(chart_config, fun_fact_config),)
+    rects = [editorial_block_geometry(chart_config, fun_fact_config, "text")]
+    if has_image:
+        rects.append(editorial_block_geometry(chart_config, fun_fact_config, "image"))
+    return tuple(rects)
 
 
 def editorial_safe_area(chart_config, fun_fact_config):
@@ -283,6 +313,8 @@ def validate_fun_fact_layout(chart_config, fun_fact_config):
         raise FunFactLayoutError(
             "fun_facts.editorial_image_position must be 'left' or 'right'."
         )
+    if fun_fact_config.editorial_composition not in ("card", "independent"):
+        raise FunFactLayoutError("Editorial composition must be Card or Independent blocks.")
     if fun_fact_config.editorial_collision_gap < 0:
         raise FunFactLayoutError(
             "fun_facts.editorial_collision_gap must be >= 0."
@@ -300,6 +332,25 @@ def validate_fun_fact_layout(chart_config, fun_fact_config):
     if padding < 8:
         raise FunFactLayoutError("fun_facts.panel_padding must be at least 8 pixels.")
     if fun_fact_config.layout == "editorial_floating":
+        if fun_fact_config.editorial_composition == "independent":
+            for block in ("text", "image"):
+                left, top, width, height = editorial_block_geometry(
+                    chart_config, fun_fact_config, block,
+                )
+                if width < 160 or height < 100:
+                    raise FunFactLayoutError(
+                        f"Editorial {block} block must be at least 160 x 100 pixels."
+                    )
+                if (left < 0 or top < 0 or left + width > chart_config.width
+                        or top + height > chart_config.height):
+                    raise FunFactLayoutError(
+                        f"Editorial {block} block must remain inside the canvas."
+                    )
+                if padding * 2 >= width or padding * 2 >= height:
+                    raise FunFactLayoutError(
+                        f"Editorial {block} block leaves no room for padding."
+                    )
+            return
         left, top, width, height = editorial_geometry(chart_config, fun_fact_config)
         if width < 240 or height < 140:
             raise FunFactLayoutError(

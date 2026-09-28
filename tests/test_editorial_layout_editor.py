@@ -43,6 +43,7 @@ class EditorialLayoutEditorTest(unittest.TestCase):
             {
                 "rect": {"x": 700, "y": 400, "width": 300, "height": 200},
                 "base_rect": {"x": 0, "y": 0, "width": 400, "height": 200},
+                "block": "card",
                 "event_id": "instance-a:4",
             },
         )
@@ -70,6 +71,36 @@ class EditorialLayoutEditorTest(unittest.TestCase):
         self.assertEqual(data["rect"], rect)
         self.assertEqual(data["min_width"], 240)
         self.assertEqual(data["min_height"], 140)
+
+    def test_independent_block_event_and_mount_keep_separate_rects(self):
+        text = {"x": 620, "y": 120, "width": 300, "height": 180}
+        image = {"x": 420, "y": 370, "width": 220, "height": 160}
+        with patch("ui.editorial_layout_editor.component_state_value", return_value={
+            "block": "image", "rect": {**image, "x": 450},
+            "base_rect": image, "event_id": "blocks:1",
+        }):
+            state = editorial_layout_component_state(
+                key="blocks", rect=text, canvas_width=1000, canvas_height=600,
+            )
+        self.assertEqual(state["block"], "image")
+        moved, _, accepted = reconcile_editorial_geometry(
+            current_rect=image, component_state=state, consumed_event_id=None,
+            canvas_width=1000, canvas_height=600, min_width=160, min_height=100,
+        )
+        self.assertTrue(accepted)
+        self.assertEqual(moved["x"], 450)
+        self.assertEqual(text["x"], 620)
+        with patch("ui.editorial_layout_editor.component_v2_runtime_available", return_value=True), patch(
+            "ui.editorial_layout_editor.component_renderer",
+        ) as renderer:
+            editorial_layout_editor(
+                canvas_width=1000, canvas_height=600, rect=text,
+                rects={"text": text, "image": moved}, composition="independent",
+                key="blocks",
+            )
+        data = renderer.return_value.call_args.kwargs["data"]
+        self.assertEqual(data["rects"], {"text": text, "image": moved})
+        self.assertEqual(data["block_min_width"], 160)
 
     def test_reconciliation_accepts_events_after_component_remounts(self):
         current = {"x": 100, "y": 80, "width": 400, "height": 220}
@@ -198,6 +229,8 @@ class EditorialLayoutEditorTest(unittest.TestCase):
         self.assertIn("event_id", javascript)
         self.assertIn("if (state.drag) return", javascript)
         self.assertIn("onlostpointercapture", javascript)
+        self.assertIn('"text", "image"', javascript)
+        self.assertIn("state.rects[block] = next", javascript)
         self.assertNotIn("postMessage", javascript)
 
 

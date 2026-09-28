@@ -47,7 +47,7 @@ from renderer.subpixel import FloatImageCommand, raster_extent
 from renderer.artists import SubpixelGradientCollection
 from renderer.material_texture import blend_texture, procedural_texture_pattern
 from renderer.flip_calendar_renderer import FlipCalendarRenderer
-from studio.fun_fact_layout import editorial_geometry, panel_geometry
+from studio.fun_fact_layout import editorial_block_geometry, editorial_geometry, panel_geometry
 from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
 
@@ -928,6 +928,11 @@ class BarRenderer(TextCompositorMixin):
             self._fun_fact_artist.set_commands(())
             return
 
+        if (self.fun_fact_config.layout == "editorial_floating"
+                and self.fun_fact_config.editorial_composition == "independent"):
+            self._update_independent_fun_fact_overlay(active_fact)
+            return
+
         left, panel_top, panel_width, panel_height = self._fun_fact_rect(active_fact)
         image = self._fun_fact_panel_image(
             active_fact.fact,
@@ -942,15 +947,58 @@ class BarRenderer(TextCompositorMixin):
             )
         self._fun_fact_artist.set_commands(((image, left, panel_top),))
 
+    def _update_independent_fun_fact_overlay(self, active_fact):
+        text_x, text_y, text_width, text_height = editorial_block_geometry(
+            self.config, self.fun_fact_config, "text",
+        )
+        text_image = self._fun_fact_panel_image(
+            replace(active_fact.fact, image_path=None), text_width, text_height,
+        )
+        commands = [(text_image, text_x, text_y)]
+        if active_fact.fact.image_path:
+            image_x, image_y, image_width, image_height = editorial_block_geometry(
+                self.config, self.fun_fact_config, "image",
+            )
+            photo = self._prepared_fun_fact_image(
+                active_fact.fact.image_path, image_width, image_height,
+                self.fun_fact_config.editorial_image_fit,
+            ).copy()
+            mask = Image.new("L", photo.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle(
+                (0, 0, image_width - 1, image_height - 1),
+                radius=max(8, self.fun_fact_config.panel_padding // 2),
+                fill=255,
+            )
+            photo.putalpha(ImageChops.multiply(photo.getchannel("A"), mask))
+            commands.append((np.array(np.asarray(photo)[::-1], dtype=np.uint8,
+                                      copy=True, order="C"), image_x, image_y))
+        opacity = max(0.0, min(1.0, float(active_fact.opacity)))
+        if opacity < 0.999:
+            commands = [
+                (self._opacity_image(image, opacity), x, y)
+                for image, x, y in commands
+            ]
+        self._fun_fact_artist.set_commands(commands)
+
+    @staticmethod
+    def _opacity_image(image, opacity):
+        result = image.copy(order="C")
+        result[:, :, 3] = np.uint8(
+            np.asarray(result[:, :, 3], dtype=np.float32) * opacity,
+        )
+        return result
+
     def _fun_fact_rect(self, active_fact):
         if self.fun_fact_config.layout == "editorial_floating":
             left, panel_top, panel_width, panel_height = editorial_geometry(
                 self.config,
                 self.fun_fact_config,
             )
-            if getattr(active_fact, "resolved_x", None) is not None:
+            if (self.fun_fact_config.editorial_composition != "independent"
+                    and getattr(active_fact, "resolved_x", None) is not None):
                 left = active_fact.resolved_x
-            if getattr(active_fact, "resolved_y", None) is not None:
+            if (self.fun_fact_config.editorial_composition != "independent"
+                    and getattr(active_fact, "resolved_y", None) is not None):
                 panel_top = active_fact.resolved_y
         else:
             left, _, panel_width = panel_geometry(self.config, self.fun_fact_config)
@@ -1116,6 +1164,7 @@ class BarRenderer(TextCompositorMixin):
         if (
             self.fun_fact_config.layout == "editorial_floating"
             and self.fun_fact_config.editorial_orientation == "horizontal"
+            and self.fun_fact_config.editorial_composition != "independent"
         ):
             result = self._fun_fact_horizontal_panel_image(fact, width, height)
             self._lru_put(self._fun_fact_panel_cache, cache_key, result, limit=32)

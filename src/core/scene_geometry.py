@@ -12,7 +12,7 @@ from core.logo_geometry import (
 from core.bar_text_geometry import resolve_value_text_geometry
 from core.display_calendar import flip_calendar_dimensions
 from core.source_text_geometry import resolve_source_text_layout
-from studio.fun_fact_layout import editorial_geometry
+from studio.fun_fact_layout import editorial_geometry, editorial_obstacle_rects
 from utils.text_fit import measure_text_width, measurement_font
 from utils.value_formatter import format_value
 
@@ -172,12 +172,15 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
     }
     editorial_rect = None
     collision_rect = None
+    editorial_block_rects = None
+    collision_rects = None
     if fun_fact_config.enabled:
         left, top, width, height = editorial_geometry(
             chart_config,
             fun_fact_config,
         )
-        if scene.fun_fact is not None:
+        if (scene.fun_fact is not None
+                and fun_fact_config.editorial_composition != "independent"):
             resolved_x = getattr(scene.fun_fact, "resolved_x", None)
             resolved_y = getattr(scene.fun_fact, "resolved_y", None)
             if resolved_x is not None:
@@ -185,7 +188,22 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
             if resolved_y is not None:
                 top = resolved_y
         editorial_rect = SceneRect(left, top, width, height)
-        if fun_fact_config.editorial_layout_mode == "reserved":
+        if (fun_fact_config.layout == "editorial_floating"
+                and fun_fact_config.editorial_composition == "independent"):
+            has_image = bool(
+                scene.fun_fact is not None
+                and getattr(getattr(scene.fun_fact, "fact", None), "image_path", None)
+            )
+            blocks = editorial_obstacle_rects(
+                chart_config, fun_fact_config, has_image=has_image,
+            )
+            editorial_block_rects = {
+                "text": SceneRect(*blocks[0]).to_dict(),
+                "image": SceneRect(*blocks[1]).to_dict() if has_image else None,
+            }
+        if (fun_fact_config.editorial_layout_mode == "reserved"
+                or (fun_fact_config.layout == "editorial_floating"
+                    and fun_fact_config.editorial_composition == "independent")):
             collision_left = max(
                 0,
                 left - max(0, fun_fact_config.editorial_collision_gap),
@@ -196,6 +214,19 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
                 width + left - collision_left,
                 height,
             )
+            if editorial_block_rects is not None:
+                collision_rects = []
+                for block in editorial_block_rects.values():
+                    if block is None:
+                        continue
+                    collision_left = max(
+                        0, block["x"] - max(0, fun_fact_config.editorial_collision_gap),
+                    )
+                    collision_rects.append(SceneRect(
+                        collision_left, block["y"],
+                        block["width"] + block["x"] - collision_left,
+                        block["height"],
+                    ).to_dict())
 
     primary_logos, secondary_logos, logo_groups = _logo_rects(
         chart_config,
@@ -293,9 +324,11 @@ def build_scene_geometry(chart_config, fun_fact_config, scene):
         "editorial_rect": (
             editorial_rect.to_dict() if editorial_rect is not None else None
         ),
+        "editorial_block_rects": editorial_block_rects,
         "collision_rect": (
             collision_rect.to_dict() if collision_rect is not None else None
         ),
+        "collision_rects": collision_rects,
         "effective_positions": {
             "date": {
                 "x": int(chart_config.time_label_x),

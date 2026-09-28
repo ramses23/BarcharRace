@@ -7,7 +7,7 @@ from utils.color_palette import ColorPalette
 from utils.text_fit import measure_text_width, measurement_font
 from utils.logo_color import representative_logo_color
 from utils.value_formatter import format_value
-from studio.fun_fact_layout import editorial_geometry
+from studio.fun_fact_layout import editorial_obstacle_rects
 
 
 def structural_race_vertical_bounds(config):
@@ -75,9 +75,10 @@ def _value_axis_min_row_top(config):
 
 class LayoutEngine:
 
-    def __init__(self, config=None, fun_fact_config=None):
+    def __init__(self, config=None, fun_fact_config=None, *, editorial_image_present=True):
         self.config = config or ChartConfig()
         self.fun_fact_config = fun_fact_config or FunFactConfig()
+        self.editorial_image_present = editorial_image_present
         self.palette = ColorPalette(self.config.color_palette)
         self.logo_resolver = AssetResolver(
             self.config.logos_dir,
@@ -211,27 +212,28 @@ class LayoutEngine:
         if not self._uses_floating_editorial_obstacle() or not row_centers:
             return max_bar_width
 
-        left, top, _, height = editorial_geometry(
-            self.config,
-            self.fun_fact_config,
+        obstacles = editorial_obstacle_rects(
+            self.config, self.fun_fact_config,
+            has_image=self.editorial_image_present,
         )
-        obstacle_bottom = top + height
-        obstacle_right_limit = left - self.fun_fact_config.editorial_collision_gap
         max_value = max_value if max_value is not None else max(bar.value for bar in bars)
         if max_value <= 0:
             return 0.0
 
         scale = max_bar_width / max_value
-        for bar, center in zip(bars, row_centers):
-            row_top = center - (bar_height / 2)
-            row_bottom = center + (bar_height / 2)
-            if row_bottom <= top or row_top >= obstacle_bottom or bar.value <= 0:
-                continue
-            available = max(
-                0.0,
-                obstacle_right_limit - self.config.left_margin - required_lane,
-            )
-            scale = min(scale, available / bar.value)
+        for left, top, _, height in obstacles:
+            obstacle_bottom = top + height
+            obstacle_right_limit = left - self.fun_fact_config.editorial_collision_gap
+            for bar, center in zip(bars, row_centers):
+                row_top = center - (bar_height / 2)
+                row_bottom = center + (bar_height / 2)
+                if row_bottom <= top or row_top >= obstacle_bottom or bar.value <= 0:
+                    continue
+                available = max(
+                    0.0,
+                    obstacle_right_limit - self.config.left_margin - required_lane,
+                )
+                scale = min(scale, available / bar.value)
         return max(0.0, scale * max_value)
 
     def _required_value_lane(self, bars):
@@ -263,7 +265,8 @@ class LayoutEngine:
         return (
             self.fun_fact_config.enabled
             and self.fun_fact_config.layout == "editorial_floating"
-            and self.fun_fact_config.editorial_layout_mode == "reserved"
+            and (self.fun_fact_config.editorial_layout_mode == "reserved"
+                 or self.fun_fact_config.editorial_composition == "independent")
         )
 
     def _reserves_outside_value_lane(self):

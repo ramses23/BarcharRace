@@ -174,7 +174,13 @@ class RenderJob:
             )
         chart_config = apply_fun_fact_layout(chart_config, fun_fact_config)
         selector = BarSelector(config=chart_config.selection)
-        layout = LayoutEngine(config=chart_config, fun_fact_config=fun_fact_config)
+        layout = LayoutEngine(
+            config=chart_config, fun_fact_config=fun_fact_config,
+            editorial_image_present=(
+                any(item.fact.image_path for item in fun_fact_scheduler.facts)
+                if fun_fact_scheduler is not None else False
+            ),
+        )
         self._emit_progress("precompute_sprites", "Preparing chart layout", 0.18)
         sprites_by_year = self._measure_stage(
             timings, "precompute_sprites",

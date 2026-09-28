@@ -17,6 +17,8 @@
   border: 2px solid var(--st-primary-color, #ff4b4b); cursor: move; outline: none; position: absolute; z-index: 3;
 }
 .editorial-card-editor[data-background-mode="transparent"] { background: transparent; }
+.editorial-image-editor { background: rgb(59 130 246 / 12%); border-style: dashed; }
+.editorial-image-editor .editorial-card-label { background: #2563eb; }
 .editorial-card-editor[data-background-mode="solid"] { border-radius: 0; }
 .editorial-card-editor[data-background-mode="card"] { border-radius: 10px; }
 .editorial-card-editor::before { content: ""; inset: 0; opacity: var(--card-texture-opacity, 0); pointer-events: none; position: absolute; }

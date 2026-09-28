@@ -27,18 +27,23 @@ def editorial_layout_component_state(
     value = component_state_value(key, "geometry", fallback)
     if not isinstance(value, dict):
         value = fallback
+    block = value.get("block") if value.get("block") in ("text", "image") else "card"
+    minimums = (160, 100) if block != "card" else (240, 140)
     base_rect = value.get("base_rect")
     return {
         "rect": _rect_dict(
             value.get("rect", fallback["rect"]),
             canvas_width,
             canvas_height,
+            min_width=minimums[0], min_height=minimums[1],
         ),
         "base_rect": (
-            _rect_dict(base_rect, canvas_width, canvas_height)
+            _rect_dict(base_rect, canvas_width, canvas_height,
+                       min_width=minimums[0], min_height=minimums[1])
             if isinstance(base_rect, dict)
             else None
         ),
+        "block": block,
         "event_id": _event_id(value.get("event_id")),
     }
 
@@ -50,9 +55,12 @@ def reconcile_editorial_geometry(
     consumed_event_id,
     canvas_width,
     canvas_height,
+    min_width=240,
+    min_height=140,
 ):
     """Consume one gesture event without treating component state as authority."""
-    current = _rect_dict(current_rect, canvas_width, canvas_height)
+    current = _rect_dict(current_rect, canvas_width, canvas_height,
+                         min_width=min_width, min_height=min_height)
     state = component_state if isinstance(component_state, dict) else {}
     event_id = _event_id(state.get("event_id"))
 
@@ -62,7 +70,8 @@ def reconcile_editorial_geometry(
     base_rect = state.get("base_rect")
     if not isinstance(base_rect, dict):
         return current, event_id, False
-    base_rect = _rect_dict(base_rect, canvas_width, canvas_height)
+    base_rect = _rect_dict(base_rect, canvas_width, canvas_height,
+                           min_width=min_width, min_height=min_height)
 
     if base_rect != current:
         return current, event_id, False
@@ -71,6 +80,7 @@ def reconcile_editorial_geometry(
         state.get("rect", current),
         canvas_width,
         canvas_height,
+        min_width=min_width, min_height=min_height,
     )
     return emitted, event_id, True
 
@@ -80,11 +90,19 @@ def editorial_layout_editor(
     canvas_width,
     canvas_height,
     rect,
+    rects=None,
+    composition="card",
     overlay=None,
     theme=None,
     key=None,
 ):
     rect = _rect_dict(rect, canvas_width, canvas_height)
+    rects = {
+        block: _rect_dict(value, canvas_width, canvas_height,
+                          min_width=160, min_height=100)
+        for block, value in (rects or {}).items()
+        if block in ("text", "image")
+    }
     if not component_v2_runtime_available():
         return rect
     component = component_renderer(
@@ -98,10 +116,14 @@ def editorial_layout_editor(
             "canvas_width": int(canvas_width),
             "canvas_height": int(canvas_height),
             "rect": rect,
+            "rects": rects,
+            "composition": composition,
             "overlay": overlay if isinstance(overlay, dict) else {},
             "theme": theme if isinstance(theme, dict) else {},
             "min_width": min(240, int(canvas_width)),
             "min_height": min(140, int(canvas_height)),
+            "block_min_width": min(160, int(canvas_width)),
+            "block_min_height": min(100, int(canvas_height)),
         },
         key=key,
         height="content",
@@ -109,7 +131,7 @@ def editorial_layout_editor(
     return rect
 
 
-def _rect_dict(rect, canvas_width, canvas_height):
+def _rect_dict(rect, canvas_width, canvas_height, *, min_width=240, min_height=140):
     rect = rect if isinstance(rect, dict) else {}
     left, top, width, height = clamp_editorial_rect(
         rect.get("x", 0),
@@ -118,6 +140,8 @@ def _rect_dict(rect, canvas_width, canvas_height):
         rect.get("height", canvas_height),
         canvas_width,
         canvas_height,
+        min_width=min_width,
+        min_height=min_height,
     )
     return {"x": left, "y": top, "width": width, "height": height}
 

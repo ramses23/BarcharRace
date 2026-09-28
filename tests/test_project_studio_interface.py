@@ -392,6 +392,47 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             (400, 300, 520, 260),
         )
 
+    def test_independent_editorial_blocks_preserve_rects_across_style_changes(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        app = AppTest.from_file(
+            str(root_dir / "src" / "ui" / "project_studio.py"), default_timeout=30,
+        ).run()
+        self.assertFalse(app.exception)
+        self._select_editor_section(app, "Fun facts")
+        next(item for item in app.selectbox if item.label == "Layout").select(
+            "editorial_floating",
+        )
+        app.run()
+        next(item for item in app.selectbox if item.label == "Editorial composition").select(
+            "independent",
+        )
+        app.run()
+        self.assertFalse(app.exception)
+        fields = {item.label: item for item in app.number_input}
+        self.assertTrue({"Text X", "Text Y", "Text width", "Text height",
+                         "Image X", "Image Y", "Image width", "Image height"} <= set(fields))
+        fields["Text X"].set_value(740)
+        fields["Text Y"].set_value(180)
+        fields["Image X"].set_value(320)
+        fields["Image Y"].set_value(610)
+        app.run()
+        self.assertFalse(app.exception)
+        expected = {field: json.loads(app.json[0].value)["fun_facts"][field]
+                    for field in ("editorial_text_x", "editorial_text_y",
+                                  "editorial_text_width", "editorial_text_height",
+                                  "editorial_image_x", "editorial_image_y",
+                                  "editorial_image_width", "editorial_image_height")}
+        next(item for item in app.number_input if item.label == "Body size").set_value(30)
+        app.run()
+        self.assertFalse(app.exception)
+        after_font = json.loads(app.json[0].value)["fun_facts"]
+        self.assertEqual({field: after_font[field] for field in expected}, expected)
+        next(item for item in app.selectbox if item.label == "Image fit").select("cover")
+        app.run()
+        self.assertFalse(app.exception)
+        after_fit = json.loads(app.json[0].value)["fun_facts"]
+        self.assertEqual({field: after_fit[field] for field in expected}, expected)
+
     def test_data_pulse_controls_are_conditional_and_persist(self):
         app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
         app = AppTest.from_file(str(app_path), default_timeout=30).run()

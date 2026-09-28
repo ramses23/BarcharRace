@@ -93,6 +93,10 @@ def render_project_preview(
     layout = LayoutEngine(
         config=chart_config,
         fun_fact_config=fun_fact_config,
+        editorial_image_present=(
+            any(item.fact.image_path for item in fun_fact_scheduler.facts)
+            if fun_fact_scheduler is not None else False
+        ),
     )
     timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
     if fun_fact_scheduler is not None:
