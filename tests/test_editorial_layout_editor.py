@@ -231,6 +231,10 @@ class EditorialLayoutEditorTest(unittest.TestCase):
         self.assertIn("onlostpointercapture", javascript)
         self.assertIn('"text", "image"', javascript)
         self.assertIn("state.rects[block] = next", javascript)
+        self.assertNotIn('setStateValue("trace"', javascript)
+        self.assertEqual(javascript.count('setStateValue("geometry"'), 1)
+        self.assertIn('if (JSON.stringify(current) !== JSON.stringify(baseRect)) emit', javascript)
+        self.assertIn('if (JSON.stringify(resolved) !== JSON.stringify(baseRect)) emit', javascript)
         self.assertNotIn("postMessage", javascript)
 
 
