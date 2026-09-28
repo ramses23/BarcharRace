@@ -95,6 +95,8 @@ def editorial_layout_editor(
     overlay=None,
     theme=None,
     key=None,
+    trace_enabled=False,
+    placement=None,
 ):
     rect = _rect_dict(rect, canvas_width, canvas_height)
     rects = {
@@ -124,6 +126,8 @@ def editorial_layout_editor(
             "min_height": min(140, int(canvas_height)),
             "block_min_width": min(160, int(canvas_width)),
             "block_min_height": min(100, int(canvas_height)),
+            "trace_enabled": bool(trace_enabled),
+            "placement": placement,
         },
         key=key,
         height="content",

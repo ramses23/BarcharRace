@@ -3,6 +3,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from time import perf_counter
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 
@@ -71,6 +72,7 @@ from studio.package_paths import (
     resolve_project_path as resolve_portable_project_path,
 )
 from studio.preview import render_project_preview
+from studio import interaction_trace as studio_trace
 from studio.layout_preview import build_studio_layout_preview
 from core.transition_timing import timing_plan_from_timeline, minimum_transition_frames
 from studio.short_export import resolve_export_output_path, resolve_export_periods, short_fun_fact_config
@@ -87,6 +89,7 @@ from ui.category_editor import (
     paginate_categories,
     update_category_style,
 )
+from ui.component_v2 import component_state_value
 from ui.dataset_cache import load_csv_dataset
 from ui.bar_style_editor import bar_style_editor
 from ui.editorial_layout_editor import (
@@ -228,6 +231,7 @@ st.logo(
 
 def main():
     _initialize_studio_state()
+    studio_trace.begin_rerun(st.session_state)
     layout = _current_workspace_layout()
     _autoload_requested_project(layout)
     header_slot = st.empty()
@@ -265,6 +269,7 @@ def main():
         st.error(str(exc))
         return
 
+    draft_started = perf_counter() if studio_trace.ENABLED else None
     editor_column, stage_column = st.columns([1.72, 1], gap="large")
     with editor_column:
         section_intro(
@@ -286,6 +291,19 @@ def main():
         project_file,
         preview_settings,
     )
+    if studio_trace.ENABLED:
+        studio_trace.set_context(
+            layout=(project_data.get("fun_facts") or {}).get("layout"),
+            composition=(project_data.get("fun_facts") or {}).get("editorial_composition"),
+        )
+        if preview_settings.get("force_fun_fact_id") is not None:
+            studio_trace.set_context(active_fun_fact_id=preview_settings["force_fun_fact_id"])
+        studio_trace.emit("stage", stage="draft/config build",
+                          duration_seconds=round(perf_counter() - draft_started, 6))
+        studio_trace.emit("draft_config_geometry",
+                          project_draft_rect=studio_trace.project_rect(draft.project_data),
+                          final_config_rect=studio_trace.project_rect(project_data),
+                          placement=(project_data.get("fun_facts") or {}).get("editorial_placement_mode"))
     _initialize_saved_draft(draft)
     st.session_state[CURRENT_DRAFT_FINGERPRINT_STATE] = draft.fingerprint
     st.session_state[CURRENT_DRAFT_STATE] = {
@@ -494,6 +512,12 @@ def _project_actions(draft, dataset=None):
             and not render_active
         ),
     )
+    if studio_trace.ENABLED:
+        studio_trace.set_context(preview_requested=bool(render_preview or auto_render_preview))
+        studio_trace.emit("preview_decision", manual=bool(render_preview),
+                          automatic=bool(auto_render_preview), enabled=bool(auto_preview),
+                          preview_fingerprint=draft.preview_fingerprint[:16],
+                          auto_preview_fingerprint=draft.auto_preview_fingerprint[:16])
     if auto_render_preview:
         with st.spinner("Updating preview..."):
             preview_path = _render_preview(
@@ -1532,6 +1556,13 @@ def _project_form(
             preview_settings=render_settings["preview_settings"],
             fun_fact_settings=fun_fact_settings,
         )
+    if studio_trace.ENABLED and active_section == "Fun facts":
+        studio_trace.geometry_write(
+            "project_builder/normalization",
+            fun_fact_settings.get("_editorial_layout_editor", {}).get("rect"),
+            studio_trace.project_rect(project_data),
+            placement=(project_data.get("fun_facts") or {}).get("editorial_placement_mode"),
+        )
 
     return (
         project_data,
@@ -2417,6 +2448,25 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
     composition = settings["editorial_composition"]
     editorial_editor_key = _widget_key(f"fun_facts_editorial_layout_editor_{composition}")
     editorial_event_key = f"{editorial_editor_key}_consumed_event"
+    if studio_trace.ENABLED:
+        studio_trace.set_context(layout=settings["layout"], composition=composition)
+        raw_component = component_state_value(editorial_editor_key, "geometry", None)
+        frontend_trace = component_state_value(editorial_editor_key, "trace", None)
+        if isinstance(raw_component, dict) and raw_component.get("event_id") != st.session_state.get(editorial_event_key):
+            studio_trace.set_context(event_source=f"editorial component geometry {raw_component.get('event_id')}")
+        studio_trace.emit(
+            "editorial_state_before_reconcile",
+            placement=settings["editorial_placement_mode"], component_key=editorial_editor_key,
+            component_event_id=(raw_component or {}).get("event_id") if isinstance(raw_component, dict) else None,
+            payload_rect=studio_trace.rect((raw_component or {}).get("rect")) if isinstance(raw_component, dict) else None,
+            payload_base_rect=studio_trace.rect((raw_component or {}).get("base_rect")) if isinstance(raw_component, dict) else None,
+            session_state_rect={
+                field: st.session_state.get(_widget_key(f"fun_facts_editorial_card_{field}"))
+                for field in ("x", "y", "width", "height")
+            },
+            project_draft_rect=studio_trace.project_rect((st.session_state.get(CURRENT_DRAFT_STATE) or {}).get("project_data")),
+            frontend=frontend_trace,
+        )
     current_rect = {
         "x": settings["editorial_card_x"],
         "y": settings["editorial_card_y"],
@@ -2462,9 +2512,20 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
         min_width=160 if active_block != "card" else 240,
         min_height=100 if active_block != "card" else 140,
     )
+    if studio_trace.ENABLED:
+        studio_trace.emit("editorial_reconcile", component_key=editorial_editor_key,
+                          placement=settings["editorial_placement_mode"],
+                          input_rect=studio_trace.rect(current_rect),
+                          normalized_rect=studio_trace.rect(rect),
+                          component_state_rect=studio_trace.rect(editorial_state["rect"]),
+                          component_instance_id=(editorial_state["event_id"] or "").split(":")[0] or None,
+                          event_id=editorial_state["event_id"], accepted=accepted_editor_event)
     if consumed_event_id is not None:
         st.session_state[editorial_event_key] = consumed_event_id
     if settings["layout"] == "editorial_floating" and accepted_editor_event:
+        if studio_trace.ENABLED:
+            studio_trace.geometry_write("component_drag_or_resize", current_rect, rect,
+                                        component_key=editorial_editor_key)
         settings.update({
             f"editorial_{active_block}_{field}": rect[field]
             for field in ("x", "y", "width", "height")
@@ -3016,6 +3077,13 @@ def _fun_facts_section(*, values, dataset, data_settings, layout_preset):
                 for block in ("text", "image")
             },
         }
+    if studio_trace.ENABLED and layout == "editorial_floating":
+        studio_trace.geometry_write(
+            "form_widgets", rect,
+            result.get("_editorial_layout_editor", {}).get("rect"),
+            placement=result.get("editorial_placement_mode"),
+            component_key=editorial_editor_key,
+        )
     if not source:
         st.info("Choose a version-1 fun fact JSON file to validate and preview it.")
         return result
@@ -4199,16 +4267,36 @@ def _layout_preview_geometry(project_data, dataset, preview_settings):
         tuple(str(dtype) for dtype in dataset.dtypes),
         dataset_hash,
     )
+    trace_dependencies = None
+    if studio_trace.ENABLED:
+        trace_dependencies = {
+            "preview_fingerprint": key[0], "dataset_hash": dataset_hash,
+            "fun_facts": {
+                name: value for name, value in (project_data.get("fun_facts") or {}).items()
+                if name.startswith("editorial_") and isinstance(value, (str, int, float, bool, type(None)))
+                and not name.endswith(("_path", "_source"))
+            },
+        }
     cached = st.session_state.get("studio_layout_preview_cache")
     if isinstance(cached, dict) and cached.get("key") == key:
+        if studio_trace.ENABLED:
+            studio_trace.cache("studio_layout_preview", key[0], trace_dependencies, hit=True)
+            fact = cached["preview"].scene.fun_fact
+            studio_trace.set_context(active_fun_fact_id=fact.fact.id if fact else None)
         return cached["preview"], cached["geometry"]
-    preview = build_studio_layout_preview(
-        project_data, dataset, preview_settings,
-        project_root=_active_project_root(_current_workspace_layout()),
-    )
-    geometry = build_scene_geometry(
-        preview.chart_config, preview.fun_fact_config, preview.scene,
-    )
+    if studio_trace.ENABLED:
+        studio_trace.cache("studio_layout_preview", key[0], trace_dependencies, hit=False)
+    with studio_trace.stage("layout preview / geometry"):
+        preview = build_studio_layout_preview(
+            project_data, dataset, preview_settings,
+            project_root=_active_project_root(_current_workspace_layout()),
+        )
+        geometry = build_scene_geometry(
+            preview.chart_config, preview.fun_fact_config, preview.scene,
+        )
+    if studio_trace.ENABLED:
+        studio_trace.set_context(active_fun_fact_id=(
+            preview.scene.fun_fact.fact.id if preview.scene.fun_fact else None))
     st.session_state["studio_layout_preview_cache"] = {
         "key": key, "preview": preview, "geometry": geometry,
     }
@@ -4324,6 +4412,18 @@ def _mount_editorial_layout_editor(
             if project_data.get("fun_facts", {}).get("editorial_placement_mode") == "manual"
             else geometry.get("editorial_rect") or editor["rect"]
         )
+        if studio_trace.ENABLED:
+            previous_display = st.session_state.get(f'{editor["key"]}_display_rect')
+            studio_trace.emit(
+                "editorial_component_props", component_key=editor["key"],
+                placement=project_data.get("fun_facts", {}).get("editorial_placement_mode"),
+                composition=editor.get("composition", "card"),
+                python_rect=studio_trace.rect(editor["rect"]),
+                automatic_rect=studio_trace.rect(geometry.get("editorial_rect")),
+                displayed_rect=studio_trace.rect(displayed_rect),
+                previous_display_rect=studio_trace.rect(previous_display),
+                source=("manual" if project_data.get("fun_facts", {}).get("editorial_placement_mode") == "manual" else "automatic"),
+            )
         x, y, width, height = clamp_editorial_rect(
             displayed_rect["x"], displayed_rect["y"],
             displayed_rect["width"], displayed_rect["height"],
@@ -4332,6 +4432,10 @@ def _mount_editorial_layout_editor(
         st.session_state[f'{editor["key"]}_display_rect'] = {
             "x": x, "y": y, "width": width, "height": height,
         }
+        if studio_trace.ENABLED:
+            studio_trace.geometry_write("editor_display_session_state", previous_display,
+                                        st.session_state[f'{editor["key"]}_display_rect'],
+                                        component_key=editor["key"])
         editorial_layout_editor(
             canvas_width=canvas_width,
             canvas_height=canvas_height,
@@ -4355,6 +4459,8 @@ def _mount_editorial_layout_editor(
                 ),
             },
             key=editor["key"],
+            trace_enabled=studio_trace.ENABLED,
+            placement=project_data.get("fun_facts", {}).get("editorial_placement_mode"),
         )
 
 
@@ -6162,6 +6268,13 @@ def _preview_controls(csv_path, year_column, years=None):
 
 
 def _render_preview(project_file, preview_settings, *, project_data=None):
+    preview_started = perf_counter() if studio_trace.ENABLED else None
+    if studio_trace.ENABLED:
+        studio_trace.set_context(preview_requested=True)
+        studio_trace.emit("preview_start", preview_settings=preview_settings,
+                          config_rect=studio_trace.project_rect(project_data),
+                          placement=(project_data.get("fun_facts") or {}).get("editorial_placement_mode"),
+                          final_frame_contract="fresh render; all relevant visual config applies")
     layout = _current_workspace_layout()
     project_root = _active_project_root(
         layout,
@@ -6201,6 +6314,9 @@ def _render_preview(project_file, preview_settings, *, project_data=None):
             project_data=project_data,
             app_root=layout.app_root,
         )
+        if studio_trace.ENABLED:
+            studio_trace.emit("preview_complete", total_seconds=round(perf_counter() - preview_started, 6),
+                              outcome="success")
     except (
         AppRootWriteError,
         ProjectFileError,
@@ -6208,6 +6324,9 @@ def _render_preview(project_file, preview_settings, *, project_data=None):
         WorkspacePathError,
         OSError,
     ) as exc:
+        if studio_trace.ENABLED:
+            studio_trace.emit("preview_complete", total_seconds=round(perf_counter() - preview_started, 6),
+                              outcome=type(exc).__name__)
         st.error(str(exc))
         return None
 

@@ -228,6 +228,7 @@ function keyboardMove(state, card, event, block = "card") {
 export default function (component) {
   const { data, parentElement, setStateValue } = component
   let state = instances.get(parentElement)
+  const remounted = !state
   if (!state) {
     state = buildInstance(parentElement)
     instances.set(parentElement, state)
@@ -245,6 +246,20 @@ export default function (component) {
   if (state.drag) return state.cleanup
   state.data = data
   const incoming = JSON.stringify([data.composition, data.rect, data.rects])
+  if (data.trace_enabled && (remounted || (state.incoming !== null && incoming !== state.incoming))) {
+    state.traceCounter = (state.traceCounter || 0) + 1
+    setStateValue("trace", {
+      trace_event_id: `${state.instanceId}:${state.traceCounter}`,
+      phase: remounted ? "mount" : "props_changed",
+      instance_id: state.instanceId,
+      key: component.key,
+      placement: data.placement,
+      composition: data.composition,
+      previous_geometry_props: state.incoming,
+      geometry_props: { rect: clone(data.rect), rects: clone(data.rects || {}) },
+      local_rect_before_props: state.rect ? clone(state.rect) : null,
+    })
+  }
   if (state.incoming === null || incoming !== state.incoming) {
     state.rect = normalized(state, data.rect)
     if (data.composition === "independent") {
