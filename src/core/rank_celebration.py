@@ -34,12 +34,12 @@ class ActiveRankCelebration:
 
 
 class RankCelebrationTimeline:
-    def __init__(self, config, sprite_sets, display_timeline):
+    def __init__(self, config, sprite_sets, display_timeline, *, events=None):
         self.config = config
         self.sprite_sets = tuple(tuple(row) for row in sprite_sets)
         self.display_timeline = display_timeline
         self.plan = display_timeline.plan
-        self.events = self._build_events()
+        self.events = self._build_events() if events is None else tuple(events)
         self.frames = tuple(event.frame for event in self.events)
         self._anchor_sprites = {}
 

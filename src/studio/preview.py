@@ -30,6 +30,7 @@ from studio.short_export import (
 )
 from studio.workspace_paths import assert_user_write_path
 from studio.value_axis_preview import (
+    _fingerprint_float,
     get_preview_value_axis_bundle,
     value_axis_preview_fingerprint,
 )
@@ -38,6 +39,7 @@ from validators.dataset_validator import DatasetValidator
 
 _PREVIEW_SCALE_CACHE_LIMIT = 4
 _preview_scale_cache = OrderedDict()
+_preview_podium_history_cache = OrderedDict()
 _preview_scale_cache_lock = RLock()
 
 
@@ -516,8 +518,9 @@ def _cached_preview_scale(config, sprite_sets, target_sprites, frame_index,
                           include_celebrations):
     """Reuse the expensive podium history only when its complete inputs match."""
     sprite_sets = tuple(tuple(sprites) for sprites in sprite_sets)
+    axis_fingerprint = value_axis_preview_fingerprint(config, sprite_sets)
     key = sha256(repr((
-        value_axis_preview_fingerprint(config, sprite_sets),
+        axis_fingerprint,
         config.animation,
         config.fps,
         config.rank_celebration,
@@ -531,7 +534,44 @@ def _cached_preview_scale(config, sprite_sets, target_sprites, frame_index,
     with _preview_scale_cache_lock:
         resolver = _preview_scale_cache.get(key)
         if resolver is None:
-            resolver = BarValueScaleResolver.from_config(config, sprite_sets)
+            history_key = None
+            events = None
+            if config.rank_celebration != "off":
+                # The event scan uses ranking/motion data, not logo paths or
+                # colors. Normalize equal int/float values across Studio and
+                # file previews; rebuild anchors from the current sprites.
+                numeric_sprites = tuple(tuple(
+                    tuple((
+                        name,
+                        _fingerprint_float(value) if name in (
+                            "value", "x", "y", "width", "height", "rank",
+                            "opacity", "rank_motion_progress", "rank_motion_target",
+                            "bar_available_width",
+                        ) else value,
+                    ) for name, value in vars(sprite).items()
+                        if name not in ("color", "logo_path", "secondary_logo_path"))
+                    for sprite in sprites
+                ) for sprites in sprite_sets)
+                history_key = sha256(repr((
+                    axis_fingerprint, config.animation, config.fps,
+                    config.rank_celebration, config.start_bars_at_zero,
+                    config.leader_full_width_point,
+                    config.selection.aggregate_other,
+                    config.selection.other_label,
+                    config.value_grid_tick_labels_enabled, numeric_sprites,
+                )).encode("utf-8")).digest()
+                events = _preview_podium_history_cache.get(history_key)
+                if events is not None:
+                    _preview_podium_history_cache.move_to_end(history_key)
+            resolver = BarValueScaleResolver.from_config(
+                config, sprite_sets, celebration_events=events,
+            )
+            if history_key is not None and events is None:
+                _preview_podium_history_cache[history_key] = (
+                    resolver.rank_celebration_timeline.events
+                )
+                while len(_preview_podium_history_cache) > _PREVIEW_SCALE_CACHE_LIMIT:
+                    _preview_podium_history_cache.popitem(last=False)
             _preview_scale_cache[key] = resolver
             while len(_preview_scale_cache) > _PREVIEW_SCALE_CACHE_LIMIT:
                 _preview_scale_cache.popitem(last=False)

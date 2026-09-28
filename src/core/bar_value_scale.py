@@ -29,7 +29,7 @@ class BarValueScaleResolver:
     rank_celebration_timeline: object = field(default=None, compare=False, repr=False)
 
     @classmethod
-    def from_config(cls, config, sprite_sets):
+    def from_config(cls, config, sprite_sets, *, celebration_events=None):
         sprite_sets = tuple(tuple(sprites) for sprites in sprite_sets)
         global_max = max(
             (
@@ -120,7 +120,7 @@ class BarValueScaleResolver:
         if getattr(config, "rank_celebration", "off") != "off":
             from core.rank_celebration import RankCelebrationTimeline
             resolver = replace(resolver, rank_celebration_timeline=RankCelebrationTimeline(
-                config, sprite_sets, display_timeline))
+                config, sprite_sets, display_timeline, events=celebration_events))
         return resolver
 
     def celebrations_at(self, frame_index):

@@ -7,11 +7,15 @@ from pathlib import Path
 from unittest import mock
 
 import _test_path
+from PIL import Image
+from streamlit.testing.v1 import AppTest
 from config.chart_config import ChartConfig
 from config.dataset_config import DatasetConfig
 from core.bar_value_scale import BarValueScaleResolver
+from core.rank_celebration import RankCelebrationTimeline
 from models.bar_sprite import BarSprite
 from studio.package_paths import resolve_project_path
+from studio.project_builder import save_project_data
 from studio import preview as preview_module
 from studio.preview import (
     _clamped_progress,
@@ -90,6 +94,182 @@ class ProjectStudioPreviewTest(unittest.TestCase):
                 self.assertEqual(build.call_count, 4)
         finally:
             preview_module._preview_scale_cache.clear()
+
+    def test_preview_podium_history_ignores_decorative_sprite_changes(self):
+        config = ChartConfig(fps=30, steps_per_transition=90, rank_celebration="podium")
+
+        def row(values, *, color, logo_prefix, floating_values=False):
+            ordered = sorted(values, key=lambda name: (-values[name], name))
+            return tuple(
+                BarSprite(name, float(values[name]) if floating_values else values[name],
+                          color, 20, 40 + rank * 50, 100, 40,
+                          rank=rank + 1, logo_path=f"{logo_prefix}/{name}.png")
+                for rank, name in enumerate(ordered)
+            )
+
+        initial = {"A": 50, "B": 40, "C": 30}
+        promoted = {"B": 55, "A": 50, "C": 30}
+        original = (row(initial, color="#112233", logo_prefix="logos"),
+                    row(promoted, color="#112233", logo_prefix="logos"))
+        styled = (row(initial, color="#AABBCC", logo_prefix="C:/project/logos",
+                      floating_values=True),
+                  row(promoted, color="#AABBCC", logo_prefix="C:/project/logos",
+                      floating_values=True))
+        changed_rank = (styled[0], tuple(
+            replace(sprite, value=56) if sprite.name == "B" else sprite
+            for sprite in styled[1]
+        ))
+        preview_module._preview_scale_cache.clear()
+        preview_module._preview_podium_history_cache.clear()
+        original_build = RankCelebrationTimeline._build_events
+        builds = []
+
+        def counted_build(timeline):
+            builds.append(timeline)
+            return original_build(timeline)
+
+        try:
+            with mock.patch.object(RankCelebrationTimeline, "_build_events", counted_build):
+                preview_module._cached_preview_scale(config, original, original[0], 0, True)
+                self.assertEqual(len(builds), 1)
+                event = next(iter(preview_module._preview_scale_cache.values()))
+                frame = event.rank_celebration_timeline.events[0].frame
+                _, celebrations = preview_module._cached_preview_scale(
+                    config, styled, styled[1], frame, True,
+                )
+                self.assertEqual(len(builds), 1)
+                self.assertEqual(celebrations[0].anchor_sprite.color, "#AABBCC")
+                self.assertTrue(celebrations[0].anchor_sprite.logo_path.startswith("C:/project/"))
+                preview_module._cached_preview_scale(
+                    config, changed_rank, changed_rank[1], frame, True,
+                )
+                self.assertEqual(len(builds), 2)
+                preview_module._cached_preview_scale(
+                    replace(config, steps_per_transition=80), styled, styled[1], frame, True,
+                )
+                self.assertEqual(len(builds), 3)
+        finally:
+            preview_module._preview_scale_cache.clear()
+            preview_module._preview_podium_history_cache.clear()
+
+    def test_project_studio_style_reruns_reuse_podium_history(self):
+        from core.rank_celebration import RankCelebrationTimeline
+        from ui import project_studio
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "data").mkdir()
+            (root / "logos").mkdir()
+            (root / "data" / "sample.csv").write_text(
+                "year,name,value\n2020,A,50\n2020,B,40\n"
+                "2021,A,50\n2021,B,55\n", encoding="utf-8",
+            )
+            for name in ("A", "B"):
+                Image.new("RGB", (8, 8), "red").save(root / "logos" / f"{name}.png")
+            project_data = {
+                "name": "ui_podium_preview",
+                "chart": {
+                    "title": "UI Podium", "layout_preset": "compact_dashboard",
+                    "width": 640, "height": 360, "fps": 30,
+                    "steps_per_transition": 90, "rank_celebration": "podium",
+                    "logos_enabled": True, "logos_dir": "logos",
+                    "value_grid_enabled": True,
+                },
+                "data_source": {"csv_path": "data/sample.csv"},
+                "dataset": {
+                    "year_column": "year", "name_column": "name",
+                    "value_column": "value",
+                    "category_logos": {"A": "logos/A.png", "B": "logos/B.png"},
+                },
+                "fun_facts": {
+                    "enabled": False, "layout": "editorial_right",
+                    "data_link": "data_pulse",
+                },
+            }
+            project_file = root / "projects" / "ui.json"
+            save_project_data(project_data, project_file)
+            real_render = preview_module.render_project_preview
+            real_build = RankCelebrationTimeline._build_events
+            previews = []
+            scans = []
+
+            def temporary_preview(project_path, settings, *, project_data=None):
+                result = real_render(
+                    root / project_path, output_dir=root / "temporary_previews",
+                    year=settings["year"], preview_mode=settings["preview_mode"],
+                    transition_progress=settings["transition_progress"],
+                    force_fun_fact_id=settings.get("force_fun_fact_id"),
+                    root_dir=root, project_data=project_data,
+                    app_root=project_studio.ROOT_DIR,
+                )
+                previews.append(Image.open(result).convert("RGBA").tobytes())
+                return result
+
+            def counted_build(timeline):
+                scans.append(1)
+                return real_build(timeline)
+
+            preview_module._preview_scale_cache.clear()
+            preview_module._preview_podium_history_cache.clear()
+            try:
+                with (
+                    mock.patch.object(project_studio, "_render_preview", temporary_preview),
+                    mock.patch.object(RankCelebrationTimeline, "_build_events", counted_build),
+                ):
+                    app = AppTest.from_string(
+                        "from ui.project_studio import main\nmain()",
+                        default_timeout=45,
+                    )
+                    app.session_state["loaded_project_data"] = project_data
+                    app.session_state["loaded_project_path"] = "projects/ui.json"
+                    app.session_state[project_studio.ACTIVE_PROJECT_ROOT_STATE] = str(root)
+                    app.session_state[project_studio.ACTIVE_PROJECT_KIND_STATE] = "production"
+                    app.session_state[project_studio.SAVED_DRAFT_PENDING_STATE] = True
+                    app.run()
+                    next(x for x in app.button if x.label == "Render preview").click()
+                    app.run()
+                    self.assertEqual((len(previews), len(scans)), (1, 1))
+                    next(x for x in app.segmented_control
+                         if x.label == "Editor section").set_value("Canvas")
+                    app.run()
+                    self.assertEqual(len(scans), 1)
+                    before_title = len(previews)
+                    next(x for x in app.color_picker
+                         if x.label == "Title color").set_value("#A1B2C3")
+                    app.run()
+                    self.assertEqual(len(previews), before_title + 1)
+                    title_frame = previews[-1]
+                    next(x for x in app.number_input
+                         if x.label == "Title border width").set_value(2.5)
+                    app.run()
+                    self.assertEqual(len(previews), before_title + 2)
+                    border_frame = previews[-1]
+                    next(x for x in app.segmented_control
+                         if x.label == "Editor section").set_value("Fun facts")
+                    app.run()
+                    body = next(x for x in app.number_input if x.label == "Body size")
+                    body.set_value(body.value + 1)
+                    before_body = len(previews)
+                    app.run()
+                    self.assertEqual(len(previews), before_body + 1)
+                    pulse = next(x for x in app.number_input if x.label == "Pulse width")
+                    pulse.set_value(pulse.value + 0.5)
+                    app.run()
+                    self.assertFalse(app.exception)
+                    self.assertEqual((len(previews), len(scans)), (before_body + 2, 1))
+                    self.assertNotEqual(previews[0], title_frame)
+                    self.assertNotEqual(title_frame, border_frame)
+                    next(x for x in app.segmented_control
+                         if x.label == "Editor section").set_value("Export")
+                    app.run()
+                    before_irrelevant = len(previews)
+                    next(x for x in app.selectbox
+                         if x.label == "Frame output mode").set_value("png_sequence")
+                    app.run()
+                    self.assertEqual((len(previews), len(scans)), (before_irrelevant, 1))
+            finally:
+                preview_module._preview_scale_cache.clear()
+                preview_module._preview_podium_history_cache.clear()
 
     def test_selects_nearest_year_for_preview(self):
         self.assertEqual(_selected_year(None, [2000, 2005, 2010]), 2000)
