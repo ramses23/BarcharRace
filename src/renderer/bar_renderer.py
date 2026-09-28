@@ -611,6 +611,11 @@ class BarRenderer(TextCompositorMixin):
             group.bar.border.set_zorder(zorders["border"])
         group.logos.set_zorder(zorders["logos"])
         group.text.set_zorder(zorders["text"])
+        group.value_text.set_zorder(
+            5.7 + index * 0.001
+            if self.fun_fact_config.data_link == "data_pulse"
+            else zorders["text"]
+        )
         for artist in (
             group.bar.rank_label,
             group.bar.name_label,
@@ -659,7 +664,13 @@ class BarRenderer(TextCompositorMixin):
                 if command is not None:
                     logo_commands.append(command)
         group.logos.set_commands(logo_commands)
-        group.text.set_commands(self._bar_text_commands(sprite))
+        pulse_enabled = self.fun_fact_config.data_link == "data_pulse"
+        group.text.set_commands(self._bar_text_commands(
+            sprite, include_value=not pulse_enabled,
+        ))
+        group.value_text.set_commands(
+            self._bar_value_text_commands(sprite) if pulse_enabled else [],
+        )
 
     @staticmethod
     def _set_bar_visual_group_visible(group, visible):
@@ -1895,8 +1906,10 @@ class BarRenderer(TextCompositorMixin):
 
         logos = ImageCommandsArtist(self.config.height)
         text = ImageCommandsArtist(self.config.height)
+        value_text = ImageCommandsArtist(self.config.height)
         ax.add_artist(logos)
         ax.add_artist(text)
+        ax.add_artist(value_text)
         return BarVisualGroupArtists(
             bar=bar_artists,
             gradient=gradient,
@@ -1905,6 +1918,7 @@ class BarRenderer(TextCompositorMixin):
             advanced_body=advanced_body,
             logos=logos,
             text=text,
+            value_text=value_text,
         )
 
     def _create_bar_artists(self, ax):

@@ -221,6 +221,8 @@ class ChartConfig:
     value_font_style: str = "normal"
     title_text_color: str | None = None
     title_text_opacity: float = 1.0
+    title_border_color: str = "#000000"
+    title_border_width: float = 0.0
     subtitle_text_color: str | None = None
     subtitle_text_opacity: float = 1.0
     label_text_color: str | None = None

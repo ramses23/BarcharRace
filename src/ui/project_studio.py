@@ -1438,6 +1438,8 @@ def _project_form(
         rank_label_font_family=canvas_settings["rank_label_font_family"],
         title_text_color=canvas_settings["title_text_color"],
         title_text_opacity=canvas_settings["title_text_opacity"],
+        title_border_color=canvas_settings["title_border_color"],
+        title_border_width=canvas_settings["title_border_width"],
         intro_text_behavior=canvas_settings["intro_text_behavior"],
         intro_text_visible_duration_seconds=canvas_settings["intro_text_visible_duration_seconds"],
         intro_text_fade_duration_seconds=canvas_settings["intro_text_fade_duration_seconds"],
@@ -2008,6 +2010,8 @@ def _canvas_settings_from_values(
         "title_text_opacity": _opacity_or_default(
             values.get("title_text_opacity"), 1.0,
         ),
+        "title_border_color": values.get("title_border_color", "#000000"),
+        "title_border_width": float(values.get("title_border_width", 0.0)),
         "intro_text_behavior": values.get("intro_text_behavior", "persistent"),
         "intro_text_visible_duration_seconds": float(values.get("intro_text_visible_duration_seconds", 10.0)),
         "intro_text_fade_duration_seconds": float(values.get("intro_text_fade_duration_seconds", 1.5)),
@@ -3842,6 +3846,16 @@ def _canvas_text_section(
                 "Title opacity", values.get("title_text_opacity"), 1.0,
                 _widget_key("title_text_opacity"),
             )
+            title_border_color = st.color_picker(
+                "Title border color",
+                value=values.get("title_border_color", "#000000"),
+                key=_widget_key("title_border_color"),
+            )
+            title_border_width = st.number_input(
+                "Title border width", min_value=0.0, max_value=12.0,
+                value=float(values.get("title_border_width", 0.0)), step=0.5,
+                key=_widget_key("title_border_width"),
+            )
 
         with subtitle_column:
             subtitle_text_color = st.color_picker(
@@ -3988,6 +4002,8 @@ def _canvas_text_section(
         "text_styles": text_styles,
         "title_text_color": title_text_color,
         "title_text_opacity": title_text_opacity,
+        "title_border_color": title_border_color,
+        "title_border_width": float(title_border_width),
         "intro_text_behavior": intro_text_behavior,
         "intro_text_visible_duration_seconds": float(intro_text_visible_duration_seconds),
         "intro_text_fade_duration_seconds": float(intro_text_fade_duration_seconds),
@@ -4297,15 +4313,16 @@ def _bars_categories_section(
     with color_source_column:
         bar_color_source = st.segmented_control(
             "Bar color source",
-            options=("manual", "primary_logo"),
+            options=("manual", "primary_logo", "secondary_logo"),
             default=(
                 values.get("bar_color_source", "manual")
-                if values.get("bar_color_source", "manual") in ("manual", "primary_logo")
+                if values.get("bar_color_source", "manual") in ("manual", "primary_logo", "secondary_logo")
                 else "manual"
             ),
             format_func=lambda value: {
                 "manual": "Manual",
                 "primary_logo": "Primary logo",
+                "secondary_logo": "Secondary logo",
             }[value],
             key=_widget_key("bar_color_source"),
         ) or "manual"

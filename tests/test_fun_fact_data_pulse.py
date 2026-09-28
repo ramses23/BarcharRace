@@ -31,6 +31,29 @@ from studio.project_builder import project_form_values
 
 
 class FunFactDataPulseTest(unittest.TestCase):
+    def test_pulse_is_behind_value_labels_but_below_fun_fact_card(self):
+        chart = replace(self.chart, value_labels_enabled=True)
+        renderer = BarRenderer(
+            config=chart,
+            fun_fact_config=FunFactConfig(enabled=True, panel_width=180,
+                                          data_link="data_pulse"),
+        )
+        try:
+            renderer.render_rgba(Scene(
+                title="",
+                bars=[self.bar],
+                fun_fact=ActiveFunFact(self.fact, 1.0, age_frames=30),
+                frame_index=30,
+            ))
+            value_artist = renderer._bar_visual_groups[0].value_text
+            self.assertTrue(value_artist.commands)
+            self.assertLess(renderer._fun_fact_pulse.get_zorder(),
+                            value_artist.get_zorder())
+            self.assertLess(value_artist.get_zorder(),
+                            renderer._fun_fact_artist.get_zorder())
+        finally:
+            renderer.close()
+
     def setUp(self):
         self.chart = ChartConfig(
             width=640, height=360, dpi=72, fps=60,

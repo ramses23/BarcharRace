@@ -134,6 +134,25 @@ class MotionStyleUpgradeTest(unittest.TestCase):
             self.assertEqual(restored.color, "#AA1122")
             self.assertEqual(missing.color, "#AA1122")
 
+    def test_secondary_logo_color_uses_same_extraction_and_safe_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secondary = Path(directory) / "secondary.png"
+            Image.new("RGB", (24, 24), (20, 210, 60)).save(secondary)
+            bar = BarData("A", 10, color="#AA1122",
+                          secondary_logo_path=str(secondary))
+            source = LayoutEngine(ChartConfig(
+                bar_color_source="secondary_logo", logos_enabled=True,
+            ))
+            self.assertEqual(source.build([bar])[0].color,
+                             representative_logo_color(secondary))
+            self.assertEqual(source.build([replace(bar, secondary_logo_path=None)])[0].color,
+                             "#AA1122")
+            self.assertEqual(LayoutEngine(ChartConfig()).build([bar])[0].color,
+                             "#AA1122")
+            self.assertEqual(LayoutEngine(ChartConfig(
+                logos_enabled=False, bar_color_source="secondary_logo",
+            )).build([bar])[0].color, "#AA1122")
+
     def test_forward_background_is_frame_deterministic_and_off_is_legacy(self):
         self.assertEqual(ChartConfig().background_motion, "off")
         renderer = BarRenderer(config=ChartConfig(

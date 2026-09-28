@@ -23,6 +23,54 @@ from studio.project_builder import project_form_values, save_project_data
 
 
 class IntroTextFadeTest(unittest.TestCase):
+    def test_title_border_project_and_preset_round_trip(self):
+        from studio.appearance_presets import (
+            build_appearance_preset, load_appearance_preset,
+            save_appearance_preset,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "project.json"
+            project = {"name": "Stroke", "chart": {
+                "title_border_color": "#AABBCC", "title_border_width": 2.5,
+            }}
+            save_project_data(project, path)
+            config = load_project_file(path).chart_config
+            self.assertEqual((config.title_border_color, config.title_border_width),
+                             ("#AABBCC", 2.5))
+            self.assertEqual(project_form_values(project)["title_border_width"], 2.5)
+            preset = build_appearance_preset("Stroke", project)
+            save_appearance_preset(preset, Path(directory))
+            restored = load_appearance_preset(Path(directory) / "stroke.json")
+            self.assertEqual(restored.canvas["title_border_color"], "#AABBCC")
+            self.assertEqual(restored.canvas["title_border_width"], 2.5)
+
+    def test_title_border_zero_is_legacy_and_stroke_follows_timed_fade(self):
+        base = ChartConfig(width=400, height=240, dpi=72, fps=20,
+                           title_enabled=True, subtitle_enabled=False,
+                           source_label_enabled=False, time_label_enabled=False)
+        scene = Scene(title="Title")
+        def title_commands(config, frame):
+            renderer = BarRenderer(config=config)
+            try:
+                scene.frame_index = frame
+                renderer.render_rgba(scene)
+                artist = (renderer._intro_text_artist
+                          if config.intro_text_behavior == "timed_fade"
+                          else renderer._text_foreground_artist)
+                return artist.commands[0][0].copy()
+            finally:
+                renderer.close()
+        legacy = title_commands(base, 0)
+        self.assertEqual(legacy.tobytes(), title_commands(
+            replace(base, title_border_color="#FF0000", title_border_width=0), 0,
+        ).tobytes())
+        stroked = replace(base, title_border_color="#FF0000",
+                          title_border_width=2, intro_text_behavior="timed_fade")
+        full = title_commands(stroked, 0)
+        halfway = title_commands(stroked, 215)
+        self.assertNotEqual(full.tobytes(), legacy.tobytes())
+        self.assertAlmostEqual(halfway[:, :, 3].max() / full[:, :, 3].max(), .5, delta=.02)
+
     def test_default_and_smooth_global_frame_timing(self):
         legacy = ChartConfig(fps=20)
         self.assertEqual(legacy.intro_text_behavior, "persistent")

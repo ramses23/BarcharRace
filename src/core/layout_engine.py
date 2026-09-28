@@ -119,6 +119,9 @@ class LayoutEngine:
             color = manual_color
             if self.config.bar_color_source == "primary_logo":
                 color = representative_logo_color(logo_path) or manual_color
+            elif self.config.bar_color_source == "secondary_logo":
+                secondary_path = bar.secondary_logo_path if self.config.logos_enabled else None
+                color = representative_logo_color(secondary_path) or manual_color
 
             sprites.append(
                 BarSprite(

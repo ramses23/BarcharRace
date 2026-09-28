@@ -123,6 +123,8 @@ class TextCompositorMixin:
                 font_style=font_style,
                 color=color,
                 opacity=opacity,
+                stroke_width=self.config.title_border_width if index == 0 else 0,
+                stroke_color=self.config.title_border_color if index == 0 else "#000000",
             )
             if command is not None:
                 if index < 2 and self.config.intro_text_behavior == "timed_fade":
@@ -140,7 +142,7 @@ class TextCompositorMixin:
         if self._intro_text_artist is not None:
             self._intro_text_artist.set_commands(intro_commands)
 
-    def _bar_text_commands(self, sprite):
+    def _bar_text_commands(self, sprite, *, include_value=True):
         opacity = self._opacity(sprite)
         if opacity <= 0:
             return []
@@ -198,6 +200,15 @@ class TextCompositorMixin:
             if command is not None:
                 commands.append(command)
 
+        if include_value:
+            commands.extend(self._bar_value_text_commands(sprite))
+        return commands
+
+    def _bar_value_text_commands(self, sprite):
+        opacity = self._opacity(sprite)
+        if opacity <= 0:
+            return []
+        commands = []
         if self.config.value_labels_enabled:
             value_text = format_value(
                 sprite.value,

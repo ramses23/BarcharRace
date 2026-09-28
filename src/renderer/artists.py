@@ -112,6 +112,7 @@ class BarVisualGroupArtists:
     advanced_body: object = None
     logos: object = None
     text: object = None
+    value_text: object = None
 
     def depth_artists(self):
         return tuple(
@@ -126,6 +127,7 @@ class BarVisualGroupArtists:
                 self.bar.border,
                 self.logos,
                 self.text,
+                self.value_text,
             )
             if artist is not None
         )

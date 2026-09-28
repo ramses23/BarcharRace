@@ -65,6 +65,8 @@ CANVAS_APPEARANCE_FIELDS = (
     "rank_label_font_style",
     "title_text_color",
     "title_text_opacity",
+    "title_border_color",
+    "title_border_width",
     "subtitle_text_color",
     "subtitle_text_opacity",
     "label_text_color",
@@ -601,6 +603,10 @@ def _validated_preset(data):
         })
         if schema_version <= 3:
             canvas_defaults["time_label_opacity"] = 0.22
+    canvas_defaults.update({
+        "title_border_color": "#000000",
+        "title_border_width": 0.0,
+    })
     canvas = _validated_section(
         data["canvas"],
         expected_fields=CANVAS_APPEARANCE_FIELDS,

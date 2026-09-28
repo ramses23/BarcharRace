@@ -17,6 +17,28 @@ from ui.project_studio import _project_display_labels
 
 
 class ProjectStudioInterfaceTest(unittest.TestCase):
+    def test_title_border_and_secondary_logo_color_controls(self):
+        app_path = Path(__file__).resolve().parents[1] / "src/ui/project_studio.py"
+        app = AppTest.from_file(str(app_path), default_timeout=30).run()
+        self._select_editor_section(app, "Canvas")
+        color = next(x for x in app.color_picker if x.label == "Title border color")
+        width = next(x for x in app.number_input if x.label == "Title border width")
+        self.assertEqual(width.value, 0.0)
+        color.set_value("#224466")
+        width.set_value(2.5)
+        app.run()
+        self.assertFalse(app.exception)
+        chart = json.loads(app.json[0].value)["chart"]
+        self.assertEqual((chart["title_border_color"], chart["title_border_width"]),
+                         ("#224466", 2.5))
+        self._select_editor_section(app, "Bars")
+        next(x for x in app.segmented_control if x.label == "Bar color source").set_value(
+            "secondary_logo")
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(json.loads(app.json[0].value)["chart"]["bar_color_source"],
+                         "secondary_logo")
+
     def test_layout_preview_geometry_reuses_only_unchanged_inputs(self):
         dataset = pd.DataFrame({"year": [2000], "name": ["A"], "value": [1]})
         project = {"chart": {"title": "A"}}
