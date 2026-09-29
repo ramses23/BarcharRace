@@ -19,6 +19,7 @@ from studio.appearance_presets import (
     load_appearance_preset_catalog,
     save_appearance_preset,
 )
+from studio.fun_fact_loader import load_fun_fact_collection
 
 
 class AppearancePresetsTest(unittest.TestCase):
@@ -474,6 +475,83 @@ class AppearancePresetsTest(unittest.TestCase):
             self.assertEqual(loaded.fun_facts["data_link"], "off")
             catalog = load_appearance_preset_catalog(temp_dir)
             self.assertEqual(catalog.errors, ())
+
+    def test_current_schema_missing_global_data_link_defaults_to_off(self):
+        data = build_appearance_preset("Before Data Link", self.project_data()).to_dict()
+        self.assertEqual(data["schema_version"], APPEARANCE_PRESET_SCHEMA_VERSION)
+        del data["fun_facts"]["data_link"]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "before_data_link.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            loaded = load_appearance_preset(path)
+            self.assertEqual(loaded.fun_facts["data_link"], "off")
+            self.assertEqual(load_appearance_preset_catalog(temp_dir).errors, ())
+            self.assertNotIn("data_link", json.loads(path.read_text(encoding="utf-8"))["fun_facts"])
+
+    def test_catalog_accepts_twelve_presets_without_data_link_but_warns_for_real_omissions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            for index in range(12):
+                data = build_appearance_preset(f"Preset {index:02d}", self.project_data()).to_dict()
+                del data["fun_facts"]["data_link"]
+                (directory / f"preset_{index:02d}.json").write_text(
+                    json.dumps(data), encoding="utf-8",
+                )
+            catalog = load_appearance_preset_catalog(directory)
+            self.assertEqual(len(catalog.presets), 12)
+            self.assertEqual(catalog.errors, ())
+
+            invalid = build_appearance_preset("Missing layout", self.project_data()).to_dict()
+            del invalid["fun_facts"]["data_link"]
+            del invalid["fun_facts"]["layout"]
+            (directory / "invalid.json").write_text(json.dumps(invalid), encoding="utf-8")
+            catalog = load_appearance_preset_catalog(directory)
+            self.assertEqual(len(catalog.presets), 12)
+            self.assertEqual(len(catalog.errors), 1)
+            self.assertIn("Missing fun_facts fields: layout", catalog.errors[0])
+
+    def test_global_data_pulse_preset_does_not_change_individual_fact_anchors(self):
+        source = self.project_data()
+        source["fun_facts"].update({
+            "data_link": "data_pulse",
+            "pulse_color": "#112233",
+            "pulse_border_color": "#AABBCC",
+            "pulse_width": 3.5,
+        })
+        facts = [{
+            "id": f"fact_{index:02d}", "start": "2007", "end": "2007",
+            "headline": f"Fact {index}",
+            **({} if index == 8 else {"anchor_category": f"Brand {index}"}),
+        } for index in range(1, 13)]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            fact_path = directory / "facts.json"
+            fact_path.write_text(json.dumps({"version": 1, "fun_facts": facts}), encoding="utf-8")
+            original_bytes = fact_path.read_bytes()
+            before = load_fun_fact_collection("facts.json", project_root=directory)
+            self.assertEqual(len(before.facts), 12)
+            self.assertIsNone(before.facts[7].anchor_category)
+            preset = load_appearance_preset(save_appearance_preset(
+                build_appearance_preset("Pulse", source), directory,
+            ).path)
+            self.assertEqual(preset.fun_facts["data_link"], "data_pulse")
+            self.assertEqual(preset.fun_facts["pulse_color"], "#112233")
+            self.assertEqual(preset.fun_facts["pulse_border_color"], "#AABBCC")
+            self.assertEqual(preset.fun_facts["pulse_width"], 3.5)
+            for content_field in ("id", "start", "end", "headline", "body", "image", "credit", "anchor_category"):
+                self.assertNotIn(content_field, preset.fun_facts)
+            target = {"name": "target", "fun_facts": {
+                "source": "facts.json", "data_link": "off",
+            }}
+            applied = apply_appearance_preset(target, preset)
+            self.assertEqual(applied["fun_facts"]["source"], "facts.json")
+            self.assertEqual(applied["fun_facts"]["data_link"], "data_pulse")
+            self.assertEqual(fact_path.read_bytes(), original_bytes)
+            after = load_fun_fact_collection(applied["fun_facts"]["source"], project_root=directory)
+            self.assertEqual(
+                [fact.anchor_category for fact in before.facts],
+                [fact.anchor_category for fact in after.facts],
+            )
 
     def test_preset_catalog_reuses_validation_until_file_changes(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -677,8 +677,9 @@ def _validated_preset(data):
                 "editorial_image_height",
             )
         })
-        if schema_version <= 14:
-            fun_fact_defaults["data_link"] = "off"
+        # Data Link is a global, optional appearance mode. Some existing v15
+        # presets predate this field, so normalize its absence in memory too.
+        fun_fact_defaults["data_link"] = "off"
         if schema_version <= 13:
             fun_fact_defaults.update({
                 "editorial_layout_mode": "reserved",
