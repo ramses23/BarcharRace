@@ -17,7 +17,6 @@ from core.motion_engine import MotionEngine
 from core.transition_timing import build_transition_timing_plan
 from core.value_axis import ValueAxisTracker, _vertical_geometry
 from studio.fun_fact_layout import editorial_geometry
-from studio import interaction_trace as studio_trace
 
 
 _CACHE_MAX_ENTRIES = 4
@@ -377,12 +376,6 @@ def get_value_axis_preview_resolver(chart_config, sprite_sets):
     fingerprint = value_axis_preview_fingerprint(chart_config, sprite_sets)
     with _cache_lock:
         resolver = _resolver_cache.get(fingerprint)
-        if studio_trace.ENABLED:
-            studio_trace.cache("value_axis_resolver", fingerprint,
-                               {"axis_settings": repr(_axis_settings_fingerprint(chart_config)),
-                                "sprite_period_hashes": [sha256(repr(s).encode("utf-8")).hexdigest()[:16]
-                                                         for s in sprite_sets]},
-                               hit=resolver is not None)
         if resolver is not None:
             _cache_hits += 1
             _resolver_cache.move_to_end(fingerprint)
@@ -414,15 +407,6 @@ def get_preview_value_axis_bundle(
     )
     with _cache_lock:
         bundle = _preview_bundle_cache.get(fingerprint)
-        if studio_trace.ENABLED:
-            studio_trace.cache("value_axis_bundle", fingerprint, {
-                "axis_settings": repr(_axis_settings_fingerprint(chart_config)),
-                "years": list(years), "row_count": len(timeline.df),
-                "layout": {name: value for name, value in vars(chart_config).items()
-                           if name in ("left_margin", "right_margin", "max_bar_width",
-                                       "max_visible_bars", "bar_vertical_layout_mode",
-                                       "bar_vertical_top_padding", "bar_vertical_bottom_padding")},
-            }, hit=bundle is not None)
         if bundle is not None:
             _bundle_hits += 1
             _preview_bundle_cache.move_to_end(fingerprint)

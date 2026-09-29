@@ -478,7 +478,7 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         self._select_editor_section(app, "Fun facts")
         next(item for item in app.selectbox if item.label == "Layout").select("editorial_floating")
         app.run()
-        old = {"x": 1321, "y": 298, "width": 577, "height": 412}
+        old = {"x": 960, "y": 583, "width": 883, "height": 367}
         new = {"x": 1021, "y": 284, "width": 577, "height": 412}
         for field, label in (("width", "Card width"), ("height", "Card height")):
             next(item for item in app.number_input if item.label == label).set_value(old[field])
@@ -500,6 +500,13 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             self.assertEqual(
                 {field: facts[f"editorial_card_{field}"] for field in new}, new,
             )
+            draft_facts = app.session_state["current_project_draft"]["project_data"]["fun_facts"]
+            self.assertEqual(
+                {field: draft_facts[f"editorial_card_{field}"] for field in new}, new,
+            )
+            self.assertEqual(
+                app.session_state["fun_facts_editorial_layout_editor_card_0_display_rect"], new,
+            )
             for field in new:
                 self.assertEqual(
                     app.session_state[f"fun_facts_editorial_card_{field}_0"], new[field],
@@ -514,12 +521,16 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
         next(item for item in app.selectbox if item.label == "Editorial composition").select("independent")
         app.run()
         self.assertFalse(app.exception)
-        old = {"x": 650, "y": 180, "width": 500, "height": 260}
-        new = {"x": 720, "y": 240, "width": 480, "height": 280}
-        for field, label in (("x", "Text X"), ("y", "Text Y"),
-                             ("width", "Text width"), ("height", "Text height")):
+        old = {"x": 1321, "y": 298, "width": 577, "height": 412}
+        new = {"x": 1021, "y": 284, "width": 577, "height": 412}
+        for field, label in (("width", "Text width"), ("height", "Text height")):
             next(item for item in app.number_input if item.label == label).set_value(old[field])
         app.run()
+        for field, label in (("x", "Text X"), ("y", "Text Y")):
+            next(item for item in app.number_input if item.label == label).set_value(old[field])
+        app.run()
+        before = json.loads(app.json[0].value)["fun_facts"]
+        self.assertEqual({field: before[f"editorial_text_{field}"] for field in old}, old)
         app.session_state["fun_facts_editorial_layout_editor_independent_0"] = {
             "geometry": {"block": "text", "rect": new,
                          "base_rect": old, "event_id": "text-drag:1"},
@@ -531,6 +542,22 @@ class ProjectStudioInterfaceTest(unittest.TestCase):
             self.assertEqual(
                 {field: facts[f"editorial_text_{field}"] for field in new}, new,
             )
+            draft_facts = app.session_state["current_project_draft"]["project_data"]["fun_facts"]
+            self.assertEqual(
+                {field: draft_facts[f"editorial_text_{field}"] for field in new}, new,
+            )
+        next(item for item in app.number_input if item.label == "Body size").set_value(30)
+        app.run()
+        self.assertEqual(
+            {field: json.loads(app.json[0].value)["fun_facts"][f"editorial_text_{field}"]
+             for field in new}, new,
+        )
+        next(item for item in app.selectbox if item.label == "Image fit").select("cover")
+        app.run()
+        self.assertEqual(
+            {field: json.loads(app.json[0].value)["fun_facts"][f"editorial_text_{field}"]
+             for field in new}, new,
+        )
 
     def test_editorial_card_uses_displayed_smart_rect_as_drag_base(self):
         displayed = {"x": 620, "y": 170, "width": 560, "height": 300}

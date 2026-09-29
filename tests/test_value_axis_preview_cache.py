@@ -20,7 +20,13 @@ from core.motion_engine import MotionEngine
 from core.timeline import Timeline
 from core.value_axis import ValueAxisTracker
 from models.bar_sprite import BarSprite
-from studio.preview import _preview_value_scales
+from studio.preview import (
+    _cached_preview_scale,
+    _podium_history_key,
+    _preview_podium_history_cache,
+    _preview_scale_cache,
+    _preview_value_scales,
+)
 from studio.value_axis_preview import (
     clear_value_axis_preview_cache,
     get_preview_value_axis_bundle,
@@ -76,6 +82,57 @@ def sequential_states(config, sprite_sets):
 class ValueAxisPreviewCacheTest(unittest.TestCase):
     def setUp(self):
         clear_value_axis_preview_cache()
+
+    def test_podium_events_reuse_history_across_editorial_geometry(self):
+        config = self._config(rank_celebration="podium")
+        original = self._history()
+        moved = tuple(tuple(replace(
+            bar, x=bar.x - 300, y=bar.y + 10,
+            width=bar.width - 100, bar_available_width=bar.bar_available_width - 300,
+        ) for bar in period) for period in original)
+        self.assertEqual(_podium_history_key(config, original), _podium_history_key(config, moved))
+        self.assertNotEqual(
+            _podium_history_key(config, original),
+            _podium_history_key(config, tuple(tuple(
+                replace(bar, value=bar.value + 1) if bar.name == "A" else bar
+                for bar in period
+            ) for period in original)),
+        )
+        self.assertNotEqual(
+            _podium_history_key(config, original),
+            _podium_history_key(replace(config, steps_per_transition=10), original),
+        )
+        self.assertNotEqual(
+            _podium_history_key(config, original),
+            _podium_history_key(replace(config, rank_celebration="first"), original),
+        )
+        changed_rank = tuple(tuple(
+            replace(bar, rank=1) if bar.name == "A" else bar for bar in period
+        ) for period in original)
+        self.assertNotEqual(
+            _podium_history_key(config, original),
+            _podium_history_key(config, changed_rank),
+        )
+        changed_visibility = tuple(tuple(
+            replace(bar, opacity=0) if bar.name == "A" else bar for bar in period
+        ) for period in original)
+        self.assertNotEqual(
+            _podium_history_key(config, original),
+            _podium_history_key(config, changed_visibility),
+        )
+        _preview_scale_cache.clear()
+        _preview_podium_history_cache.clear()
+        try:
+            _cached_preview_scale(config, original, original[-1], 2, True)
+            self.assertEqual(len(_preview_podium_history_cache), 1)
+            old_events = next(iter(_preview_podium_history_cache.values()))
+            _cached_preview_scale(config, moved, moved[-1], 2, True)
+            self.assertEqual(len(_preview_podium_history_cache), 1)
+            self.assertEqual(len(_preview_scale_cache), 2)
+            self.assertIs(next(iter(_preview_podium_history_cache.values())), old_events)
+        finally:
+            _preview_scale_cache.clear()
+            _preview_podium_history_cache.clear()
 
     def _config(self, **changes):
         config = ChartConfig(

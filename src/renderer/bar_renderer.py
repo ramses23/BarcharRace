@@ -48,7 +48,6 @@ from renderer.artists import SubpixelGradientCollection
 from renderer.material_texture import blend_texture, procedural_texture_pattern
 from renderer.flip_calendar_renderer import FlipCalendarRenderer
 from studio.fun_fact_layout import editorial_block_geometry, editorial_geometry, panel_geometry
-from studio import interaction_trace as studio_trace
 from utils.text_fit import fit_text_to_width, measure_text_width
 from utils.value_formatter import format_value
 
@@ -113,9 +112,6 @@ class BarRenderer(TextCompositorMixin):
         self._flip_calendar_renderer = FlipCalendarRenderer()
         self.draw_seconds = 0.0
         self.save_seconds = 0.0
-        self.trace_logo_seconds = 0.0
-        self.trace_logo_hits = 0
-        self.trace_logo_misses = 0
         if self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
 
@@ -4351,20 +4347,14 @@ class BarRenderer(TextCompositorMixin):
         cache_key = (logo_path, logo_size)
 
         if cache_key in self.logo_cache:
-            if studio_trace.ENABLED:
-                self.trace_logo_hits += 1
             image = self.logo_cache[cache_key]
             self.logo_cache.move_to_end(cache_key)
             return image
 
-        trace_started = perf_counter() if studio_trace.ENABLED else None
         try:
             image = self._prepare_logo_image(logo_path, logo_size)
         except (OSError, ValueError):
             image = None
-        if studio_trace.ENABLED:
-            self.trace_logo_misses += 1
-            self.trace_logo_seconds += perf_counter() - trace_started
 
         self._lru_put(self.logo_cache, cache_key, image, limit=256)
         return image

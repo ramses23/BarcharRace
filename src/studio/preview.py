@@ -2,7 +2,6 @@ from collections import OrderedDict
 from dataclasses import replace
 from hashlib import sha256
 from threading import RLock
-from time import perf_counter
 
 from config.project_file_loader import load_project_data, load_project_file
 from core.bar_selector import BarSelector
@@ -20,7 +19,6 @@ from models.scene import Scene
 from renderer.bar_renderer import BarRenderer
 from studio.package_paths import DEFAULT_PROJECT_ROOT, resolve_project_path
 from studio.fun_fact_layout import apply_fun_fact_layout
-from studio import interaction_trace as studio_trace
 from studio.fun_fact_loader import load_fun_fact_scheduler
 from studio.project_runtime import resolve_project_preset_paths
 from studio.short_export import (
@@ -57,7 +55,6 @@ def render_project_preview(
     force_fun_fact_id=None,
     app_root=None,
 ):
-    trace_started = perf_counter() if studio_trace.ENABLED else None
     root_path = _project_root(root_dir)
     if project_data is None:
         project_path = resolve_project_path(
@@ -81,10 +78,6 @@ def render_project_preview(
     data_source_config = preset.data_source_config
     dataset_config = preset.dataset_config
     chart_config = preset.chart_config
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="preview config build",
-                          duration_seconds=round(perf_counter() - trace_started, 6))
-        trace_started = perf_counter()
 
     dataframe = DataSourceLoader(data_source_config).load()
     dataframe = DatasetValidator(config=dataset_config).validate(dataframe)
@@ -97,11 +90,6 @@ def render_project_preview(
 
     if not years:
         raise ValueError("Preview requires at least one time period.")
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="timeline preparation",
-                          duration_seconds=round(perf_counter() - trace_started, 6),
-                          period_count=len(years), row_count=len(dataframe))
-        trace_started = perf_counter()
 
     fun_fact_config = short_fun_fact_config(
         preset.fun_fact_config,
@@ -124,10 +112,6 @@ def render_project_preview(
         ),
     )
     timing_plan = _preview_timing_plan(timeline, years, chart_config, selector, layout)
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="Fun Fact/editorial preparation",
-                          duration_seconds=round(perf_counter() - trace_started, 6))
-        trace_started = perf_counter()
     if fun_fact_scheduler is not None:
         fun_fact_scheduler.configure_timing(years, timing_plan, chart_config.fps,
                                             minimum_seconds=fun_fact_config.minimum_duration_seconds)
@@ -153,10 +137,6 @@ def render_project_preview(
             source_label=source_label,
             calendar_resolver=calendar_resolver,
         )
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="ranking/timing preparation",
-                          duration_seconds=round(perf_counter() - trace_started, 6))
-        trace_started = perf_counter()
 
     if preview_mode == "transition":
         year_a, year_b = _selected_transition_years(year, years)
@@ -227,12 +207,6 @@ def render_project_preview(
                 raise ValueError("Cannot force a preview when fun facts are disabled.")
         else:
             active_fact = fun_fact_scheduler.force(force_fun_fact_id)
-    if studio_trace.ENABLED:
-        studio_trace.set_context(active_fun_fact_id=(active_fact.fact.id if active_fact is not None else None))
-        studio_trace.emit("stage", stage="selected-frame bars/assets",
-                          duration_seconds=round(perf_counter() - trace_started, 6),
-                          frame_index=frame_index)
-        trace_started = perf_counter()
 
     bar_value_scale, value_axis, rank_celebrations = _preview_value_scales(
         timeline=timeline,
@@ -244,10 +218,6 @@ def render_project_preview(
         target_sprites=sprites,
         include_celebrations=True,
     )
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="value scale / ranking history",
-                          duration_seconds=round(perf_counter() - trace_started, 6))
-        trace_started = perf_counter()
     sprites = scale_bar_sprites(sprites, bar_value_scale, chart_config)
     output_frame_index = frame_index + intro_frames
     if preview_mode == "intro" and intro_frames:
@@ -283,13 +253,6 @@ def render_project_preview(
         total_frames=duration.frame_count,
         fps=chart_config.fps,
     )
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="scene/layout geometry",
-                          duration_seconds=round(perf_counter() - trace_started, 6),
-                          preview_rect={field: getattr(fun_fact_config, f"editorial_card_{field}", None)
-                                        for field in ("x", "y", "width", "height")},
-                          placement=fun_fact_config.editorial_placement_mode)
-        trace_started = perf_counter()
 
     output_path = resolve_project_path(
         output_dir or "output/previews",
@@ -308,23 +271,8 @@ def render_project_preview(
         config=chart_config,
         fun_fact_config=fun_fact_config,
     )
-    if studio_trace.ENABLED:
-        studio_trace.emit("stage", stage="renderer/asset initialization",
-                          duration_seconds=round(perf_counter() - trace_started, 6))
-
     try:
-        result = renderer.render(scene, filename="preview.png")
-        if studio_trace.ENABLED:
-            studio_trace.emit("stage", stage="frame rendering",
-                              duration_seconds=round(renderer.draw_seconds, 6))
-            studio_trace.emit("stage", stage="asset/logo preparation",
-                              duration_seconds=round(renderer.trace_logo_seconds, 6),
-                              included_in="frame rendering",
-                              cache_hits=renderer.trace_logo_hits,
-                              cache_misses=renderer.trace_logo_misses)
-            studio_trace.emit("stage", stage="encode/image preparation",
-                              duration_seconds=round(renderer.save_seconds, 6))
-        return result
+        return renderer.render(scene, filename="preview.png")
     finally:
         renderer.close()
 
@@ -584,73 +532,17 @@ def _cached_preview_scale(config, sprite_sets, target_sprites, frame_index,
     )).encode("utf-8")).digest()
     with _preview_scale_cache_lock:
         resolver = _preview_scale_cache.get(key)
-        if studio_trace.ENABLED:
-            studio_trace.cache("preview_scale_resolver", key, {
-                "axis_fingerprint": axis_fingerprint.hex(),
-                "chart": _trace_scalar_fields(config),
-                "animation": _trace_scalar_fields(config.animation),
-                "selection": {
-                    "aggregate_other": config.selection.aggregate_other,
-                    "other_label": config.selection.other_label,
-                },
-                "sprite_period_hashes": [sha256(repr(s).encode("utf-8")).hexdigest()[:16]
-                                         for s in sprite_sets],
-            }, hit=resolver is not None)
         if resolver is None:
             history_key = None
             events = None
             if config.rank_celebration != "off":
-                # The event scan uses ranking/motion data, not logo paths or
-                # colors. Normalize equal int/float values across Studio and
-                # file previews; rebuild anchors from the current sprites.
-                numeric_sprites = tuple(tuple(
-                    tuple((
-                        name,
-                        _fingerprint_float(value) if name in (
-                            "value", "x", "y", "width", "height", "rank",
-                            "opacity", "rank_motion_progress", "rank_motion_target",
-                            "bar_available_width",
-                        ) else value,
-                    ) for name, value in vars(sprite).items()
-                        if name not in ("color", "logo_path", "secondary_logo_path"))
-                    for sprite in sprites
-                ) for sprites in sprite_sets)
-                history_key = sha256(repr((
-                    axis_fingerprint, config.animation, config.fps,
-                    config.rank_celebration, config.start_bars_at_zero,
-                    config.leader_full_width_point,
-                    config.selection.aggregate_other,
-                    config.selection.other_label,
-                    config.value_grid_tick_labels_enabled, numeric_sprites,
-                )).encode("utf-8")).digest()
+                history_key = _podium_history_key(config, sprite_sets)
                 events = _preview_podium_history_cache.get(history_key)
-                if studio_trace.ENABLED:
-                    studio_trace.cache("podium_rank_history", history_key, {
-                        "axis_fingerprint": axis_fingerprint.hex(),
-                        "chart": _trace_scalar_fields(config),
-                        "animation": _trace_scalar_fields(config.animation),
-                        "selection": {
-                            "aggregate_other": config.selection.aggregate_other,
-                            "other_label": config.selection.other_label,
-                        },
-                        "numeric_sprites": {
-                            str(period): {
-                                str(index): dict(sprite)
-                                for index, sprite in enumerate(sprites)
-                            }
-                            for period, sprites in enumerate(numeric_sprites)
-                        },
-                    }, hit=events is not None)
                 if events is not None:
                     _preview_podium_history_cache.move_to_end(history_key)
-            history_started = perf_counter() if studio_trace.ENABLED else None
             resolver = BarValueScaleResolver.from_config(
                 config, sprite_sets, celebration_events=events,
             )
-            if studio_trace.ENABLED:
-                studio_trace.emit("stage", stage="Podium celebration history / scale resolver",
-                                  duration_seconds=round(perf_counter() - history_started, 6),
-                                  podium_cache_hit=(events is not None))
             if history_key is not None and events is None:
                 _preview_podium_history_cache[history_key] = (
                     resolver.rank_celebration_timeline.events
@@ -662,24 +554,35 @@ def _cached_preview_scale(config, sprite_sets, target_sprites, frame_index,
                 _preview_scale_cache.popitem(last=False)
         else:
             _preview_scale_cache.move_to_end(key)
-            if studio_trace.ENABLED and config.rank_celebration != "off":
-                studio_trace.emit("cache", cache="podium_rank_history", key=None,
-                                  result="HIT", miss_reason=None,
-                                  reason="preview_scale_resolver_hit", changed_dependencies={})
         scale = resolver.for_sprites(target_sprites, frame_index=frame_index)
         celebrations = resolver.celebrations_at(frame_index) if include_celebrations else ()
         return scale, celebrations
 
 
-def _trace_scalar_fields(value):
-    """Expose changed cache inputs without writing paths or whole datasets."""
-    result = {}
-    for name, field in vars(value).items():
-        if isinstance(field, (bool, int, float, type(None))):
-            result[name] = field
-        elif isinstance(field, str):
-            result[name] = field if len(field) <= 80 and not ("\\" in field or "/" in field) else sha256(field.encode("utf-8")).hexdigest()[:16]
-    return result
+def _podium_history_key(config, sprite_sets):
+    """Fingerprint event inputs, excluding physical/editorial bar geometry.
+
+    Event detection uses timing, sampled values/opacity, and ranking. Current
+    sprites still build the scale resolver and celebration anchors separately.
+    """
+    event_sprites = tuple(tuple(
+        (
+            sprite.name,
+            _fingerprint_float(sprite.value),
+            _fingerprint_float(sprite.opacity),
+            _fingerprint_float(sprite.rank) if sprite.rank is not None else None,
+            sprite.rank_motion_state,
+            _fingerprint_float(sprite.rank_motion_progress),
+            (_fingerprint_float(sprite.rank_motion_target)
+             if sprite.rank_motion_target is not None else None),
+        )
+        for sprite in sprites
+    ) for sprites in sprite_sets)
+    return sha256(repr((
+        config.animation, config.fps, config.steps_per_transition,
+        config.rank_celebration, config.selection.aggregate_other,
+        config.selection.other_label, event_sprites,
+    )).encode("utf-8")).digest()
 
 
 def _sprites_for_year(timeline, selector, layout, year):

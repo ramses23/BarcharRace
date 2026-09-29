@@ -1,4 +1,7 @@
 import unittest
+import base64
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +15,74 @@ from ui.editorial_layout_editor import (
 
 
 class EditorialLayoutEditorTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node.js required for component test")
+    def test_frontend_mount_props_and_consumed_event_do_not_emit_again(self):
+        javascript = (
+            Path(__file__).resolve().parents[1]
+            / "src/ui/components/editorial_layout_editor/component.js"
+        ).read_text(encoding="utf-8")
+        script = r"""
+class Element {
+  constructor() {
+    this.children = []
+    this.className = ""
+    this.dataset = {}
+    this.clientWidth = 720
+    this.style = { setProperty() {} }
+  }
+  append(...nodes) { this.children.push(...nodes) }
+  appendChild(node) { this.append(node) }
+  replaceChildren(...nodes) { this.children = nodes }
+  setAttribute() {}
+  setPointerCapture() {}
+  remove() {}
+  querySelector(selector) {
+    if (this.className.split(" ").includes(selector.slice(1))) return this
+    for (const child of this.children) {
+      const found = child.querySelector(selector)
+      if (found) return found
+    }
+    return null
+  }
+}
+globalThis.document = { createElement: () => new Element() }
+globalThis.ResizeObserver = class { observe() {} disconnect() {} }
+const { default: render } = await import('data:text/javascript;base64,__SOURCE__')
+const parentElement = new Element()
+const emitted = []
+const setStateValue = (key, value) => emitted.push([key, value])
+const data = {
+  canvas_width: 1920, canvas_height: 1080,
+  min_width: 240, min_height: 140, block_min_width: 160, block_min_height: 100,
+  rect: { x: 960, y: 583, width: 883, height: 367 },
+  rects: {}, composition: 'card', overlay: {}, theme: {},
+}
+render({ data, parentElement, setStateValue })
+render({ data, parentElement, setStateValue })
+render({ data: { ...data, rect: { ...data.rect, x: 1021 } }, parentElement, setStateValue })
+if (emitted.length !== 0) throw new Error('Mount or props emitted geometry')
+let card = parentElement.querySelector('.editorial-card-editor')
+card.onpointerdown({ target: { dataset: {} }, pointerId: 1, clientX: 0, clientY: 0,
+                     preventDefault() {} })
+card.onpointerup({ pointerId: 1 })
+if (emitted.length !== 0) throw new Error('No-op drag emitted geometry')
+card.onkeydown({ key: 'ArrowLeft', shiftKey: false, preventDefault() {} })
+if (emitted.length !== 1 || emitted[0][0] !== 'geometry')
+  throw new Error('Real gesture did not emit exactly once')
+const accepted = emitted[0][1].rect
+render({ data: { ...data, rect: accepted }, parentElement, setStateValue })
+render({ data: { ...data, rect: accepted }, parentElement, setStateValue })
+if (emitted.length !== 1) throw new Error('Consumed event emitted again')
+"""
+        script = script.replace(
+            "__SOURCE__", base64.b64encode(javascript.encode("utf-8")).decode("ascii"),
+        )
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_clamp_preserves_minimum_size_and_canvas_bounds(self):
         self.assertEqual(
             clamp_editorial_rect(900, 520, 120, 80, 1000, 600),
